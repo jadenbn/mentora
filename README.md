@@ -15,32 +15,36 @@ ROLES:
 # mentora
 yay!
 hackathon project
-an AI tutor that watches you solve a problem the way a human tutor would, by looking at your actual handwritten work and intervening directly on the page
-
-maybe more clearly:
-A whiteboard where an AI tutor can see your work, understand your course, and teach by writing alongside you.
-
-1. Select "Calculus I"
-
-2. AI generates:
-       Find d/dx(x² sin x)
-
-3. AI handwriting animates onto canvas.
-
-4. Student writes solution.
-
-5. Press "Check".
-
-6. AI circles incorrect portion.
-
-7. AI writes:
-       "Product rule — you're missing one term."
-
-8. Student fixes it.
-
-9. AI puts ✓ beside answer.
-
-10. Screen says:
-       Product Rule mastery ↑
-       Next question →
-
+Student creates/opens MATH 101
+          ↓
+Course knows their actual course material
+          ↓
+Student opens a persistent whiteboard
+          ↓
+AI generates a new instructor-style problem
+          OR
+student imports their own problem
+          ↓
+Problem is cleanly reconstructed on infinite canvas
+          ↓
+Student works naturally by hand
+          ↓
+Tutor understands:
+    • original problem
+    • course context
+    • student's work
+    • selected canvas region
+    • prior tutoring interactions
+    • eventually student model
+          ↓
+Student asks for Mark / Hint / Explain / I'm Stuck
+          OR
+live tutor decides intervention is warranted
+          ↓
+AI responds spatially on the canvas
+          ↓
+Student continues working
+          ↓
+Everything persists
+          ↓
+Future tutoring gradually becomes personalized
