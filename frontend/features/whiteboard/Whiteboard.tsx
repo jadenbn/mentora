@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Editor, toRichText } from "tldraw";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
@@ -17,6 +17,11 @@ type TutorAnnotation = {
 
 export function Whiteboard() {
   const editor = useRef<Editor | null>(null);
+  const [annotation, setAnnotation] = useState<TutorAnnotation>({
+    text: "Check this sign",
+    x: 300,
+    y: 200,
+  });
 
   const drawTutorAnnotation = (annotation: TutorAnnotation) => {
     editor.current?.createShape({
@@ -39,14 +44,29 @@ export function Whiteboard() {
           editor.current = mountedEditor;
         }}
       />
-      <button
-        className="absolute left-1/2 hover:cursor-grab top-4 z-10 rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow"
-        onClick={() =>
-          drawTutorAnnotation({ text: "Check this sign", x: 300, y: 200 })
-        }
+      <form
+        className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-end gap-2 rounded bg-white p-2 shadow"
+        onSubmit={(event) => {
+          event.preventDefault();
+          drawTutorAnnotation(annotation);
+        }}
       >
-        Add tutor note
-      </button>
+        <label className="grid gap-1 text-xs font-semibold text-slate-700">
+          Text
+          <input className="w-36 rounded border border-slate-300 px-2 py-1" value={annotation.text} onChange={(event) => setAnnotation({ ...annotation, text: event.target.value })} />
+        </label>
+        <label className="grid gap-1 text-xs font-semibold text-slate-700">
+          X
+          <input className="w-16 rounded border border-slate-300 px-2 py-1" type="number" value={annotation.x} onChange={(event) => setAnnotation({ ...annotation, x: Number(event.target.value) })} />
+        </label>
+        <label className="grid gap-1 text-xs font-semibold text-slate-700">
+          Y
+          <input className="w-16 rounded border border-slate-300 px-2 py-1" type="number" value={annotation.y} onChange={(event) => setAnnotation({ ...annotation, y: Number(event.target.value) })} />
+        </label>
+        <button className="hover:cursor-grab rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white" type="submit">
+          Add tutor note
+        </button>
+      </form>
     </div>
   );
 }
