@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { CircleChevronLeft, CircleChevronRight } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   ArrowToolbarItem,
@@ -75,13 +75,17 @@ function CanvasPanel({
         aria-controls="canvas-panel"
         aria-expanded={open}
         aria-label={open ? "Close draw options" : "Open draw options"}
-        className={`absolute top-1/2 z-40 -translate-y-1/2 rounded-l-xl px-2 py-4 text-xs font-semibold tracking-wide text-black shadow transition-[right] duration-200 [writing-mode:vertical-rl] ${open ? "right-72" : "right-0"}`}
+        className={`absolute top-1/2 z-40 flex h-14 w-10 -translate-y-1/2 items-center justify-center rounded-l-full border border-r-0 border-slate-200 bg-white text-slate-950 shadow-md transition-[right] duration-300 ease-out hover:cursor-grab ${open ? "right-72" : "right-0"}`}
         onClick={() => setOpen((isOpen) => !isOpen)}
       >
-        {open ? <CircleChevronRight /> : <CircleChevronLeft />}
+        <ChevronLeft
+          aria-hidden="true"
+          className={`size-6 transition-transform duration-300 ease-out ${open ? "rotate-180" : ""}`}
+          strokeWidth={2}
+        />
       </button>
       <aside
-        className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto bg-white p-5 shadow-2xl transition-transform duration-200 ${open ? "translate-x-0" : "translate-x-full"}`}
+        className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto bg-white p-5 shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
         id="canvas-panel"
       >
         <section>
