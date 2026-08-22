@@ -1,58 +1,52 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
-import { createShapeId, EASINGS, Editor, toRichText, useEditor } from "tldraw";
+import { useRef } from "react";
+import { Editor, toRichText } from "tldraw";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
 
-export function Whiteboard() {
-  const editor = useRef<Editor>(null);
-  const [value, setValue] = useState<number>(1);
+type TutorAnnotation = {
+  // tmp, will add more fields later
+  text: string;
+  x: number;
+  y: number;
+};
 
-  const drawThing = () => {
-    const id = createShapeId("firs tshape");
+export function Whiteboard() {
+  const editor = useRef<Editor | null>(null);
+
+  const drawTutorAnnotation = (annotation: TutorAnnotation) => {
     editor.current?.createShape({
-      id,
-      type: "geo",
-      x: 128,
-      y: 128,
+      type: "text",
+      x: annotation.x,
+      y: annotation.y,
+      meta: { owner: "ai" },
       props: {
-        geo: "rectangle",
-        w: 120,
-        h: 120,
-        dash: "draw",
-        color: "black",
+        richText: toRichText(annotation.text),
+        color: "red",
         size: "m",
-        richText: toRichText("hello!!"),
       },
     });
-
-    editor.current?.animateShape({
-      id,
-      type: "geo",
-      opacity: 0,
-    }, {
-      animation: { duration: 2000, easing: EASINGS.linear },
-    });
-
-    setTimeout(() => {
-      editor.current?.deleteShape(id);
-    }, 2000);
   };
 
   return (
-    <>
-      <button className="hover:cursor-grab mt-10 border-2" onClick={drawThing}>
-        draw thing
-      </button>
+    <div className="relative h-full">
       <Tldraw
-        onMount={(edit) => {
-          editor.current = edit;
+        onMount={(mountedEditor) => {
+          editor.current = mountedEditor;
         }}
       />
-    </>
+      <button
+        className="absolute left-1/2 hover:cursor-grab top-4 z-10 rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow"
+        onClick={() =>
+          drawTutorAnnotation({ text: "Check this sign", x: 300, y: 200 })
+        }
+      >
+        Add tutor note
+      </button>
+    </div>
   );
 }
