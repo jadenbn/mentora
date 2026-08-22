@@ -1,8 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef } from "react";
-import { createShapeId, Editor, toRichText, useEditor } from "tldraw";
+import { useRef, useState } from "react";
+import { createShapeId, EASINGS, Editor, toRichText, useEditor } from "tldraw";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
@@ -10,6 +10,7 @@ const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
 
 export function Whiteboard() {
   const editor = useRef<Editor>(null);
+  const [value, setValue] = useState<number>(1);
 
   const drawThing = () => {
     const id = createShapeId("firs tshape");
@@ -28,12 +29,24 @@ export function Whiteboard() {
         richText: toRichText("hello!!"),
       },
     });
+
+    editor.current?.animateShape({
+      id,
+      type: "geo",
+      opacity: 0,
+    }, {
+      animation: { duration: 2000, easing: EASINGS.linear },
+    });
+
+    setTimeout(() => {
+      editor.current?.deleteShape(id);
+    }, 2000);
   };
 
   return (
     <>
-      <button className="mt-10" onClick={drawThing}>
-        asdf
+      <button className="hover:cursor-grab mt-10 border-2" onClick={drawThing}>
+        draw thing
       </button>
       <Tldraw
         onMount={(edit) => {
