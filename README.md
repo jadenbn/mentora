@@ -2,7 +2,7 @@ ROLES:
 
 Whiteboard: build the app and canvas
 
-AI/Vision: understand handwritten student work and generate feedback
+[TAKEN - andre] - AI/Vision: understand handwritten student work and generate feedback
 
 Course Context: process notes/PDFs and give the AI course-specific knowledge
 
