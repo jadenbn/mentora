@@ -334,6 +334,45 @@ implemented
 + understandable by the next teammate
 ```
 
+## Commit Discipline
+
+Commit frequently as you complete coherent units of work.
+
+Do not wait until the entire feature is finished to make one large commit.
+
+Each commit should be **atomic**:
+- one logical change
+- independently understandable
+- ideally independently buildable/testable
+- no unrelated refactors
+- no debug files or accidental formatting changes
+
+Good commit boundaries include:
+- add tutor response schema
+- add FastAPI tutor endpoint
+- add annotation renderer
+- wire renderer to tutor response
+- add session persistence test
+
+Bad commit boundaries include:
+- "frontend + backend + cleanup + random fixes"
+- hundreds of unrelated changed lines
+- mixing formatting changes with feature logic
+
+Before each commit:
+1. Run `git status`.
+2. Inspect `git diff`.
+3. Stage only files/hunks belonging to that logical change.
+4. Run relevant tests/type checks if practical.
+5. Commit with a descriptive imperative message.
+
+Prefer:
+```text
+Add tutor annotation schema
+Implement canvas annotation renderer
+Persist tldraw session state
+Fix normalized annotation coordinates
+
 ## Final Heuristics
 Choose a reliable demo over clever abstraction.
 Choose course/canvas-grounded AI behavior over generic AI behavior.
