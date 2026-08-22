@@ -3,6 +3,9 @@ yay!
 hackathon project
 an AI tutor that watches you solve a problem the way a human tutor would, by looking at your actual handwritten work and intervening directly on the page
 
+maybe more clearly:
+A whiteboard where an AI tutor can see your work, understand your course, and teach by writing alongside you.
+
 1. Select "Calculus I"
 
 2. AI generates:
