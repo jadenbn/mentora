@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { CircleChevronLeft, CircleChevronRight } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   ArrowToolbarItem,
@@ -74,10 +75,10 @@ function CanvasPanel({
         aria-controls="canvas-panel"
         aria-expanded={open}
         aria-label={open ? "Close draw options" : "Open draw options"}
-        className={`absolute top-1/2 z-40 -translate-y-1/2 rounded-l-xl bg-slate-950 px-2 py-4 text-xs font-semibold tracking-wide text-white shadow transition-[right] duration-200 [writing-mode:vertical-rl] ${open ? "right-72" : "right-0"}`}
+        className={`absolute top-1/2 z-40 -translate-y-1/2 rounded-l-xl px-2 py-4 text-xs font-semibold tracking-wide text-black shadow transition-[right] duration-200 [writing-mode:vertical-rl] ${open ? "right-72" : "right-0"}`}
         onClick={() => setOpen((isOpen) => !isOpen)}
       >
-        tbd
+        {open ? <CircleChevronRight /> : <CircleChevronLeft />}
       </button>
       <aside
         className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto bg-white p-5 shadow-2xl transition-transform duration-200 ${open ? "translate-x-0" : "translate-x-full"}`}
