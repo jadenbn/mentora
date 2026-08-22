@@ -1,3 +1,12 @@
+ROLES:
+
+Whiteboard: build the app and canvas
+AI/Vision: understand handwritten student work and generate feedback
+Course Context: process notes/PDFs and give the AI course-specific knowledge
+Backend: APIs, storage, and connecting services
+Learning Engine: generate questions and track/adapt to student ability
+Integration: connect everything, deploy it, and make the demo reliable
+
 # mentora
 yay!
 hackathon project
