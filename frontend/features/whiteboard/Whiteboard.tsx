@@ -25,16 +25,12 @@ import {
   toRichText,
 } from "tldraw";
 import { TutorControls } from "@/features/tutor/TutorControls";
+import { TutorAnnotation } from "@/types/annotations";
+import { testAnnotation } from "@/lib/api/api";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
-
-type TutorAnnotation = {
-  text: string;
-  x: number;
-  y: number;
-};
 
 function CanvasToolbar() {
   return (
@@ -196,8 +192,24 @@ export function Whiteboard() {
     });
   }
 
+  async function requestTestAnnotation() {
+    const annotation: TutorAnnotation = await testAnnotation({
+      x: 10,
+      y: 20,
+      text: "hello!",
+    });
+
+    drawTutorAnnotation(annotation);
+  }
+
   return (
     <div className="relative h-full">
+      <button
+        className="bg-black text-white w-20 h-10"
+        onClick={requestTestAnnotation}
+      >
+        hello hello{" "}
+      </button>
       <Tldraw
         hideUi
         onMount={(mountedEditor) => {
