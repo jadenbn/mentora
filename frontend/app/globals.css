@@ -16,3 +16,16 @@ body {
 }
 
 button:disabled { cursor: not-allowed; }
+
+.sidebar-style-panel .tlui-style-panel {
+  width: 100%;
+  max-width: none;
+}
+
+.sidebar-style-panel .tlui-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.sidebar-style-panel .tlui-row {
+  justify-content: space-between;
+}

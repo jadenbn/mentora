@@ -12,6 +12,12 @@ import {
   HighlightToolbarItem,
   RectangleToolbarItem,
   SelectToolbarItem,
+  StylePanelColorPicker,
+  StylePanelDashPicker,
+  StylePanelFillPicker,
+  StylePanelOpacityPicker,
+  StylePanelSection,
+  StylePanelSizePicker,
   TextToolbarItem,
   TldrawUiMenuContextProvider,
   TldrawUiToolbar,
@@ -77,10 +83,20 @@ function CanvasPanel({
         className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto bg-white p-5 shadow-2xl transition-transform duration-200 ${open ? "translate-x-0" : "translate-x-full"}`}
         id="canvas-panel"
       >
-        <section className="mt-6">
+        <section>
           <h3 className="text-sm font-semibold text-slate-950">Palette</h3>
-          <div className="mt-2 rounded-xl border border-slate-200">
-            <DefaultStylePanel isMobile />
+          <div className="sidebar-style-panel mt-2">
+            <DefaultStylePanel isMobile>
+              <StylePanelSection>
+                <StylePanelColorPicker />
+                <StylePanelOpacityPicker />
+              </StylePanelSection>
+              <StylePanelSection>
+                <StylePanelFillPicker />
+                <StylePanelDashPicker />
+                <StylePanelSizePicker />
+              </StylePanelSection>
+            </DefaultStylePanel>
           </div>
         </section>
 
@@ -104,7 +120,7 @@ function CanvasPanel({
           <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-700">
             Text
             <input
-              className="rounded border border-slate-300 px-2 py-1"
+              className="w-full min-w-0 rounded border border-slate-300 px-2 py-1"
               value={annotation.text}
               onChange={(event) =>
                 onAnnotationChange({ ...annotation, text: event.target.value })
@@ -112,10 +128,10 @@ function CanvasPanel({
             />
           </label>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <label className="grid gap-1 text-xs font-semibold text-slate-700">
+            <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-700">
               X
               <input
-                className="rounded border border-slate-300 px-2 py-1"
+                className="w-full min-w-0 rounded border border-slate-300 px-2 py-1"
                 type="number"
                 value={annotation.x}
                 onChange={(event) =>
@@ -126,10 +142,10 @@ function CanvasPanel({
                 }
               />
             </label>
-            <label className="grid gap-1 text-xs font-semibold text-slate-700">
+            <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-700">
               Y
               <input
-                className="rounded border border-slate-300 px-2 py-1"
+                className="w-full min-w-0 rounded border border-slate-300 px-2 py-1"
                 type="number"
                 value={annotation.y}
                 onChange={(event) =>
