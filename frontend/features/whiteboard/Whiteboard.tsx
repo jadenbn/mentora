@@ -2,18 +2,156 @@
 
 import dynamic from "next/dynamic";
 import { useRef, useState } from "react";
-import { Editor, toRichText } from "tldraw";
+import {
+  ArrowToolbarItem,
+  DefaultStylePanel,
+  DrawToolbarItem,
+  Editor,
+  EraserToolbarItem,
+  HandToolbarItem,
+  HighlightToolbarItem,
+  RectangleToolbarItem,
+  SelectToolbarItem,
+  TextToolbarItem,
+  TldrawUiMenuContextProvider,
+  TldrawUiToolbar,
+  toRichText,
+} from "tldraw";
+import { TutorControls } from "@/features/tutor/TutorControls";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
 
 type TutorAnnotation = {
-  // tmp, will add more fields later
   text: string;
   x: number;
   y: number;
 };
+
+function CanvasToolbar() {
+  return (
+    <TldrawUiToolbar
+      className="absolute! left-4! top-1/2! z-20! -translate-y-1/2!"
+      label="Drawing tools"
+      orientation="vertical"
+      tooltipSide="right"
+    >
+      <TldrawUiMenuContextProvider sourceId="toolbar" type="toolbar">
+        <SelectToolbarItem />
+        <HandToolbarItem />
+        <DrawToolbarItem />
+        <HighlightToolbarItem />
+        <TextToolbarItem />
+        <ArrowToolbarItem />
+        <RectangleToolbarItem />
+        <EraserToolbarItem />
+      </TldrawUiMenuContextProvider>
+    </TldrawUiToolbar>
+  );
+}
+
+function CanvasPanel({
+  annotation,
+  onAnnotationChange,
+  onDrawAnnotation,
+}: {
+  annotation: TutorAnnotation;
+  onAnnotationChange: (annotation: TutorAnnotation) => void;
+  onDrawAnnotation: (annotation: TutorAnnotation) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        aria-controls="canvas-panel"
+        aria-expanded={open}
+        aria-label={open ? "Close draw options" : "Open draw options"}
+        className={`absolute top-1/2 z-40 -translate-y-1/2 rounded-l-xl bg-slate-950 px-2 py-4 text-xs font-semibold tracking-wide text-white shadow transition-[right] duration-200 [writing-mode:vertical-rl] ${open ? "right-72" : "right-0"}`}
+        onClick={() => setOpen((isOpen) => !isOpen)}
+      >
+        tbd
+      </button>
+      <aside
+        className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto bg-white p-5 shadow-2xl transition-transform duration-200 ${open ? "translate-x-0" : "translate-x-full"}`}
+        id="canvas-panel"
+      >
+        <section className="mt-6">
+          <h3 className="text-sm font-semibold text-slate-950">Palette</h3>
+          <div className="mt-2 rounded-xl border border-slate-200">
+            <DefaultStylePanel isMobile />
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <h3 className="text-sm font-semibold text-slate-950">Tutor</h3>
+          <div className="mt-2">
+            <TutorControls />
+          </div>
+        </section>
+
+        <form
+          className="mt-6 border-t border-slate-200 pt-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onDrawAnnotation(annotation);
+          }}
+        >
+          <h3 className="text-sm font-semibold text-slate-950">
+            Test tutor annotation
+          </h3>
+          <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-700">
+            Text
+            <input
+              className="rounded border border-slate-300 px-2 py-1"
+              value={annotation.text}
+              onChange={(event) =>
+                onAnnotationChange({ ...annotation, text: event.target.value })
+              }
+            />
+          </label>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <label className="grid gap-1 text-xs font-semibold text-slate-700">
+              X
+              <input
+                className="rounded border border-slate-300 px-2 py-1"
+                type="number"
+                value={annotation.x}
+                onChange={(event) =>
+                  onAnnotationChange({
+                    ...annotation,
+                    x: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+            <label className="grid gap-1 text-xs font-semibold text-slate-700">
+              Y
+              <input
+                className="rounded border border-slate-300 px-2 py-1"
+                type="number"
+                value={annotation.y}
+                onChange={(event) =>
+                  onAnnotationChange({
+                    ...annotation,
+                    y: Number(event.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+          <button
+            className="mt-3 hover:cursor-grab rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white"
+            type="submit"
+          >
+            Add tutor note
+          </button>
+        </form>
+      </aside>
+    </>
+  );
+}
 
 export function Whiteboard() {
   const editor = useRef<Editor | null>(null);
@@ -23,51 +161,36 @@ export function Whiteboard() {
     y: 200,
   });
 
-  const drawTutorAnnotation = (annotation: TutorAnnotation) => {
+  function drawTutorAnnotation(nextAnnotation: TutorAnnotation) {
     editor.current?.createShape({
       type: "text",
-      x: annotation.x,
-      y: annotation.y,
+      x: nextAnnotation.x,
+      y: nextAnnotation.y,
       meta: { owner: "ai" },
       props: {
-        richText: toRichText(annotation.text),
+        richText: toRichText(nextAnnotation.text),
         color: "red",
         size: "m",
       },
     });
-  };
+  }
 
   return (
     <div className="relative h-full">
       <Tldraw
-        options={{ maxPages: 1 }}
+        hideUi
         onMount={(mountedEditor) => {
           editor.current = mountedEditor;
         }}
-      />
-      <form
-        className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-end gap-2 rounded bg-white p-2 shadow"
-        onSubmit={(event) => {
-          event.preventDefault();
-          drawTutorAnnotation(annotation);
-        }}
+        options={{ maxPages: 1 }}
       >
-        <label className="grid gap-1 text-xs font-semibold text-slate-700">
-          Text
-          <input className="w-36 rounded border border-slate-300 px-2 py-1" value={annotation.text} onChange={(event) => setAnnotation({ ...annotation, text: event.target.value })} />
-        </label>
-        <label className="grid gap-1 text-xs font-semibold text-slate-700">
-          X
-          <input className="w-16 rounded border border-slate-300 px-2 py-1" type="number" value={annotation.x} onChange={(event) => setAnnotation({ ...annotation, x: Number(event.target.value) })} />
-        </label>
-        <label className="grid gap-1 text-xs font-semibold text-slate-700">
-          Y
-          <input className="w-16 rounded border border-slate-300 px-2 py-1" type="number" value={annotation.y} onChange={(event) => setAnnotation({ ...annotation, y: Number(event.target.value) })} />
-        </label>
-        <button className="hover:cursor-grab rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white" type="submit">
-          Add tutor note
-        </button>
-      </form>
+        <CanvasToolbar />
+        <CanvasPanel
+          annotation={annotation}
+          onAnnotationChange={setAnnotation}
+          onDrawAnnotation={drawTutorAnnotation}
+        />
+      </Tldraw>
     </div>
   );
 }
