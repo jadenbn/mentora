@@ -40,6 +40,7 @@ export function Whiteboard() {
   return (
     <div className="relative h-full">
       <Tldraw
+        options={{ maxPages: 1 }}
         onMount={(mountedEditor) => {
           editor.current = mountedEditor;
         }}
