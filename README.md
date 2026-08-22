@@ -1,16 +1,16 @@
 ROLES:
 
-Whiteboard: build the app and canvas
+{jaden} - Whiteboard: build the app and canvas
 
 [TAKEN - andre] - AI/Vision: understand handwritten student work and generate feedback
 
-Course Context: process notes/PDFs and give the AI course-specific knowledge
+[TAKEN - korey] - Course Context: process notes/PDFs and give the AI course-specific knowledge
 
-Backend: APIs, storage, and connecting services
+[TAKEN - andre] - Backend: APIs, storage, and connecting services
 
-Learning Engine: generate questions and track/adapt to student ability
+[TAKEN - ren] - Learning Engine: generate questions and track/adapt to student ability
 
-Integration: connect everything, deploy it, and make the demo reliable
+{jaden} - Integration: connect everything, deploy it, and make the demo reliable
 
 # mentora
 yay!
