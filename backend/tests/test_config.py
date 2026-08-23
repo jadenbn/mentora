@@ -6,7 +6,12 @@ runs on a laptop with a single credential.
 
 from __future__ import annotations
 
-from app.config import REQUIRED_SETTINGS, TutorSettings, missing_settings
+from app.config import (
+    REQUIRED_SETTINGS,
+    TutorSettings,
+    cors_allow_origins,
+    missing_settings,
+)
 
 
 def test_only_a_gemini_key_is_required(monkeypatch):
@@ -49,3 +54,24 @@ def test_an_empty_override_falls_back_rather_than_sending_a_blank_model(monkeypa
 def test_the_model_is_overridable_without_a_code_change(monkeypatch):
     monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
     assert TutorSettings.from_environment().gemini_model == "gemini-3-flash-preview"
+
+
+def test_cors_defaults_to_the_local_frontend(monkeypatch):
+    monkeypatch.delenv("CORS_ALLOW_ORIGINS", raising=False)
+    assert cors_allow_origins() == ["http://localhost:3000"]
+
+
+def test_cors_accepts_extra_origins_for_another_device(monkeypatch):
+    # A tablet on the network sends the dev machine's address as its Origin.
+    monkeypatch.setenv(
+        "CORS_ALLOW_ORIGINS", "http://localhost:3000, http://192.168.1.20:3000"
+    )
+    assert cors_allow_origins() == [
+        "http://localhost:3000",
+        "http://192.168.1.20:3000",
+    ]
+
+
+def test_an_empty_cors_override_falls_back_rather_than_blocking_everything(monkeypatch):
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "")
+    assert cors_allow_origins() == ["http://localhost:3000"]

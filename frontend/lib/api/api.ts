@@ -1,15 +1,29 @@
 import type { NormalizedBounds, TutorMode, TutorResponse } from "@/types/tutor";
 
-/** Where the backend lives when NEXT_PUBLIC_API_BASE_URL is not set. */
-const DEFAULT_API_BASE_URL = "http://localhost:8000";
+/** The port the FastAPI backend listens on in development. */
+const DEFAULT_API_PORT = 8000;
 
 /**
- * Falling back to same-origin is a trap: the request quietly posts to the Next
- * dev server and 404s at :3000, which reads as a missing route rather than a
- * missing environment variable. Default to the local backend instead.
+ * Where the backend lives.
+ *
+ * Defaults to the same host the page was served from, on the backend's port.
+ * That covers localhost and a phone or tablet hitting the dev server over the
+ * network, where a hardcoded "localhost" would mean the tablet itself.
+ *
+ * Never falls back to same-origin: an empty base posts to the Next dev server
+ * and 404s at :3000, which reads as a missing route rather than a config gap.
  */
-export const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE_URL;
+export function apiBaseUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (configured) {
+    return configured;
+  }
+  if (typeof window === "undefined") {
+    return `http://localhost:${DEFAULT_API_PORT}`;
+  }
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}:${DEFAULT_API_PORT}`;
+}
 
 export class TutorApiError extends Error {
   readonly status: number;
@@ -69,7 +83,7 @@ export async function analyzeCanvas(args: {
   form.append("canvas_image", args.canvasImage, "canvas.png");
   form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
 
-  const response = await fetch(`${apiBaseUrl}/api/tutor/analyze`, {
+  const response = await fetch(`${apiBaseUrl()}/api/tutor/analyze`, {
     method: "POST",
     body: form,
     signal: args.signal,

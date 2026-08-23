@@ -6,13 +6,13 @@ load_dotenv()
 
 from app.api.documents import router as documents_router  # noqa: E402
 from app.api.tutor import router as tutor_router  # noqa: E402
-from app.config import missing_settings  # noqa: E402
+from app.config import cors_allow_origins, missing_settings  # noqa: E402
 
 app = FastAPI(title="Mentora API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=cors_allow_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )

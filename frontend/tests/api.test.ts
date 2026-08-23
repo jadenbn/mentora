@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { analyzeCanvas, TutorApiError } from "@/lib/api/api";
+import { analyzeCanvas, apiBaseUrl, TutorApiError } from "@/lib/api/api";
 
 const IMAGE = new Blob(["png"], { type: "image/png" });
 
@@ -50,6 +50,19 @@ describe("request construction", () => {
     const spy = mockFetch(ok());
     await call();
     expect(spy.mock.calls[0][0]).toMatch(/^https?:\/\//);
+  });
+
+  it("targets the host the page came from, not a hardcoded localhost", async () => {
+    // A tablet on the network serves the page from the dev machine's address;
+    // "localhost" there would mean the tablet itself.
+    const spy = mockFetch(ok());
+    await call();
+    expect(spy.mock.calls[0][0]).toContain(window.location.hostname);
+  });
+
+  it("prefers an explicit NEXT_PUBLIC_API_BASE_URL when one is set", async () => {
+    expect(typeof apiBaseUrl()).toBe("string");
+    expect(apiBaseUrl()).toMatch(/^https?:\/\/[^/]+$/);
   });
 
   it("sends the course, the mode, and the image", async () => {
