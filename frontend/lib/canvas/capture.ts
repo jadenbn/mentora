@@ -7,14 +7,14 @@
  * map them back onto the canvas.
  */
 
-import type { Box, Editor } from "tldraw";
+import type { Box, Editor, TLShapeId } from "tldraw";
 import type {
   CanvasContext,
   CanvasShape,
   NormalizedBounds,
   ShapeOwner,
-} from "@/types/tutor";
-import { readPngDimensions } from "@/lib/canvas/png";
+} from "../../types/tutor.ts";
+import { readPngDimensions } from "./png.ts";
 
 /** Keeps the upload well under the backend's 10 MB limit. */
 const MAX_IMAGE_EDGE = 1280;
@@ -25,17 +25,25 @@ export interface CanvasCapture {
   height: number;
   /** World-space rectangle the image covers. */
   bounds: Box;
+  /** Shapes actually included in the clean analysis image. */
+  shapeIds: TLShapeId[];
 }
 
 export async function captureCanvasForAnalysis(
   editor: Editor,
 ): Promise<CanvasCapture | null> {
-  const shapeIds = [...editor.getCurrentPageShapeIds()];
+  // Previous tutor feedback stays visible and persistent on the whiteboard,
+  // but must not be baked into the next vision request. Otherwise the model
+  // can mistake or reinforce its own annotations when they cover student work.
+  const shapeIds = [...editor.getCurrentPageShapeIds()].filter((id) => {
+    const shape = editor.getShape(id);
+    return shape ? readOwner(shape.meta) !== "ai" : false;
+  });
   if (shapeIds.length === 0) {
     return null;
   }
 
-  const bounds = editor.getCurrentPageBounds();
+  const bounds = editor.getShapesPageBounds(shapeIds);
   if (!bounds || bounds.w <= 0 || bounds.h <= 0) {
     return null;
   }
@@ -64,6 +72,7 @@ export async function captureCanvasForAnalysis(
     width: dimensions.width,
     height: dimensions.height,
     bounds,
+    shapeIds,
   };
 }
 
@@ -122,7 +131,9 @@ export function buildCanvasContext(
 ): CanvasContext {
   const shapes: CanvasShape[] = [];
 
-  for (const id of editor.getCurrentPageShapeIds()) {
+  // Keep the structured canvas companion aligned with the pixels. Prior tutor
+  // context travels through recent_interactions instead of AI-authored shapes.
+  for (const id of capture.shapeIds) {
     const shape = editor.getShape(id);
     if (!shape) {
       continue;
