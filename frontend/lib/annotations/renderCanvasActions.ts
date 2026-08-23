@@ -11,11 +11,8 @@
 
 import { createShapeId, toRichText } from "tldraw";
 import type { Box, Editor, TLShapePartial, TLShapeId } from "tldraw";
-import type {
-  CanvasAction,
-  NormalizedBounds,
-  NormalizedPoint,
-} from "@/types/tutor";
+import { toWorldPoint, toWorldRect } from "@/lib/annotations/geometry";
+import type { CanvasAction, NormalizedBounds } from "@/types/tutor";
 
 /** Marks every shape this module creates, so AI output stays distinguishable. */
 export const AI_SHAPE_OWNER = "ai";
@@ -80,22 +77,6 @@ function deleteWhere(
   if (doomed.length > 0) {
     editor.deleteShapes(doomed);
   }
-}
-
-function toWorldPoint(point: NormalizedPoint, frame: Box) {
-  return {
-    x: frame.x + point.x * frame.w,
-    y: frame.y + point.y * frame.h,
-  };
-}
-
-function toWorldRect(target: NormalizedBounds, frame: Box) {
-  return {
-    x: frame.x + target.x * frame.w,
-    y: frame.y + target.y * frame.h,
-    w: Math.max(1, target.width * frame.w),
-    h: Math.max(1, target.height * frame.h),
-  };
 }
 
 function metaFor(action: CanvasAction, context: RenderContext): AiShapeMeta {
