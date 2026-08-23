@@ -1,4 +1,6 @@
 import type { TutorRequest, TutorResponse } from "@/types/tutor";
+import { messageForStatus } from "@/lib/api/errors";
+import { validateTutorRequest } from "@/lib/tutor/requestValidation";
 
 export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
@@ -11,31 +13,6 @@ export class TutorApiError extends Error {
     this.name = "TutorApiError";
     this.status = status;
     this.detail = detail;
-  }
-}
-
-/** Maps the backend's documented failure codes onto something a user can read. */
-function messageForStatus(status: number, detail: unknown): string {
-  switch (status) {
-    case 413:
-      return "The canvas image is too large to analyze.";
-    case 415:
-      return "The canvas image format is not supported.";
-    case 422:
-      return "The tutor request was rejected as invalid.";
-    case 503: {
-      const missing = (detail as { missing_settings?: string[] } | null)
-        ?.missing_settings;
-      return missing?.length
-        ? `Tutor is not configured. Missing: ${missing.join(", ")}.`
-        : "Tutor is not configured on the server.";
-    }
-    case 502:
-      return "The tutor is temporarily unavailable.";
-    case 504:
-      return "The tutor took too long to respond.";
-    default:
-      return `Tutor request failed (${status}).`;
   }
 }
 
@@ -52,6 +29,8 @@ export async function analyzeCanvas(args: {
   selectionImage?: Blob | null;
   signal?: AbortSignal;
 }): Promise<TutorResponse> {
+  validateTutorRequest(args.request);
+
   const form = new FormData();
   form.append("payload", JSON.stringify(args.request));
   form.append("canvas_image", args.canvasImage, "canvas.png");

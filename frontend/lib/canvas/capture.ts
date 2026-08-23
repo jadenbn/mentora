@@ -14,6 +14,7 @@ import type {
   NormalizedBounds,
   ShapeOwner,
 } from "@/types/tutor";
+import { readPngDimensions } from "@/lib/canvas/png";
 
 /** Keeps the upload well under the backend's 10 MB limit. */
 const MAX_IMAGE_EDGE = 2048;
@@ -53,10 +54,15 @@ export async function captureCanvasForAnalysis(
     return null;
   }
 
+  // tldraw's returned width/height describe its logical export bounds and may
+  // be fractional. The versioned tutor schema requires the encoded image's
+  // integer pixel dimensions, which PNG stores in the IHDR header.
+  const dimensions = await readPngDimensions(image.blob);
+
   return {
     blob: image.blob,
-    width: image.width,
-    height: image.height,
+    width: dimensions.width,
+    height: dimensions.height,
     bounds,
   };
 }
