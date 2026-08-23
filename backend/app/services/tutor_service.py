@@ -48,12 +48,14 @@ class TutorService:
         canvas_mime_type: str,
         selection_image: bytes | None,
         selection_mime_type: str | None,
+        seeded_taxonomy_fallback: list[dict] | None = None,
     ) -> TutorServiceResult:
         interaction_id = uuid4().hex
         course_context = await retrieve_course_context(
             request,
             top_k=self.settings.retrieval_top_k,
             retriever=self.retriever,
+            seeded_taxonomy_fallback=seeded_taxonomy_fallback,
         )
         agent_context = {
             "request": request.model_dump(mode="json", exclude_none=True),
@@ -70,6 +72,11 @@ class TutorService:
             selection_mime_type=selection_mime_type,
         )
         workflow_result = self._apply_safety_policy(request, workflow_result)
+        if course_context.used_seeded_taxonomy_fallback:
+            workflow_result.plan.warnings.append(
+                "No uploaded course excerpts were found; feedback is grounded in "
+                "the built-in seeded course taxonomy."
+            )
 
         events = [
             LearningEvent(

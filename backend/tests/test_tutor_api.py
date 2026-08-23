@@ -18,6 +18,7 @@ from app.main import app
 from app.models.attempt import Attempt
 from app.services.tutor_context import CourseContextUnavailable
 from app.services.tutor_service import TutorService
+from app.services.taxonomy import load_taxonomy
 from tests.helpers import PNG_BYTES, retrieval_results, tutor_request, workflow_result
 
 
@@ -106,6 +107,54 @@ def test_tutor_accepts_valid_multipart_request() -> None:
     assert body["grounding_references"][0]["filename"] == "lecture-3.pdf"
 
 
+def test_tutor_api_uses_seeded_taxonomy_after_empty_retrieval() -> None:
+    test_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(test_engine)
+    with Session(test_engine) as session:
+        session.add_all(load_taxonomy("calc1"))
+        session.commit()
+
+    def learning_session():
+        with Session(test_engine) as session:
+            yield session
+
+    service = TutorService(
+        settings=fake_service().settings,
+        workflow=FakeWorkflow(),
+        retriever=lambda **_kwargs: [],
+    )
+    base_request = tutor_request()
+    request = base_request.model_copy(
+        update={
+            "course_id": "calc1",
+            "problem": base_request.problem.model_copy(
+                update={"expected_skills": ["calc1.derivatives.chain-rule"]}
+            ),
+        }
+    )
+    app.dependency_overrides[get_tutor_service] = lambda: service
+    app.dependency_overrides[get_session] = learning_session
+    try:
+        with patch.dict(os.environ, REQUIRED_ENV, clear=True), TestClient(app) as client:
+            response = client.post(
+                "/api/tutor/analyze",
+                data={"payload": request.model_dump_json()},
+                files={"canvas_image": ("canvas.png", PNG_BYTES, "image/png")},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert response.json()["grounding_references"][0]["filename"] == (
+        "calc1-seeded-taxonomy"
+    )
+    assert "built-in seeded course taxonomy" in response.json()["warnings"][0]
+
+
 def test_tutor_modes_do_not_create_mastery_attempts() -> None:
     test_engine = create_engine(
         "sqlite://",
@@ -118,7 +167,20 @@ def test_tutor_modes_do_not_create_mastery_attempts() -> None:
         with Session(test_engine) as session:
             yield session
 
-    app.dependency_overrides[get_tutor_service] = fake_service
+    workflow = FakeWorkflow()
+    workflow.calls = []
+
+    async def record_mode(**kwargs):
+        workflow.calls.append(kwargs["mode"].value)
+        return workflow_result()
+
+    workflow.run = record_mode
+    service = TutorService(
+        settings=fake_service().settings,
+        workflow=workflow,
+        retriever=lambda **_kwargs: retrieval_results(),
+    )
+    app.dependency_overrides[get_tutor_service] = lambda: service
     app.dependency_overrides[get_session] = learning_session
     try:
         with patch.dict(os.environ, REQUIRED_ENV, clear=True), TestClient(app) as client:
@@ -126,6 +188,7 @@ def test_tutor_modes_do_not_create_mastery_attempts() -> None:
             assert post_tutor(client, mode="stuck").status_code == 200
         with Session(test_engine) as session:
             assert session.exec(select(Attempt)).all() == []
+        assert workflow.calls == ["hint", "stuck"]
     finally:
         app.dependency_overrides.clear()
 

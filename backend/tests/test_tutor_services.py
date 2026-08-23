@@ -7,6 +7,7 @@ import hashlib
 import hmac
 
 import httpx
+import pytest
 
 from app.config import TutorSettings
 from app.schemas.tutor import (
@@ -20,7 +21,11 @@ from app.schemas.tutor import (
     WorkStatus,
 )
 from app.services.learning_events import publish_learning_events, webhook_signature
-from app.services.tutor_context import build_retrieval_query
+from app.services.tutor_context import (
+    CourseContextUnavailable,
+    build_retrieval_query,
+    retrieve_course_context,
+)
 from app.services.tutor_service import TutorService
 from tests.helpers import PNG_BYTES, retrieval_results, tutor_request, workflow_result
 
@@ -54,6 +59,83 @@ def test_retrieval_query_uses_student_text_but_not_prior_ai_text() -> None:
 
     assert "f'(x) = x" in query
     assert "The AI said 2x" not in query
+
+
+def test_pinecone_results_take_precedence_over_seeded_taxonomy() -> None:
+    result = asyncio.run(
+        retrieve_course_context(
+            tutor_request(),
+            top_k=5,
+            retriever=retriever,
+            seeded_taxonomy_fallback=[
+                {
+                    "text": "Seeded skill description",
+                    "filename": "calc1-seeded-taxonomy",
+                    "page": 1,
+                    "score": 1.0,
+                }
+            ],
+        )
+    )
+
+    assert result.used_seeded_taxonomy_fallback is False
+    assert result.references[0].filename == "lecture-3.pdf"
+
+
+def test_empty_pinecone_results_use_seeded_taxonomy_with_visible_warning() -> None:
+    fake = FakeWorkflow(workflow_result())
+    service = TutorService(
+        settings=settings(),
+        workflow=fake,
+        retriever=lambda **_kwargs: [],
+    )
+
+    result = asyncio.run(
+        service.analyze(
+            request=tutor_request(),
+            canvas_image=PNG_BYTES,
+            canvas_mime_type="image/png",
+            selection_image=None,
+            selection_mime_type=None,
+            seeded_taxonomy_fallback=[
+                {
+                    "text": "Skill: Power rule\nDescription: Differentiate x^n.",
+                    "filename": "calc1-seeded-taxonomy",
+                    "page": 1,
+                    "document_type": "course_taxonomy",
+                    "score": 1.0,
+                }
+            ],
+        )
+    )
+
+    assert result.response.grounding_references[0].filename == "calc1-seeded-taxonomy"
+    assert "built-in seeded course taxonomy" in result.response.warnings[0]
+    assert fake.calls[0]["context"]["retrieved_course_context"][0][
+        "document_type"
+    ] == "course_taxonomy"
+
+
+def test_pinecone_failure_is_not_hidden_by_seeded_taxonomy() -> None:
+    def failing_retriever(**_kwargs):
+        raise RuntimeError("provider unavailable")
+
+    with pytest.raises(CourseContextUnavailable, match="retrieval failed"):
+        asyncio.run(
+            retrieve_course_context(
+                tutor_request(),
+                top_k=5,
+                retriever=failing_retriever,
+                seeded_taxonomy_fallback=[
+                    {
+                        "text": "Seeded skill description",
+                        "filename": "calc1-seeded-taxonomy",
+                        "page": 1,
+                        "score": 1.0,
+                    }
+                ],
+            )
+        )
 
 
 def test_service_enriches_learning_events_and_queues_webhook() -> None:

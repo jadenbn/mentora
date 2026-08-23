@@ -18,6 +18,7 @@ class CourseContextUnavailable(RuntimeError):
 class RetrievedCourseContext:
     excerpts: list[dict]
     references: list[GroundingReference]
+    used_seeded_taxonomy_fallback: bool = False
 
 
 def build_retrieval_query(request: TutorRequest) -> str:
@@ -47,6 +48,7 @@ async def retrieve_course_context(
     *,
     top_k: int,
     retriever: Callable[..., list[dict]] = query_similar,
+    seeded_taxonomy_fallback: list[dict] | None = None,
 ) -> RetrievedCourseContext:
     query = build_retrieval_query(request)
     try:
@@ -59,6 +61,10 @@ async def retrieve_course_context(
     except Exception as exc:  # provider errors are translated at the API boundary
         raise CourseContextUnavailable("course context retrieval failed") from exc
 
+    used_seeded_taxonomy_fallback = False
+    if not results and seeded_taxonomy_fallback:
+        results = seeded_taxonomy_fallback
+        used_seeded_taxonomy_fallback = True
     if not results:
         raise CourseContextUnavailable("no course context was found for this request")
 
@@ -80,4 +86,8 @@ async def retrieve_course_context(
                 score=float(result.get("score", 0)),
             )
         )
-    return RetrievedCourseContext(excerpts=excerpts, references=references)
+    return RetrievedCourseContext(
+        excerpts=excerpts,
+        references=references,
+        used_seeded_taxonomy_fallback=used_seeded_taxonomy_fallback,
+    )

@@ -16,6 +16,7 @@ from app.services.learning_events import publish_learning_events
 from app.services.student_model_service import get_tutor_snapshot
 from app.services.tutor_context import CourseContextUnavailable
 from app.services.tutor_service import TutorService
+from app.services.tutor_taxonomy import build_seeded_taxonomy_fallback
 
 
 router = APIRouter(prefix="/api/tutor", tags=["tutor"])
@@ -110,6 +111,12 @@ async def analyze_tutor_request(
             )
         }
     )
+    seeded_taxonomy_fallback = build_seeded_taxonomy_fallback(
+        learning_session,
+        course_id=request.course_id,
+        expected_skill_ids=request.problem.expected_skills,
+        limit=service.settings.retrieval_top_k,
+    )
 
     canvas_bytes, canvas_mime_type = await _read_image(
         canvas_image, field_name="canvas_image"
@@ -128,6 +135,7 @@ async def analyze_tutor_request(
             canvas_mime_type=canvas_mime_type,
             selection_image=selection_bytes,
             selection_mime_type=selection_mime_type,
+            seeded_taxonomy_fallback=seeded_taxonomy_fallback,
         )
     except CourseContextUnavailable as exc:
         raise HTTPException(
