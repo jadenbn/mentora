@@ -315,7 +315,7 @@ Prefer thin route handlers:
 
 ```python
 @router.post("/analyze", response_model=TutorResponse)
-async def analyze(request: TutorRequest) -> TutorResponse:
+async def analyze(mode: TutorMode, canvas_image: bytes) -> TutorResponse:
     return await tutor_service.analyze(request)
 ```
 
