@@ -241,23 +241,26 @@ When changing a shared schema:
 - coordinate with affected teammates
 
 ## 15. Tutor Request
-Conceptual request:
-```json
-{
-  "course_id": "course_123",
-  "session_id": "session_456",
-  "problem_id": "problem_789",
-  "mode": "hint",
-  "canvas_image": "...",
-  "selected_region": {
-    "x": 0.2,
-    "y": 0.4,
-    "width": 0.3,
-    "height": 0.2
-  }
-}
+
+`POST /api/tutor/analyze` is implemented as multipart form data:
+
+```text
+payload          JSON TutorRequest, schema_version 1.0
+canvas_image     required PNG, JPEG, or WebP; maximum 10 MB
+selection_image  optional crop of the selected region
 ```
-Assemble large course context server-side rather than sending it from the browser every time.
+
+`TutorRequest` includes request/user/course/session/problem identifiers, tutor
+mode and trigger, structured problem and course metadata, canvas dimensions and
+viewport, shapes with `system|student|ai` ownership, normalized selection,
+recent tutor interactions, student-model snapshot, optional transcript or
+instruction, locale, timezone, and renderer capabilities.
+
+The browser sends identifiers and compact structured context. The backend
+retrieves the relevant course excerpts through the existing course-context
+service; large document context is never sent repeatedly by the browser.
+
+The exact versioned contract and examples live in `TUTOR_AGENT.md`.
 
 ## 16. Tutor Modes
 Backend-facing enum:
@@ -270,35 +273,28 @@ stuck
 Prompt/service behavior must differ by mode.
 
 ## 17. Structured Tutor Response
-Conceptual Pydantic shape:
-```python
-from typing import Literal
-from pydantic import BaseModel
 
-class Bounds(BaseModel):
-    x: float
-    y: float
-    width: float | None = None
-    height: float | None = None
+The implemented response contains:
 
-class TutorAnnotation(BaseModel):
-    type: Literal[
-        "text", "math", "arrow", "circle",
-        "underline", "highlight", "check", "cross"
-    ]
-    target: Bounds | None = None
-    x: float | None = None
-    y: float | None = None
-    text: str | None = None
-    latex: str | None = None
-
-class TutorResponse(BaseModel):
-    status: Literal["correct", "incorrect", "partial", "uncertain"]
-    annotations: list[TutorAnnotation]
-    summary: str | None = None
+```text
+interaction_id and request_id
+status and confidence
+canvas_actions (maximum 12)
+grounding_references and warnings
+course_boundary decision
+learning_events and learning_delivery
 ```
-This schema is conceptual, not frozen.
-The invariant is: **validated structured output before tldraw rendering**.
+
+`canvas_actions` is a discriminated union of `text`, `math`, `arrow`,
+`circle`, `underline`, `highlight`, `check`, and `cross`. Each action validates
+only the fields appropriate to its type. Text and math use a normalized
+position, arrows use normalized start/end points, and target actions use a
+normalized bounding box.
+
+Gemini output is constrained by a schema and then validated independently with
+Pydantic. The backend applies an additional deterministic policy for uncertain
+analysis, course boundaries, and client-supported actions. The renderer never
+receives arbitrary tldraw operations.
 
 ## 18. Coordinates
 Prefer normalized image-space coordinates at the AI/API boundary:
@@ -554,6 +550,13 @@ timestamp
 ```
 Do not make the core tutor loop depend on a sophisticated model.
 
+Tutor analysis now returns versioned learning events with topic, skill,
+strength/mistake/progress/help-usage type, outcome, evidence, optional mistake
+tag, confidence, tutor mode, difficulty, and request/session identifiers. When
+`LEARNING_METRICS_WEBHOOK_URL` is configured, the backend posts these events in
+the background. Delivery is best effort and non-blocking; the response copy is
+the fallback until the learning engine provides durable ingestion.
+
 ## 34. Built-In Course
 Support at least one built-in demo course, likely Calculus I.
 Where practical, seed it through the same Course Context mechanisms as uploaded courses to avoid a separate architecture.
@@ -569,6 +572,21 @@ Provider Adapter
 AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
+
+The tutor implementation uses a Google ADK graph:
+
+```text
+Canvas Analyst (Gemini multimodal + CanvasAnalysis schema)
+        ↓ validated ADK state handoff
+Tutor Planner (Gemini + TutorPlan schema)
+        ↓ independent Pydantic validation and safety policy
+TutorResponse
+```
+
+ADK performs up to three bounded transient HTTP attempts. The application makes
+one additional full workflow attempt only when structured output is malformed.
+The model defaults to `gemini-3.7-flash` and is replaceable through
+`GEMINI_MODEL`.
 
 ## 36. Prompt Organization
 Possible layout:
@@ -638,6 +656,12 @@ Validate uploads.
 Treat model output as untrusted.
 Do not execute arbitrary model instructions.
 Avoid logging sensitive course content unnecessarily.
+
+Tutor readiness requires `GEMINI_API_KEY`, `OPENAI_API_KEY`,
+`PINECONE_API_KEY`, and `PINECONE_INDEX_NAME`. `/health` and tutor configuration
+errors report missing variable names only. Image type is verified from file
+signatures rather than trusting multipart headers. Optional learning webhooks
+may be signed with HMAC-SHA256 through `LEARNING_METRICS_WEBHOOK_SECRET`.
 
 ## 42. Testing
 Prioritize deterministic tests for:
