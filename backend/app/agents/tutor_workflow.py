@@ -67,9 +67,20 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
                 "required": ["type", "position", "text", "target"],
             },
         },
+        "uncertainties": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string"},
+                    "target": _BOUNDS,
+                },
+                "required": ["description", "target"],
+            },
+        },
         "summary": {"type": "string", "nullable": True},
     },
-    "required": ["status", "canvas_actions", "summary"],
+    "required": ["status", "canvas_actions", "uncertainties", "summary"],
 }
 
 

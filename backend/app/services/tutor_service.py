@@ -54,4 +54,10 @@ class TutorService:
             prior_annotations=prior_annotations,
         )
         safe = apply_safety_policy(plan)
-        return TutorResponse(interaction_id=uuid4().hex, **safe.model_dump())
+        # Uncertainties stay server-side: the policy has already turned them
+        # into a question placed on the canvas, which is the only form the
+        # student needs.
+        return TutorResponse(
+            interaction_id=uuid4().hex,
+            **safe.model_dump(exclude={"uncertainties"}),
+        )
