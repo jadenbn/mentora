@@ -21,6 +21,7 @@ Whiteboard multipart request
 FastAPI validates JSON + image signatures + 10 MB limits
         ↓
 Korey's query_similar retrieves required course excerpts
+        └── successful empty result on seeded course: expected-skill taxonomy fallback
         ↓
 Google ADK Workflow
   Canvas Analyst → CanvasAnalysis
@@ -84,6 +85,12 @@ Fields:
 
 The backend verifies image signatures. Renaming arbitrary data to `.png` is not
 accepted.
+
+For a PNG request, `canvas.image_width` and `canvas.image_height` must be the
+positive integer pixel dimensions encoded in its IHDR header. Do not send
+tldraw's logical export dimensions: its world-space bounds can be fractional.
+Retain those world-space bounds separately so normalized response actions can
+be mapped back onto the exact exported canvas region.
 
 ### Example payload
 
@@ -247,8 +254,8 @@ and height and remain inside the image. The backend returns at most 12 actions.
 
 ## Whiteboard integration notes for Jaden
 
-1. Export the full analysis image and retain the exact image-to-world transform
-   used for that export.
+1. Export the full analysis image, read its integer pixel dimensions from the
+   PNG IHDR header, and retain the separate exact image-to-world transform.
 2. Mark every structured shape with `system`, `student`, or `ai` ownership.
 3. Convert tldraw shape bounds to normalized image bounds once when building the
    request.
@@ -272,6 +279,14 @@ so the planner applies its stronger scaffolding policy.
 If `client_capabilities.supported_actions` is non-empty, the backend removes
 unsupported actions and adds a warning. An empty list means the client supports
 the complete version `1.0` action set.
+
+Course grounding prefers uploaded Pinecone excerpts. When Pinecone responds
+successfully with no matches for a validated seeded course (currently
+`calc1`), the backend may use only the problem's taxonomy-compatible expected
+skills and their direct prerequisites. The response includes a
+`<course>-seeded-taxonomy` grounding reference and a warning so the fallback is
+visible. Pinecone exceptions still return `502`; taxonomy data does not hide a
+provider outage.
 
 ## Tutor behavior and safety
 
@@ -403,7 +418,7 @@ synchronous status or durable delivery API. Consumers should deduplicate by
 | `400` | An uploaded image is empty. |
 | `413` | An image exceeds 10 MB. |
 | `415` | Image format or signature is invalid. |
-| `422` | `payload` violates the versioned request schema. |
+| `422` | `payload` violates the versioned request schema; the client shows a safe field path when available. |
 | `502` | Required course retrieval or Gemini analysis failed. |
 | `503` | One or more required integration settings are absent. |
 | `504` | The configured tutor workflow timeout was reached. |

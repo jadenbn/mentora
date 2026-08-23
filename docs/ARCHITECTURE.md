@@ -261,6 +261,11 @@ instruction, locale, timezone, and renderer capabilities.
 The browser sends identifiers and compact structured context. The backend
 retrieves the relevant course excerpts through the existing course-context
 service; large document context is never sent repeatedly by the browser.
+Pinecone excerpts remain authoritative. If Pinecone succeeds but returns no
+matches for a course with a validated seed taxonomy, the backend grounds the
+request in only the problem's expected skills and their direct prerequisites.
+The response identifies that fallback in both `warnings` and
+`grounding_references`. Retrieval/provider failures never silently fall back.
 
 The exact versioned contract and examples live in `TUTOR_AGENT.md`.
 
@@ -311,6 +316,12 @@ Example:
 Convert to tldraw/world coordinates in one well-defined frontend adapter.
 Do not scatter conversion logic.
 
+`canvas.image_width` and `canvas.image_height` are the encoded image's positive
+integer pixel dimensions. For PNG exports, the frontend reads these values from
+the IHDR header; tldraw's logical export width/height can be fractional and are
+not valid substitutes. The world-space export bounds remain separate and are
+used only by the renderer to map normalized actions back to tldraw coordinates.
+
 ## 19. Annotation Renderer
 Frontend owns:
 ```text
@@ -330,6 +341,10 @@ async function captureCanvasForAnalysis(): Promise<Blob>
 ```
 Hide low-level tldraw export details from unrelated code.
 Where useful, send image plus structured metadata.
+
+The capture boundary returns both the PNG's header-derived integer pixel
+dimensions and the exact world-space bounds used for export. Client validation
+rejects malformed dimensions before starting a multipart request.
 
 ## 21. Select for AI
 Conceptual representation:
@@ -576,6 +591,12 @@ as unassisted success. Existing SQLite databases receive the additive
 ## 34. Built-In Course
 Support at least one built-in demo course, likely Calculus I.
 Where practical, seed it through the same Course Context mechanisms as uploaded courses to avoid a separate architecture.
+
+The `calc1` seed taxonomy is also the bounded retrieval fallback for tutor
+requests whose Pinecone lookup succeeds with no excerpts. It is not a generic
+replacement for Course Context: only taxonomy-compatible expected skills and
+their direct prerequisites are included, and no fallback occurs during a
+provider outage.
 
 ## 35. AI Provider Boundary
 Avoid scattering provider SDK calls.
