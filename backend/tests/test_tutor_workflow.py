@@ -17,9 +17,11 @@ from app.agents.tutor_workflow import (  # noqa: E402
     TUTOR_PLAN_RESPONSE_SCHEMA,
     GeminiTutorWorkflow,
     drop_nulls,
+    normalize_provider_output,
 )
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout  # noqa: E402
 from app.schemas.tutor import TutorMode  # noqa: E402
+from google.genai import types  # noqa: E402
 from tests import factories as f  # noqa: E402
 
 pytestmark = pytest.mark.provider
@@ -36,6 +38,14 @@ class TestProviderSchemaDialect:
     )
     def test_the_provider_schema_avoids_unsupported_keywords(self, keyword):
         assert keyword not in _walk_keys(TUTOR_PLAN_RESPONSE_SCHEMA)
+
+    def test_generation_is_tuned_for_an_interactive_path(self):
+        agent = GeminiTutorWorkflow(model="m")._build_agent(TutorMode.hint)
+        config = agent.generate_content_config
+        assert config.thinking_config.thinking_level == types.ThinkingLevel.MINIMAL
+        assert config.max_output_tokens == 1_024
+        # Vision tokens dominate; medium keeps handwriting legible for less.
+        assert config.media_resolution == types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
 
     def test_the_provider_schema_offers_only_renderable_actions(self):
         action_types = _find_enum(TUTOR_PLAN_RESPONSE_SCHEMA, "type")
@@ -61,6 +71,46 @@ class TestNullPlaceholders:
     def test_falsy_but_present_values_survive(self):
         # 0 and "" are data; only None is a placeholder.
         assert drop_nulls({"x": 0, "y": "", "z": False}) == {"x": 0, "y": "", "z": False}
+
+
+class TestFirstAttemptValidation:
+    """Every avoidable repair attempt is a second round trip on an
+    interactive path, so provider output is normalised before validating."""
+
+    def test_a_field_from_another_action_is_dropped(self):
+        plan = normalize_provider_output(
+            {"status": "partial", "canvas_actions": [
+                {"type": "text", "position": {"x": 0.1, "y": 0.1},
+                 "text": "hi", "target": {"x": 0, "y": 0, "width": 1, "height": 1}}]}
+        )
+        assert set(plan["canvas_actions"][0]) == {"type", "position", "text"}
+
+    def test_a_marking_action_keeps_only_its_target(self):
+        plan = normalize_provider_output(
+            {"status": "partial", "canvas_actions": [
+                {"type": "circle", "target": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+                 "text": "stray", "position": {"x": 0.5, "y": 0.5}}]}
+        )
+        assert set(plan["canvas_actions"][0]) == {"type", "target"}
+
+    def test_nulls_are_still_stripped(self):
+        plan = normalize_provider_output(
+            {"status": "partial", "canvas_actions": [
+                {"type": "text", "position": {"x": 0.1, "y": 0.1}, "text": "hi", "target": None}],
+             "summary": None}
+        )
+        assert "summary" not in plan
+
+    def test_an_unknown_action_is_left_for_validation_to_reject(self):
+        plan = normalize_provider_output(
+            {"status": "partial", "canvas_actions": [{"type": "hologram", "beam": 1}]}
+        )
+        assert plan["canvas_actions"][0]["type"] == "hologram"
+
+    def test_a_plan_without_actions_is_untouched(self):
+        assert normalize_provider_output({"status": "correct", "canvas_actions": []})[
+            "canvas_actions"
+        ] == []
 
 
 class TestFailureTranslation:

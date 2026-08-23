@@ -73,6 +73,31 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
 }
 
 
+#: The fields each action actually carries. The provider schema is flat, so a
+#: response can name a field belonging to a different action; extra="forbid"
+#: would reject the whole plan and spend a repair round trip on it.
+_ACTION_FIELDS = {
+    "text": {"type", "position", "text"},
+    "circle": {"type", "target"},
+    "check": {"type", "target"},
+    "cross": {"type", "target"},
+}
+
+
+def normalize_provider_output(value: Any) -> Any:
+    """Make provider output validate on the first attempt where it can."""
+    plan = drop_nulls(value)
+    if not isinstance(plan, dict) or not isinstance(plan.get("canvas_actions"), list):
+        return plan
+    actions = []
+    for action in plan["canvas_actions"]:
+        allowed = _ACTION_FIELDS.get(action.get("type")) if isinstance(action, dict) else None
+        actions.append(
+            {k: v for k, v in action.items() if k in allowed} if allowed else action
+        )
+    return {**plan, "canvas_actions": actions}
+
+
 def drop_nulls(value: Any) -> Any:
     """Strip provider null placeholders before strict validation.
 
@@ -114,7 +139,7 @@ class GeminiTutorWorkflow:
                     prior_annotations=prior_annotations,
                     repair=attempt == 1,
                 )
-                return TutorPlan.model_validate(drop_nulls(raw))
+                return TutorPlan.model_validate(normalize_provider_output(raw))
             except (ValidationError, ValueError, KeyError, TypeError) as exc:
                 malformed = exc
                 logger.warning("tutor output failed validation (attempt %d): %s", attempt + 1, exc)
@@ -151,10 +176,16 @@ class GeminiTutorWorkflow:
             output_schema=TUTOR_PLAN_RESPONSE_SCHEMA,
             output_key="tutor_plan",
             generate_content_config=types.GenerateContentConfig(
-                max_output_tokens=2_048,
+                # A four-action plan needs far less than this; the ceiling is
+                # only here to stop a runaway response.
+                max_output_tokens=1_024,
                 thinking_config=types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.LOW
+                    thinking_level=types.ThinkingLevel.MINIMAL
                 ),
+                # Vision tokens dominate a canvas request. Handwriting stays
+                # legible at medium, so the default high resolution is paid
+                # latency for no accuracy.
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
             ),
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,

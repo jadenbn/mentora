@@ -16,7 +16,7 @@ import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
 import type { NormalizedBounds } from "@/types/tutor";
 
 /** Keeps the upload well under the backend's 10 MB limit. */
-const MAX_IMAGE_EDGE = 2048;
+const MAX_IMAGE_EDGE = 1280;
 
 export interface CanvasCapture {
   blob: Blob;
