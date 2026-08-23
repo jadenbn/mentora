@@ -19,6 +19,8 @@ export default async function SessionPage({
     context: isCalculusDemo
       ? {
           prompt_text: "Differentiate y = (3x² + 1)⁴. Show each step.",
+          solution_reference:
+            "Accept 4(3x² + 1)³(6x) and 24x(3x² + 1)³ as complete, equivalent derivatives. Multiplying 4 and 6x is optional simplification.",
           topic: "derivatives",
           difficulty: "medium",
           expected_skills: ["calc1.derivatives.chain-rule"],

@@ -73,6 +73,23 @@ def valid_request_data() -> dict:
 
 
 class TutorSchemaTests(unittest.TestCase):
+    def test_problem_solution_reference_is_optional_and_backward_compatible(self) -> None:
+        without_reference = TutorRequest.model_validate(valid_request_data())
+        self.assertIsNone(without_reference.problem.solution_reference)
+
+        with_reference = without_reference.model_copy(
+            update={
+                "problem": without_reference.problem.model_copy(
+                    update={
+                        "solution_reference": (
+                            "4(3x² + 1)³(6x) and 24x(3x² + 1)³ are equivalent."
+                        )
+                    }
+                )
+            }
+        )
+        self.assertIn("equivalent", with_reference.problem.solution_reference or "")
+
     def test_accepts_context_with_all_shape_owners(self) -> None:
         request = TutorRequest.model_validate(valid_request_data())
 

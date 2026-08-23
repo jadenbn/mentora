@@ -70,6 +70,7 @@ export interface AiSelection {
 
 export interface ProblemContext {
   prompt_text: string;
+  solution_reference?: string | null;
   latex_blocks?: string[];
   topic?: string | null;
   difficulty?: string | null;

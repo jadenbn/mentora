@@ -367,6 +367,78 @@ def test_uncertain_work_removes_grading_marks_and_learning_claims() -> None:
     assert result.response.learning_events == []
 
 
+@pytest.mark.parametrize("mode", ["mark", "hint", "explain", "stuck"])
+def test_correct_work_cannot_be_turned_into_a_redundant_correction(mode: str) -> None:
+    mistaken_observation = LearningObservation(
+        type=LearningObservationType.mistake,
+        topic="derivatives",
+        skill="chain rule",
+        outcome=WorkStatus.incorrect,
+        evidence="The coefficients were not combined.",
+        mistake_tag="optional-simplification",
+        confidence=0.9,
+    )
+    raw = workflow_result()
+    raw = raw.__class__(
+        analysis=CanvasAnalysis(
+            status="correct",
+            confidence=0.96,
+            current_work_summary=(
+                "4(3x² + 1)³(6x) is equivalent to 24x(3x² + 1)³."
+            ),
+            issues=["The coefficients could be combined."],
+            learning_observations=[mistaken_observation],
+        ),
+        plan=TutorPlan.model_validate(
+            {
+                "status": "incorrect",
+                "confidence": 0.8,
+                "canvas_actions": [
+                    {
+                        "type": "cross",
+                        "target": {
+                            "x": 0.2,
+                            "y": 0.3,
+                            "width": 0.2,
+                            "height": 0.1,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "position": {"x": 0.5, "y": 0.4},
+                        "text": "Multiply 4 and 6x.",
+                    },
+                ],
+            }
+        ),
+    )
+    service = TutorService(
+        settings=settings(), workflow=FakeWorkflow(raw), retriever=retriever
+    )
+
+    result = asyncio.run(
+        service.analyze(
+            request=tutor_request(mode=mode),
+            canvas_image=PNG_BYTES,
+            canvas_mime_type="image/png",
+            selection_image=None,
+            selection_mime_type=None,
+        )
+    )
+
+    assert result.response.status == WorkStatus.correct
+    assert {action.type for action in result.response.canvas_actions} <= {
+        "check",
+        "text",
+    }
+    assert "Multiply" not in " ".join(
+        action.text
+        for action in result.response.canvas_actions
+        if action.type == "text"
+    )
+    assert result.response.learning_events == []
+
+
 def test_webhook_signature_uses_hmac_sha256() -> None:
     body = b'{"hello":"world"}'
     expected = hmac.new(b"secret", body, hashlib.sha256).hexdigest()

@@ -15,6 +15,7 @@ from app.schemas.tutor import (
     LearningEvent,
     LearningWebhookEnvelope,
     TextAction,
+    TutorMode,
     TutorRequest,
     TutorResponse,
     WorkStatus,
@@ -169,8 +170,9 @@ class TutorService:
         request: TutorRequest,
         result: TutorWorkflowResult,
     ) -> TutorWorkflowResult:
+        analysis = result.analysis.model_copy(deep=True)
         plan = result.plan.model_copy(deep=True)
-        boundary = result.analysis.course_boundary
+        boundary = analysis.course_boundary
         if not boundary.requires_confirmation:
             boundary = plan.course_boundary
         if boundary.requires_confirmation:
@@ -203,7 +205,51 @@ class TutorService:
                 plan.warnings.append("Some actions were omitted because the client does not support them.")
             plan.canvas_actions = filtered
 
-        if result.analysis.status == WorkStatus.uncertain:
+        if analysis.status == WorkStatus.correct and not boundary.requires_confirmation:
+            # A completed solution must never be turned back into an error by a
+            # contradictory planner response. Keep at most one valid spatial
+            # check and use deterministic, mode-specific completion language.
+            checks = [
+                action for action in plan.canvas_actions if action.type == "check"
+            ][:1]
+            completion_text = TutorService._correct_completion_text(request.mode)
+            plan.status = WorkStatus.correct
+            plan.summary = completion_text
+            plan.canvas_actions = checks
+            if request.mode != TutorMode.mark or not checks:
+                position = {"x": 0.5, "y": 0.5}
+                existing_text = next(
+                    (
+                        action
+                        for action in result.plan.canvas_actions
+                        if action.type == "text"
+                    ),
+                    None,
+                )
+                if existing_text is not None:
+                    position = existing_text.position.model_dump()
+                elif request.selection:
+                    position = {
+                        "x": request.selection.bounds.x,
+                        "y": request.selection.bounds.y,
+                    }
+                plan.canvas_actions.append(
+                    TextAction(
+                        type="text",
+                        position=position,
+                        text=completion_text,
+                        purpose="confirm_complete_work",
+                    )
+                )
+            analysis.issues = []
+            analysis.learning_observations = [
+                observation
+                for observation in analysis.learning_observations
+                if observation.type.value != "mistake"
+                and observation.outcome == WorkStatus.correct
+            ]
+
+        if analysis.status == WorkStatus.uncertain:
             plan.status = WorkStatus.uncertain
             plan.canvas_actions = [
                 action
@@ -227,4 +273,18 @@ class TutorService:
                         purpose="request_clarification",
                     )
                 )
-        return TutorWorkflowResult(analysis=result.analysis, plan=plan)
+        return TutorWorkflowResult(analysis=analysis, plan=plan)
+
+    @staticmethod
+    def _correct_completion_text(mode: TutorMode) -> str:
+        return {
+            TutorMode.mark: "Correct—this work completes the problem.",
+            TutorMode.hint: "This is already correct—no additional step is required.",
+            TutorMode.explain: (
+                "This result is mathematically correct; any further algebraic "
+                "simplification is optional."
+            ),
+            TutorMode.stuck: (
+                "You’ve completed the problem correctly—there is no missing next step."
+            ),
+        }[mode]

@@ -96,6 +96,7 @@ class AiSelection(StrictModel):
 
 class ProblemContext(StrictModel):
     prompt_text: str = Field(min_length=1, max_length=20_000)
+    solution_reference: str | None = Field(default=None, max_length=10_000)
     latex_blocks: list[str] = Field(default_factory=list, max_length=100)
     topic: str | None = Field(default=None, max_length=200)
     difficulty: str | None = Field(default=None, max_length=80)
