@@ -1,150 +1,150 @@
-"""API tests for multipart validation, readiness, and safe error translation."""
+"""The HTTP boundary.
+
+Everything crossing it is hostile until proven otherwise: image bytes are
+sniffed rather than trusted, and no provider or configuration detail is ever
+echoed back to the caller.
+"""
 
 from __future__ import annotations
 
 import json
-import os
-from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.agents.tutor_workflow import TutorWorkflowError
+from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.api.tutor import get_tutor_service
-from app.config import TutorSettings
 from app.main import app
-from app.services.tutor_context import CourseContextUnavailable
 from app.services.tutor_service import TutorService
-from tests.helpers import PNG_BYTES, retrieval_results, tutor_request, workflow_result
+from tests import factories as f
 
 
-REQUIRED_ENV = {
-    "GEMINI_API_KEY": "gemini-test-value",
-    "OPENAI_API_KEY": "openai-test-value",
-    "PINECONE_API_KEY": "pinecone-test-value",
-    "PINECONE_INDEX_NAME": "test-index",
-}
+@pytest.fixture
+def workflow():
+    return f.StubWorkflow()
 
 
-class FakeWorkflow:
-    async def run(self, **_kwargs):
-        return workflow_result()
+@pytest.fixture
+def client(workflow, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    app.dependency_overrides[get_tutor_service] = lambda: TutorService(workflow=workflow)
+    yield TestClient(app)
+    app.dependency_overrides.clear()
 
 
-def fake_service() -> TutorService:
-    return TutorService(
-        settings=TutorSettings(
-            gemini_model="test-model",
-            learning_metrics_webhook_url=None,
-            learning_metrics_webhook_secret=None,
-            request_timeout_seconds=2,
-            retrieval_top_k=5,
-        ),
-        workflow=FakeWorkflow(),
-        retriever=lambda **_kwargs: retrieval_results(),
-    )
+def post(client, *, image=f.PNG, mime="image/png", **over):
+    data = {"course_id": "course_demo", "mode": "hint"}
+    data.update({k: v for k, v in over.items() if v is not None})
+    files = {"canvas_image": ("canvas.png", image, mime)} if image is not None else {}
+    return client.post("/api/tutor/analyze", data=data, files=files)
 
 
-def post_tutor(client: TestClient, *, image: bytes = PNG_BYTES, content_type: str = "image/png"):
-    return client.post(
-        "/api/tutor/analyze",
-        data={"payload": tutor_request().model_dump_json()},
-        files={"canvas_image": ("canvas.png", image, content_type)},
-    )
+class TestHappyPath:
+    def test_a_valid_request_returns_a_tutor_response(self, client):
+        response = post(client)
+        assert response.status_code == 200
+        body = response.json()
+        assert set(body) == {"interaction_id", "status", "canvas_actions", "summary"}
+
+    def test_the_mode_is_forwarded_to_the_workflow(self, client, workflow):
+        post(client, mode="explain")
+        assert workflow.last_call["mode"].value == "explain"
+
+    def test_prior_annotations_are_parsed_and_forwarded(self, client, workflow):
+        prior = [f.bounds(), f.bounds(x=0.6)]
+        post(client, prior_annotations=json.dumps(prior))
+        assert len(workflow.last_call["prior_annotations"]) == 2
+
+    def test_prior_annotations_default_to_empty(self, client, workflow):
+        post(client)
+        assert workflow.last_call["prior_annotations"] == []
+
+    @pytest.mark.parametrize("image,mime", [(f.PNG, "image/png"), (f.JPEG, "image/jpeg"), (f.WEBP, "image/webp")])
+    def test_every_supported_image_format_is_accepted(self, client, image, mime):
+        assert post(client, image=image, mime=mime).status_code == 200
 
 
-def test_health_lists_missing_names_without_values() -> None:
-    with patch.dict(os.environ, {}, clear=True), TestClient(app) as client:
-        response = client.get("/health")
+class TestRequestValidation:
+    def test_an_unknown_mode_is_rejected(self, client):
+        assert post(client, mode="roast").status_code == 422
 
-    assert response.status_code == 200
-    tutor_health = response.json()["services"]["tutor"]
-    assert tutor_health["status"] == "not_ready"
-    assert tutor_health["missing_settings"] == list(REQUIRED_ENV)
+    def test_a_missing_course_id_is_rejected(self, client):
+        response = client.post(
+            "/api/tutor/analyze",
+            data={"mode": "hint"},
+            files={"canvas_image": ("c.png", f.PNG, "image/png")},
+        )
+        assert response.status_code == 422
+
+    def test_a_missing_image_is_rejected(self, client):
+        assert post(client, image=None).status_code == 422
+
+    def test_malformed_prior_annotations_are_rejected(self, client):
+        assert post(client, prior_annotations="not json").status_code == 422
+
+    def test_prior_annotations_outside_the_canvas_are_rejected(self, client):
+        off_canvas = json.dumps([{"x": 0.9, "y": 0.1, "width": 0.5, "height": 0.1}])
+        assert post(client, prior_annotations=off_canvas).status_code == 422
 
 
-def test_tutor_requires_all_provider_settings_without_exposing_values() -> None:
-    app.dependency_overrides[get_tutor_service] = fake_service
-    try:
-        with patch.dict(
-            os.environ,
-            {"GEMINI_API_KEY": "super-secret-gemini-value"},
-            clear=True,
-        ), TestClient(app) as client:
-            response = post_tutor(client)
-    finally:
+class TestImageHandling:
+    def test_an_empty_upload_is_rejected(self, client):
+        assert post(client, image=b"").status_code == 400
+
+    def test_a_non_image_upload_is_rejected_on_its_content(self, client):
+        # Declared image/png, actually a PDF. The declaration is not evidence.
+        assert post(client, image=f.NOT_AN_IMAGE, mime="image/png").status_code == 415
+
+    def test_a_declared_type_that_contradicts_the_bytes_is_rejected(self, client):
+        assert post(client, image=f.PNG, mime="image/jpeg").status_code == 415
+
+    def test_an_oversized_image_is_rejected_before_it_reaches_a_provider(self, client, workflow):
+        oversized = f.PNG + b"\x00" * (10 * 1024 * 1024)
+        assert post(client, image=oversized).status_code == 413
+        assert workflow.calls == []
+
+
+class TestConfiguration:
+    def test_an_unconfigured_server_reports_not_ready(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        with TestClient(app) as bare:
+            response = post(bare)
+        assert response.status_code == 503
+        assert "GEMINI_API_KEY" in json.dumps(response.json())
+
+    def test_configuration_errors_never_disclose_a_secret(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "super-secret-value")
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        with TestClient(app) as bare:
+            body = json.dumps(post(bare).json())
+        assert "super-secret-value" not in body
+
+    def test_health_reports_readiness_without_naming_values(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "super-secret-value")
+        with TestClient(app) as ready:
+            body = ready.get("/health").json()
+        assert body["status"] == "ok"
+        assert "super-secret-value" not in json.dumps(body)
+
+
+class TestProviderFailure:
+    def _client(self, error, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        stub = f.StubWorkflow(error=error)
+        app.dependency_overrides[get_tutor_service] = lambda: TutorService(workflow=stub)
+        return TestClient(app)
+
+    def test_a_provider_failure_becomes_a_bad_gateway(self, monkeypatch):
+        client = self._client(TutorWorkflowError("upstream refused"), monkeypatch)
+        assert post(client).status_code == 502
         app.dependency_overrides.clear()
 
-    assert response.status_code == 503
-    body = response.text
-    assert "super-secret-gemini-value" not in body
-    assert "OPENAI_API_KEY" in body
-    assert "GEMINI_API_KEY" not in response.json()["detail"]["missing_settings"]
-
-
-def test_tutor_accepts_valid_multipart_request() -> None:
-    app.dependency_overrides[get_tutor_service] = fake_service
-    try:
-        with patch.dict(os.environ, REQUIRED_ENV, clear=True), TestClient(app) as client:
-            response = post_tutor(client)
-    finally:
+    def test_a_timeout_is_distinguishable_from_a_failure(self, monkeypatch):
+        client = self._client(TutorWorkflowTimeout("took too long"), monkeypatch)
+        assert post(client).status_code == 504
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["status"] == "partial"
-    assert [action["type"] for action in body["canvas_actions"]] == ["text", "circle"]
-    assert body["grounding_references"][0]["filename"] == "lecture-3.pdf"
-
-
-def test_tutor_rejects_spoofed_or_unsupported_image() -> None:
-    app.dependency_overrides[get_tutor_service] = fake_service
-    try:
-        with patch.dict(os.environ, REQUIRED_ENV, clear=True), TestClient(app) as client:
-            response = post_tutor(client, image=b"not an image", content_type="image/png")
-    finally:
+    def test_a_provider_error_message_never_reaches_the_client(self, monkeypatch):
+        client = self._client(TutorWorkflowError("API key sk-abc123 was rejected"), monkeypatch)
+        assert "sk-abc123" not in json.dumps(post(client).json())
         app.dependency_overrides.clear()
-
-    assert response.status_code == 415
-    assert response.json()["detail"] == "canvas_image must be PNG, JPEG, or WebP"
-
-
-def test_tutor_rejects_invalid_payload_without_echoing_input() -> None:
-    app.dependency_overrides[get_tutor_service] = fake_service
-    try:
-        with patch.dict(os.environ, REQUIRED_ENV, clear=True), TestClient(app) as client:
-            response = client.post(
-                "/api/tutor/analyze",
-                data={"payload": json.dumps({"instruction": "private student text"})},
-                files={"canvas_image": ("canvas.png", PNG_BYTES, "image/png")},
-            )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 422
-    assert "private student text" not in response.text
-
-
-def test_tutor_translates_retrieval_and_agent_failures() -> None:
-    class FailingService:
-        settings = fake_service().settings
-
-        def __init__(self, error: Exception):
-            self.error = error
-
-        async def analyze(self, **_kwargs):
-            raise self.error
-
-    for error, expected_status, expected_detail in (
-        (CourseContextUnavailable("raw pinecone error"), 502, "Required course context is temporarily unavailable"),
-        (TutorWorkflowError("tutor workflow timed out"), 504, "Tutor analysis is temporarily unavailable"),
-    ):
-        app.dependency_overrides[get_tutor_service] = lambda error=error: FailingService(error)
-        try:
-            with patch.dict(os.environ, REQUIRED_ENV, clear=True), TestClient(app) as client:
-                response = post_tutor(client)
-        finally:
-            app.dependency_overrides.clear()
-
-        assert response.status_code == expected_status
-        assert response.json()["detail"] == expected_detail
-        assert "raw" not in response.text

@@ -1,177 +1,170 @@
-"""Deterministic tests for the public tutor API contract."""
+"""The wire contract.
+
+These tests are the specification for what the tutor is allowed to say. The
+canvas action union is the security boundary: Gemini cannot express a tldraw
+operation, only one of four shapes with bounded coordinates.
+"""
 
 from __future__ import annotations
 
-import unittest
-from uuid import uuid4
-
+import pytest
 from pydantic import ValidationError
 
 from app.schemas.tutor import (
-    CanvasAnalysis,
-    CanvasContext,
-    CourseMetadata,
-    LearningObservation,
-    LearningObservationType,
+    CanvasAction,
     NormalizedBounds,
-    ProblemContext,
+    NormalizedPoint,
+    TutorMode,
     TutorPlan,
-    TutorRequest,
+    TutorResponse,
     WorkStatus,
 )
+from tests import factories as f
 
 
-def valid_request_data() -> dict:
-    return {
-        "request_id": str(uuid4()),
-        "user_id": "user_1",
-        "course_id": "course_1",
-        "session_id": "session_1",
-        "problem_id": "problem_1",
-        "mode": "hint",
-        "problem": {
-            "prompt_text": "Differentiate f(x) = x^2.",
-            "topic": "derivatives",
-            "difficulty": "easy",
-            "expected_skills": ["power rule"],
-        },
-        "course": {
-            "name": "Calculus I",
-            "covered_topics": ["power rule"],
-        },
-        "canvas": {
-            "image_width": 1200,
-            "image_height": 800,
-            "shapes": [
-                {
-                    "id": "problem",
-                    "owner": "system",
-                    "shape_type": "text",
-                    "text": "Differentiate f(x) = x^2.",
-                    "bounds": {"x": 0.1, "y": 0.1, "width": 0.3, "height": 0.1},
-                },
-                {
-                    "id": "student_step",
-                    "owner": "student",
-                    "shape_type": "draw",
-                    "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1},
-                },
-                {
-                    "id": "old_hint",
-                    "owner": "ai",
-                    "shape_type": "text",
-                    "text": "Recall the power rule",
-                    "bounds": {"x": 0.5, "y": 0.35, "width": 0.2, "height": 0.1},
-                },
-            ],
-        },
-        "selection": {
-            "shape_ids": ["student_step"],
-            "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1},
-        },
-    }
+class TestVocabularies:
+    """Closed enums. A test that pins the exact set catches silent drift into
+    the frontend mirror, which is hand-maintained."""
+
+    def test_tutor_modes_are_the_four_buttons(self):
+        assert {m.value for m in TutorMode} == {"mark", "hint", "explain", "stuck"}
+
+    def test_work_status_keeps_an_uncertain_case(self):
+        # `uncertain` is load-bearing: it is the only thing standing between an
+        # unreadable canvas and a confidently wrong red cross.
+        assert {s.value for s in WorkStatus} == {
+            "correct",
+            "incorrect",
+            "partial",
+            "uncertain",
+        }
 
 
-class TutorSchemaTests(unittest.TestCase):
-    def test_accepts_context_with_all_shape_owners(self) -> None:
-        request = TutorRequest.model_validate(valid_request_data())
+class TestCoordinates:
+    def test_point_accepts_the_unit_square(self):
+        assert NormalizedPoint(x=0.0, y=1.0).y == 1.0
 
-        self.assertEqual(
-            {shape.owner.value for shape in request.canvas.shapes},
-            {"system", "student", "ai"},
-        )
+    @pytest.mark.parametrize("x,y", [(-0.01, 0.5), (0.5, 1.01), (2, 0.5)])
+    def test_point_rejects_coordinates_outside_the_image(self, x, y):
+        with pytest.raises(ValidationError):
+            NormalizedPoint(x=x, y=y)
 
-    def test_rejects_bounds_outside_image(self) -> None:
-        with self.assertRaises(ValidationError):
-            NormalizedBounds(x=0.9, y=0.2, width=0.2, height=0.1)
+    @pytest.mark.parametrize("width,height", [(0, 0.1), (0.1, 0), (-0.2, 0.1)])
+    def test_bounds_reject_a_degenerate_box(self, width, height):
+        with pytest.raises(ValidationError):
+            NormalizedBounds(x=0.1, y=0.1, width=width, height=height)
 
-    def test_rejects_unknown_selected_shape(self) -> None:
-        payload = valid_request_data()
-        payload["selection"]["shape_ids"] = ["does_not_exist"]
+    def test_bounds_must_stay_inside_the_image(self):
+        # An annotation that starts on-canvas and runs off it is a render bug
+        # waiting to happen, so it is refused at the boundary.
+        with pytest.raises(ValidationError):
+            NormalizedBounds(x=0.9, y=0.1, width=0.2, height=0.1)
 
-        with self.assertRaises(ValidationError):
-            TutorRequest.model_validate(payload)
+    def test_bounds_may_touch_the_far_edge(self):
+        assert NormalizedBounds(x=0.8, y=0.1, width=0.2, height=0.1).width == 0.2
 
-    def test_rejects_duplicate_shape_ids(self) -> None:
-        payload = valid_request_data()
-        duplicate = payload["canvas"]["shapes"][0].copy()
-        payload["canvas"]["shapes"].append(duplicate)
 
-        with self.assertRaises(ValidationError):
-            TutorRequest.model_validate(payload)
+class TestCanvasActions:
+    """Exactly four action types. Each validates only its own fields."""
 
-    def test_validates_each_canvas_action_shape(self) -> None:
-        plan = TutorPlan.model_validate(
-            {
-                "status": "partial",
-                "confidence": 0.91,
-                "canvas_actions": [
-                    {
-                        "type": "text",
-                        "position": {"x": 0.4, "y": 0.4},
-                        "text": "Check the exponent.",
-                    },
-                    {
-                        "type": "arrow",
-                        "start": {"x": 0.5, "y": 0.4},
-                        "end": {"x": 0.35, "y": 0.38},
-                    },
-                    {
-                        "type": "circle",
-                        "target": {
-                            "x": 0.2,
-                            "y": 0.35,
-                            "width": 0.2,
-                            "height": 0.1,
-                        },
-                    },
-                ],
-            }
-        )
+    def test_the_union_admits_only_the_four_supported_types(self):
+        supported = set()
+        for factory in (f.text_action, f.circle_action, f.check_action, f.cross_action):
+            action = TutorPlan.model_validate(
+                {"status": "partial", "canvas_actions": [factory()]}
+            ).canvas_actions[0]
+            supported.add(action.type)
+        assert supported == {"text", "circle", "check", "cross"}
 
-        self.assertEqual([action.type for action in plan.canvas_actions], ["text", "arrow", "circle"])
-
-    def test_rejects_action_with_wrong_fields(self) -> None:
-        with self.assertRaises(ValidationError):
+    @pytest.mark.parametrize("dropped_type", ["math", "arrow", "underline", "highlight"])
+    def test_retired_action_types_are_refused(self, dropped_type):
+        # These were cut. If one reappears the renderer has no branch for it,
+        # so the contract must reject it rather than let it through untyped.
+        with pytest.raises(ValidationError):
             TutorPlan.model_validate(
                 {
                     "status": "partial",
-                    "confidence": 0.8,
-                    "canvas_actions": [
-                        {"type": "math", "position": {"x": 0.3, "y": 0.4}, "text": "2x"}
-                    ],
+                    "canvas_actions": [{"type": dropped_type, "target": f.bounds()}],
                 }
             )
 
-    def test_uncertain_analysis_cannot_claim_a_mistake(self) -> None:
-        with self.assertRaises(ValidationError):
-            CanvasAnalysis(
-                status=WorkStatus.uncertain,
-                confidence=0.3,
-                current_work_summary="The handwriting cannot be read reliably.",
-                learning_observations=[
-                    LearningObservation(
-                        type=LearningObservationType.mistake,
-                        topic="derivatives",
-                        skill="power rule",
-                        outcome=WorkStatus.incorrect,
-                        evidence="The exponent appears unchanged.",
-                        confidence=0.8,
-                    )
-                ],
+    def test_text_action_carries_a_point_not_a_box(self):
+        action = TutorPlan.model_validate(
+            {"status": "partial", "canvas_actions": [f.text_action()]}
+        ).canvas_actions[0]
+        assert isinstance(action.position, NormalizedPoint)
+        assert not hasattr(action, "target")
+
+    def test_marking_actions_carry_a_box_not_a_point(self):
+        for factory in (f.circle_action, f.check_action, f.cross_action):
+            action = TutorPlan.model_validate(
+                {"status": "partial", "canvas_actions": [factory()]}
+            ).canvas_actions[0]
+            assert isinstance(action.target, NormalizedBounds)
+            assert not hasattr(action, "position")
+
+    def test_text_action_requires_something_to_say(self):
+        with pytest.raises(ValidationError):
+            TutorPlan.model_validate(
+                {"status": "partial", "canvas_actions": [f.text_action(text="")]}
+            )
+
+    def test_a_marking_action_cannot_omit_its_target(self):
+        with pytest.raises(ValidationError):
+            TutorPlan.model_validate(
+                {"status": "partial", "canvas_actions": [{"type": "circle"}]}
+            )
+
+    def test_an_unknown_action_type_is_refused(self):
+        with pytest.raises(ValidationError):
+            TutorPlan.model_validate(
+                {
+                    "status": "partial",
+                    "canvas_actions": [{"type": "execute", "script": "rm -rf /"}],
+                }
             )
 
 
-class TutorSchemaConstructionTests(unittest.TestCase):
-    def test_core_context_models_are_independently_reusable(self) -> None:
-        canvas = CanvasContext(image_width=100, image_height=100)
-        problem = ProblemContext(prompt_text="Solve x + 1 = 2")
-        course = CourseMetadata(name="Algebra")
+class TestStrictness:
+    """extra='forbid' everywhere. An unknown key is a bug, not a courtesy."""
 
-        self.assertEqual(canvas.shapes, [])
-        self.assertEqual(problem.source, "manual")
-        self.assertEqual(course.name, "Algebra")
+    def test_an_unexpected_field_on_a_plan_is_refused(self):
+        with pytest.raises(ValidationError):
+            TutorPlan.model_validate(
+                {"status": "partial", "canvas_actions": [], "temperature": 0.7}
+            )
+
+    def test_an_unexpected_field_on_an_action_is_refused(self):
+        with pytest.raises(ValidationError):
+            TutorPlan.model_validate(
+                {
+                    "status": "partial",
+                    "canvas_actions": [f.text_action(font_size=48)],
+                }
+            )
+
+    def test_the_model_cannot_mint_its_own_interaction_id(self):
+        # interaction_id is server-authored. If a plan could carry one, model
+        # output could collide with or overwrite a real interaction's shapes.
+        assert "interaction_id" not in TutorPlan.model_fields
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestTutorResponse:
+    def test_a_response_is_four_fields(self):
+        assert set(TutorResponse.model_fields) == {
+            "interaction_id",
+            "status",
+            "canvas_actions",
+            "summary",
+        }
+
+    def test_a_response_with_no_actions_is_valid(self):
+        # "I have nothing useful to draw" is a legitimate answer, not an error.
+        response = TutorResponse(
+            interaction_id="abc123", status=WorkStatus.correct, summary="Looks right."
+        )
+        assert response.canvas_actions == []
+
+    def test_summary_is_optional(self):
+        response = TutorResponse(interaction_id="abc123", status=WorkStatus.partial)
+        assert response.summary is None

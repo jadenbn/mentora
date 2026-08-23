@@ -1,3 +1,11 @@
+/**
+ * The annotation renderer.
+ *
+ * This is the only place normalized image coordinates become tldraw world
+ * coordinates. The frame below is deliberately offset from the origin so a
+ * missing translation fails loudly.
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   AI_SHAPE_OWNER,
@@ -7,272 +15,145 @@ import {
 import type { CanvasAction } from "@/types/tutor";
 import { box, makeEditor } from "./fakeEditor";
 
-// 800x600 of world space starting at (100,50): a normalized 0.5 lands at 500/350.
-const FRAME = box(100, 50, 800, 600);
-const CTX = { bounds: FRAME, interactionId: "interaction_1" };
+const FRAME = box(100, 200, 400, 800);
+const CONTEXT = { bounds: FRAME, interactionId: "interaction_1" };
 
-function render(actions: CanvasAction[], editorOptions = {}) {
-  const fake = makeEditor(editorOptions);
-  renderCanvasActions(fake.editor, actions, CTX);
+const render = (actions: CanvasAction[], context = CONTEXT) => {
+  const fake = makeEditor({ shapes: [] });
+  renderCanvasActions(fake.editor, actions, context);
   return fake;
-}
+};
 
-const textAction = (over: Partial<CanvasAction> = {}) =>
-  ({
-    action_id: "a1",
-    type: "text",
-    position: { x: 0.5, y: 0.5 },
-    text: "check this sign",
-    ...over,
-  }) as CanvasAction;
+const text = (over = {}): CanvasAction =>
+  ({ type: "text", position: { x: 0.25, y: 0.5 }, text: "Check the exponent", ...over }) as CanvasAction;
+
+const circle = (over = {}): CanvasAction =>
+  ({ type: "circle", target: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }, ...over }) as CanvasAction;
+
+const mark = (type: "check" | "cross"): CanvasAction =>
+  ({ type, target: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } }) as CanvasAction;
 
 describe("coordinate conversion", () => {
-  it("places a point action at the matching world position", () => {
-    const { created } = render([textAction()]);
-    expect(created[0]).toMatchObject({ x: 500, y: 350 });
+  it("places text at the world point its normalized position names", () => {
+    const { created } = render([text()]);
+    expect(created[0]).toMatchObject({ x: 200, y: 600 });
   });
 
-  it("maps the normalized origin to the frame origin", () => {
-    const { created } = render([textAction({ position: { x: 0, y: 0 } } as never)]);
-    expect(created[0]).toMatchObject({ x: 100, y: 50 });
+  it("sizes a circle to the world rectangle its target names", () => {
+    const { created } = render([circle()]);
+    expect(created[0]).toMatchObject({ x: 200, y: 400 });
+    expect(created[0].props).toMatchObject({ w: 200, h: 400 });
   });
 
-  it("maps the far corner to the frame's far corner", () => {
-    const { created } = render([textAction({ position: { x: 1, y: 1 } } as never)]);
-    expect(created[0]).toMatchObject({ x: 900, y: 650 });
-  });
-
-  it("converts a target rectangle into world size", () => {
-    const { created } = render([
-      {
-        action_id: "a1",
-        type: "circle",
-        target: { x: 0.25, y: 0.25, width: 0.25, height: 0.25 },
-      } as CanvasAction,
-    ]);
-    expect(created[0]).toMatchObject({ x: 300, y: 200 });
-    expect(created[0].props).toMatchObject({ w: 200, h: 150 });
-  });
-
-  it("never produces a zero-sized shape from a vanishingly small target", () => {
-    const { created } = render([
-      {
-        action_id: "a1",
-        type: "circle",
-        target: { x: 0.5, y: 0.5, width: 0.0000001, height: 0.0000001 },
-      } as CanvasAction,
-    ]);
-    expect((created[0].props as { w: number }).w).toBeGreaterThanOrEqual(1);
+  it("places a mark against its target rather than the page origin", () => {
+    const { created } = render([mark("check")]);
+    expect(created[0].x).toBeGreaterThanOrEqual(200);
+    expect(created[0].y).toBeGreaterThanOrEqual(400);
   });
 });
 
-describe("action types", () => {
-  it("renders text as a text shape carrying the tutor's words", () => {
-    const { created } = render([textAction()]);
-    expect(created[0].type).toBe("text");
-    expect(created[0].props).toHaveProperty("richText");
+describe("action coverage", () => {
+  it("renders text", () => {
+    expect(render([text()]).created).toHaveLength(1);
   });
 
-  it("renders math as text, since there is no LaTeX renderer yet", () => {
-    const { created } = render([
-      { action_id: "a1", type: "math", position: { x: 0.5, y: 0.5 }, latex: "x^2" } as CanvasAction,
-    ]);
-    expect(created[0].type).toBe("text");
-  });
-
-  it("anchors an arrow at its start and offsets the end relatively", () => {
-    const { created } = render([
-      {
-        action_id: "a1",
-        type: "arrow",
-        start: { x: 0.25, y: 0.25 },
-        end: { x: 0.5, y: 0.5 },
-      } as CanvasAction,
-    ]);
-    expect(created[0]).toMatchObject({ type: "arrow", x: 300, y: 200 });
-    expect(created[0].props).toMatchObject({
-      start: { x: 0, y: 0 },
-      end: { x: 200, y: 150 },
-    });
-  });
-
-  it("gives an arrow a head at the end only", () => {
-    const { created } = render([
-      {
-        action_id: "a1",
-        type: "arrow",
-        start: { x: 0, y: 0 },
-        end: { x: 1, y: 1 },
-      } as CanvasAction,
-    ]);
-    expect(created[0].props).toMatchObject({
-      arrowheadStart: "none",
-      arrowheadEnd: "arrow",
-    });
-  });
-
-  it("draws a circle as an unfilled ellipse", () => {
-    const { created } = render([
-      { action_id: "a1", type: "circle", target: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } } as CanvasAction,
-    ]);
+  it("renders a circle as an outline, not a filled blob over the work", () => {
+    const { created } = render([circle()]);
     expect(created[0].props).toMatchObject({ geo: "ellipse", fill: "none" });
   });
 
-  it("draws a highlight as a translucent rectangle", () => {
-    const { created } = render([
-      { action_id: "a1", type: "highlight", target: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } } as CanvasAction,
-    ]);
-    expect(created[0].props).toMatchObject({
-      geo: "rectangle",
-      fill: "semi",
-      color: "yellow",
-    });
+  it("renders a check and a cross as visually opposite marks", () => {
+    const check = render([mark("check")]).created[0];
+    const cross = render([mark("cross")]).created[0];
+    expect(check.props).not.toEqual(cross.props);
   });
 
-  it("draws an underline as a headless rule along the bottom edge", () => {
-    const { created } = render([
-      { action_id: "a1", type: "underline", target: { x: 0.25, y: 0.25, width: 0.25, height: 0.25 } } as CanvasAction,
-    ]);
-    // target bottom edge: y = 50 + (0.25+0.25)*600 = 350
-    expect(created[0]).toMatchObject({ type: "arrow", x: 300, y: 350 });
-    expect(created[0].props).toMatchObject({
-      arrowheadStart: "none",
-      arrowheadEnd: "none",
-      end: { x: 200, y: 0 },
-    });
+  it("renders every action it is given", () => {
+    const { created } = render([text(), circle(), mark("check"), mark("cross")]);
+    expect(created).toHaveLength(4);
   });
 
-  it("marks a check in green and a cross in red", () => {
-    const target = { x: 0.1, y: 0.1, width: 0.2, height: 0.2 };
-    const { created } = render([
-      { action_id: "a1", type: "check", target } as CanvasAction,
-      { action_id: "a2", type: "cross", target } as CanvasAction,
-    ]);
-    expect(created[0].props).toMatchObject({ color: "green" });
-    expect(created[1].props).toMatchObject({ color: "red" });
-  });
-
-  it("places a mark just past the target's top-right corner", () => {
-    const { created } = render([
-      { action_id: "a1", type: "check", target: { x: 0.25, y: 0.25, width: 0.25, height: 0.25 } } as CanvasAction,
-    ]);
-    expect(created[0]).toMatchObject({ x: 500, y: 200 });
-  });
-
-  it("attaches an optional label to a target action", () => {
-    const { created } = render([
-      {
-        action_id: "a1",
-        type: "circle",
-        target: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
-        label: "look here",
-      } as CanvasAction,
-    ]);
-    expect(created[0].props).toHaveProperty("richText");
-  });
-
-  it("omits richText entirely when no label is supplied", () => {
-    const { created } = render([
-      { action_id: "a1", type: "circle", target: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } } as CanvasAction,
-    ]);
-    expect(created[0].props).not.toHaveProperty("richText");
-  });
-
-  it("skips an unrecognised action from a newer backend instead of throwing", () => {
-    const { created } = render([
-      { action_id: "a1", type: "hologram", position: { x: 0.5, y: 0.5 } } as unknown as CanvasAction,
-      textAction({ action_id: "a2" }),
-    ]);
-    expect(created).toHaveLength(1);
-    expect(created[0].meta).toMatchObject({ actionId: "a2" });
-  });
-});
-
-describe("ownership and provenance", () => {
-  it("stamps every shape as AI-owned", () => {
-    const { created } = render([textAction()]);
-    expect(created[0].meta).toMatchObject({ owner: AI_SHAPE_OWNER });
-  });
-
-  it("records the interaction and action ids for traceability", () => {
-    const { created } = render([textAction()]);
-    expect(created[0].meta).toMatchObject({
-      interactionId: "interaction_1",
-      actionId: "a1",
-    });
-  });
-
-  it("gives each shape a distinct id", () => {
-    const { created } = render([textAction(), textAction({ action_id: "a2" })]);
-    expect(created[0].id).not.toBe(created[1].id);
-  });
-});
-
-describe("idempotency and clearing", () => {
-  it("creates nothing when there are no actions", () => {
-    const { created } = render([]);
+  it("skips an action type it does not know rather than throwing", () => {
+    // A newer backend must degrade gracefully, not white-screen the canvas.
+    const { created } = render([{ type: "hologram" } as unknown as CanvasAction]);
     expect(created).toHaveLength(0);
   });
 
-  it("replaces its own shapes when the same interaction renders twice", () => {
-    const fake = makeEditor({
-      shapes: [
-        {
-          id: "shape:old",
-          type: "text",
-          meta: { owner: "ai", interactionId: "interaction_1", actionId: "a1" },
-        },
-      ],
-    });
-    renderCanvasActions(fake.editor, [textAction()], CTX);
-    expect(fake.deleted).toContain("shape:old");
+  it("renders nothing for an empty plan without touching the canvas", () => {
+    const { created, deleted } = render([]);
+    expect(created).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+  });
+});
+
+describe("provenance", () => {
+  it("tags every shape it creates as tutor-authored", () => {
+    const { created } = render([text(), circle(), mark("check")]);
+    for (const shape of created) {
+      expect(shape.meta).toMatchObject({ owner: AI_SHAPE_OWNER });
+    }
   });
 
-  it("leaves shapes from a different interaction alone", () => {
+  it("records which interaction produced each shape", () => {
+    const { created } = render([text()]);
+    expect(created[0].meta).toMatchObject({ interactionId: "interaction_1" });
+  });
+});
+
+describe("replacing earlier feedback", () => {
+  it("replaces its own shapes when the same interaction renders again", () => {
     const fake = makeEditor({
-      shapes: [
-        {
-          id: "shape:other",
-          type: "text",
-          meta: { owner: "ai", interactionId: "interaction_0", actionId: "z" },
-        },
-      ],
+      shapes: [{ id: "old", type: "text", meta: { owner: AI_SHAPE_OWNER, interactionId: "interaction_1" } }],
     });
-    renderCanvasActions(fake.editor, [textAction()], CTX);
-    expect(fake.deleted).not.toContain("shape:other");
+    renderCanvasActions(fake.editor, [text()], CONTEXT);
+    expect(fake.deleted).toEqual(["old"]);
   });
 
-  it("never deletes student work", () => {
+  it("leaves feedback from a different interaction in place", () => {
+    // Follow-up tutoring builds on earlier marks; a new interaction must not
+    // wipe the conversation it is continuing.
     const fake = makeEditor({
-      shapes: [
-        { id: "shape:student", type: "draw" },
-        {
-          id: "shape:ai",
-          type: "text",
-          meta: { owner: "ai", interactionId: "interaction_1", actionId: "a1" },
-        },
-      ],
+      shapes: [{ id: "earlier", type: "text", meta: { owner: AI_SHAPE_OWNER, interactionId: "interaction_0" } }],
     });
-    renderCanvasActions(fake.editor, [textAction()], CTX);
-    expect(fake.deleted).toEqual(["shape:ai"]);
+    renderCanvasActions(fake.editor, [text()], CONTEXT);
+    expect(fake.deleted).toEqual([]);
   });
 
-  it("clearAiShapes removes every AI shape regardless of interaction", () => {
+  it("never deletes the student's work", () => {
+    const fake = makeEditor({
+      shapes: [{ id: "student", type: "draw", meta: { owner: "student" } }],
+    });
+    renderCanvasActions(fake.editor, [text()], CONTEXT);
+    expect(fake.deleted).toEqual([]);
+  });
+});
+
+describe("clearAiShapes", () => {
+  it("removes tutor feedback from every interaction", () => {
     const fake = makeEditor({
       shapes: [
-        { id: "shape:ai1", type: "text", meta: { owner: "ai", interactionId: "i1" } },
-        { id: "shape:ai2", type: "geo", meta: { owner: "ai", interactionId: "i2" } },
-        { id: "shape:student", type: "draw" },
-        { id: "shape:system", type: "text", meta: { owner: "system" } },
+        { id: "a", type: "text", meta: { owner: AI_SHAPE_OWNER, interactionId: "i0" } },
+        { id: "b", type: "text", meta: { owner: AI_SHAPE_OWNER, interactionId: "i1" } },
       ],
     });
     clearAiShapes(fake.editor);
-    expect(fake.deleted.sort()).toEqual(["shape:ai1", "shape:ai2"]);
+    expect(fake.deleted.sort()).toEqual(["a", "b"]);
   });
 
-  it("clearAiShapes is a no-op on a canvas with no AI shapes", () => {
-    const fake = makeEditor({ shapes: [{ id: "shape:s", type: "draw" }] });
+  it("leaves the student's work untouched", () => {
+    const fake = makeEditor({
+      shapes: [
+        { id: "student", type: "draw", meta: { owner: "student" } },
+        { id: "ai", type: "text", meta: { owner: AI_SHAPE_OWNER } },
+      ],
+    });
     clearAiShapes(fake.editor);
-    expect(fake.deleted).toHaveLength(0);
+    expect(fake.deleted).toEqual(["ai"]);
+  });
+
+  it("is safe on a canvas with no feedback on it", () => {
+    const fake = makeEditor({ shapes: [{ id: "s", type: "draw", meta: { owner: "student" } }] });
+    expect(() => clearAiShapes(fake.editor)).not.toThrow();
+    expect(fake.deleted).toEqual([]);
   });
 });

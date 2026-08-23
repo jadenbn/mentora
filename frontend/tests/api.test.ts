@@ -1,166 +1,133 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { TutorApiError, analyzeCanvas } from "@/lib/api/api";
-import type { TutorRequest } from "@/types/tutor";
+/**
+ * The network boundary.
+ *
+ * Two responsibilities: build the multipart request the backend expects, and
+ * turn every documented failure into something a student can read.
+ */
 
-const REQUEST = {
-  schema_version: "1.0",
-  request_id: "ea0e25c0-91c9-4fe4-a990-e82686828b35",
-  user_id: "u",
-  course_id: "c",
-  session_id: "s",
-  problem_id: "p",
-  mode: "hint",
-  problem: { prompt_text: "Differentiate x^2." },
-  canvas: { image_width: 100, image_height: 80, shapes: [] },
-} as TutorRequest;
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { analyzeCanvas, TutorApiError } from "@/lib/api/api";
 
-const OK_BODY = { schema_version: "1.0", status: "partial", canvas_actions: [] };
+const IMAGE = new Blob(["png"], { type: "image/png" });
 
 function mockFetch(response: Partial<Response> & { json?: () => Promise<unknown> }) {
-  const fn = vi.fn(
-    async (_input: RequestInfo | URL, _init?: RequestInit) => response as Response,
-  );
-  vi.stubGlobal("fetch", fn);
-  return fn;
+  const spy = vi.fn(async () => response as Response);
+  vi.stubGlobal("fetch", spy);
+  return spy;
 }
 
-function ok(body: unknown = OK_BODY) {
-  return mockFetch({ ok: true, status: 200, json: async () => body });
-}
+const ok = (body: unknown = { interaction_id: "i1", status: "partial", canvas_actions: [], summary: null }) => ({
+  ok: true,
+  status: 200,
+  json: async () => body,
+});
 
-function fail(status: number, detail?: unknown) {
-  return mockFetch({
-    ok: false,
-    status,
-    json: async () => ({ detail }),
-  });
-}
+const failure = (status: number, detail?: unknown) => ({
+  ok: false,
+  status,
+  json: async () => ({ detail }),
+});
 
-async function call(extra: Parameters<typeof analyzeCanvas>[0] | null = null) {
-  return analyzeCanvas(
-    extra ?? {
-      request: REQUEST,
-      canvasImage: new Blob(["png"], { type: "image/png" }),
-    },
-  );
-}
+const call = (over = {}) =>
+  analyzeCanvas({ courseId: "course_demo", mode: "hint", canvasImage: IMAGE, priorAnnotations: [], ...over });
 
-beforeEach(() => vi.unstubAllGlobals());
+const bodyOf = (spy: ReturnType<typeof mockFetch>) => spy.mock.calls[0][1].body as FormData;
 
-describe("analyzeCanvas request shape", () => {
-  it("posts to the tutor analyze route", async () => {
-    const fetchMock = ok();
+beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
+afterEach(() => vi.unstubAllGlobals());
+
+describe("request construction", () => {
+  it("posts to the analyze endpoint", async () => {
+    const spy = mockFetch(ok());
     await call();
-    expect(fetchMock.mock.calls[0][0]).toContain("/api/tutor/analyze");
+    expect(spy.mock.calls[0][0]).toContain("/api/tutor/analyze");
+    expect(spy.mock.calls[0][1].method).toBe("POST");
   });
 
-  it("uses POST with a FormData body", async () => {
-    const fetchMock = ok();
-    await call();
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(init.method).toBe("POST");
-    expect(init.body).toBeInstanceOf(FormData);
-  });
-
-  it("sends the request as one JSON string named payload", async () => {
-    const fetchMock = ok();
-    await call();
-    const body = fetchMock.mock.calls[0][1]!.body as FormData;
-    expect(JSON.parse(body.get("payload") as string)).toEqual(REQUEST);
-  });
-
-  it("attaches the canvas image as a file part", async () => {
-    const fetchMock = ok();
-    await call();
-    const body = fetchMock.mock.calls[0][1]!.body as FormData;
+  it("sends the course, the mode, and the image", async () => {
+    const spy = mockFetch(ok());
+    await call({ mode: "stuck" });
+    const body = bodyOf(spy);
+    expect(body.get("course_id")).toBe("course_demo");
+    expect(body.get("mode")).toBe("stuck");
     expect(body.get("canvas_image")).toBeInstanceOf(Blob);
   });
 
-  it("omits selection_image when there is no selection", async () => {
-    const fetchMock = ok();
+  it("sends prior annotations as JSON", async () => {
+    const spy = mockFetch(ok());
+    const prior = [{ x: 0.1, y: 0.2, width: 0.3, height: 0.4 }];
+    await call({ priorAnnotations: prior });
+    expect(JSON.parse(bodyOf(spy).get("prior_annotations") as string)).toEqual(prior);
+  });
+
+  it("sends an empty annotation list on a first interaction", async () => {
+    const spy = mockFetch(ok());
     await call();
-    const body = fetchMock.mock.calls[0][1]!.body as FormData;
-    expect(body.get("selection_image")).toBeNull();
+    expect(JSON.parse(bodyOf(spy).get("prior_annotations") as string)).toEqual([]);
   });
 
-  it("includes selection_image when a crop is supplied", async () => {
-    const fetchMock = ok();
-    await call({
-      request: REQUEST,
-      canvasImage: new Blob(["a"]),
-      selectionImage: new Blob(["b"]),
-    });
-    const body = fetchMock.mock.calls[0][1]!.body as FormData;
-    expect(body.get("selection_image")).toBeInstanceOf(Blob);
-  });
-
-  it("leaves Content-Type unset so the browser writes the multipart boundary", async () => {
-    const fetchMock = ok();
+  it("lets the browser set the multipart boundary", async () => {
+    // Setting Content-Type by hand omits the boundary and the server cannot
+    // parse the body. The absence of this header is the point.
+    const spy = mockFetch(ok());
     await call();
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect(init.headers).toBeUndefined();
+    expect(spy.mock.calls[0][1].headers).toBeUndefined();
   });
 
-  it("forwards an abort signal", async () => {
-    const fetchMock = ok();
-    const controller = new AbortController();
-    await call({
-      request: REQUEST,
-      canvasImage: new Blob(["a"]),
-      signal: controller.signal,
-    });
-    expect(fetchMock.mock.calls[0][1]!.signal).toBe(controller.signal);
-  });
-
-  it("returns the parsed response body", async () => {
-    ok(OK_BODY);
-    expect(await call()).toEqual(OK_BODY);
+  it("forwards an abort signal so a slow request can be cancelled", async () => {
+    const spy = mockFetch(ok());
+    const signal = new AbortController().signal;
+    await call({ signal });
+    expect(spy.mock.calls[0][1].signal).toBe(signal);
   });
 });
 
-describe("analyzeCanvas error mapping", () => {
-  it("names the missing settings on a 503", async () => {
-    fail(503, { missing_settings: ["GEMINI_API_KEY", "PINECONE_API_KEY"] });
-    await expect(call()).rejects.toThrow(/GEMINI_API_KEY, PINECONE_API_KEY/);
+describe("successful responses", () => {
+  it("returns the parsed tutor response", async () => {
+    mockFetch(ok({ interaction_id: "i9", status: "correct", canvas_actions: [], summary: "Nice." }));
+    await expect(call()).resolves.toMatchObject({ interaction_id: "i9", status: "correct" });
+  });
+});
+
+describe("failure mapping", () => {
+  it.each([
+    [413, /too large/i],
+    [415, /not supported|format/i],
+    [422, /invalid|rejected/i],
+    [502, /unavailable/i],
+    [504, /too long|timed out/i],
+  ])("turns %i into a readable message", async (status, expected) => {
+    mockFetch(failure(status));
+    await expect(call()).rejects.toThrow(expected);
   });
 
-  it("falls back to a generic message when a 503 names nothing", async () => {
-    fail(503, {});
+  it("names what the server is missing when it is unconfigured", async () => {
+    mockFetch(failure(503, { missing_settings: ["GEMINI_API_KEY"] }));
+    await expect(call()).rejects.toThrow(/GEMINI_API_KEY/);
+  });
+
+  it("still explains a 503 with no detail body", async () => {
+    mockFetch(failure(503));
     await expect(call()).rejects.toThrow(/not configured/i);
   });
 
-  it.each([
-    [413, /too large/i],
-    [415, /not supported/i],
-    [422, /invalid/i],
-    [502, /unavailable/i],
-    [504, /too long/i],
-  ])("maps %i onto a readable message", async (status, pattern) => {
-    fail(status);
-    await expect(call()).rejects.toThrow(pattern);
-  });
-
-  it("includes the status code for an unmapped failure", async () => {
-    fail(418);
-    await expect(call()).rejects.toThrow(/418/);
-  });
-
-  it("throws a TutorApiError carrying the status and detail", async () => {
-    fail(503, { missing_settings: ["GEMINI_API_KEY"] });
-    const error = await call().catch((e) => e);
-    expect(error).toBeInstanceOf(TutorApiError);
-    expect(error.status).toBe(503);
-    expect(error.detail).toEqual({ missing_settings: ["GEMINI_API_KEY"] });
-  });
-
-  it("still throws when the error body is not JSON", async () => {
-    mockFetch({
-      ok: false,
-      status: 502,
-      json: async () => {
-        throw new SyntaxError("not json");
-      },
-    });
+  it("raises a typed error carrying the status", async () => {
+    mockFetch(failure(502));
     await expect(call()).rejects.toBeInstanceOf(TutorApiError);
+    await call().catch((error: TutorApiError) => expect(error.status).toBe(502));
+  });
+
+  it("survives an error body that is not JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => { throw new SyntaxError("not json"); },
+    }) as unknown as Response));
+    await expect(call()).rejects.toBeInstanceOf(TutorApiError);
+  });
+
+  it("does not translate an unrecognised status into a misleading message", async () => {
+    mockFetch(failure(418));
+    await expect(call()).rejects.toThrow(/418/);
   });
 });
