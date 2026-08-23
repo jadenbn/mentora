@@ -42,7 +42,7 @@ class TestProviderSchemaDialect:
     def test_generation_is_tuned_for_an_interactive_path(self):
         agent = GeminiTutorWorkflow(model="m")._build_agent(TutorMode.hint)
         config = agent.generate_content_config
-        assert config.thinking_config.thinking_level == types.ThinkingLevel.MINIMAL
+        assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
         assert config.max_output_tokens == 1_024
         # Vision tokens dominate; medium keeps handwriting legible for less.
         assert config.media_resolution == types.MediaResolution.MEDIA_RESOLUTION_MEDIUM

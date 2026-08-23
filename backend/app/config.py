@@ -38,6 +38,6 @@ class TutorSettings:
     @classmethod
     def from_environment(cls) -> "TutorSettings":
         return cls(
-            gemini_model=os.getenv("GEMINI_MODEL") or "gemini-3.7-flash",
+            gemini_model=os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite",
             request_timeout_seconds=float(os.getenv("TUTOR_REQUEST_TIMEOUT_SECONDS") or "45"),
         )

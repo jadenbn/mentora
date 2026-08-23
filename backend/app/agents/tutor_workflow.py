@@ -190,8 +190,11 @@ class GeminiTutorWorkflow:
                 # A four-action plan needs far less than this; the ceiling is
                 # only here to stop a runaway response.
                 max_output_tokens=1_024,
+                # LOW rather than MINIMAL: measurably the same latency on the
+                # lite model, and MINIMAL is rejected outright by some models
+                # (gemini-3.7-flash among them), which would 400 every request.
                 thinking_config=types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.MINIMAL
+                    thinking_level=types.ThinkingLevel.LOW
                 ),
                 # Vision tokens dominate a canvas request. Handwriting stays
                 # legible at medium, so the default high resolution is paid
