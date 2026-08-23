@@ -36,6 +36,16 @@ def test_settings_come_from_the_environment_with_usable_defaults(monkeypatch):
     assert settings.request_timeout_seconds > 0
 
 
+def test_an_empty_override_falls_back_rather_than_sending_a_blank_model(monkeypatch):
+    # `KEY=` in a .env file sets the variable to "", which defeats getenv's
+    # default and would send an empty model id to the provider.
+    monkeypatch.setenv("GEMINI_MODEL", "")
+    monkeypatch.setenv("TUTOR_REQUEST_TIMEOUT_SECONDS", "")
+    settings = TutorSettings.from_environment()
+    assert settings.gemini_model
+    assert settings.request_timeout_seconds > 0
+
+
 def test_the_model_is_overridable_without_a_code_change(monkeypatch):
     monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
     assert TutorSettings.from_environment().gemini_model == "gemini-3-flash-preview"

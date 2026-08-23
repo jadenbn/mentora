@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any
 from uuid import uuid4
 
@@ -22,6 +23,8 @@ from pydantic import ValidationError
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
 from app.schemas.tutor import NormalizedBounds, TutorMode, TutorPlan
+
+logger = logging.getLogger(__name__)
 
 APP_NAME = "mentora_tutor"
 
@@ -114,10 +117,16 @@ class GeminiTutorWorkflow:
                 return TutorPlan.model_validate(drop_nulls(raw))
             except (ValidationError, ValueError, KeyError, TypeError) as exc:
                 malformed = exc
+                logger.warning("tutor output failed validation (attempt %d): %s", attempt + 1, exc)
             except (TimeoutError, asyncio.TimeoutError) as exc:
+                logger.warning("tutor provider timed out after %ss", self.timeout_seconds)
                 raise TutorWorkflowTimeout("the tutor took too long to respond") from exc
-            except Exception as exc:
-                raise TutorWorkflowError("the tutor request failed") from exc
+            except Exception:
+                # Logged in full here because the client is told nothing: a
+                # provider message can quote credentials and prompt fragments.
+                logger.exception("tutor provider request failed")
+                raise TutorWorkflowError("the tutor request failed") from None
+        logger.error("tutor returned malformed output twice: %s", malformed)
         raise TutorWorkflowError("the tutor returned malformed output") from malformed
 
     def _build_agent(self, mode: TutorMode) -> LlmAgent:
