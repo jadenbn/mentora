@@ -3,20 +3,19 @@ uvicorn>=0.30.0
 pydantic>=2.0.0
 python-multipart>=0.0.9
 
-# Document extraction
+# Course ingestion
 pymupdf>=1.24.0
-
-# RAG pipeline
 langchain-text-splitters>=0.2.0
 openai>=1.40.0
 pinecone>=5.0.0,<8.0.0
 
 # Tutor agent
 google-adk>=2.0.0,<3.0.0
-httpx>=0.28.0
 
 # Utilities
 python-dotenv>=1.0.0
 
 # Tests
 pytest>=8.3.0
+pytest-asyncio>=0.24.0
+httpx>=0.28.0
