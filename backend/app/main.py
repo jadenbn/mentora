@@ -4,10 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-from app.api.documents import router as documents_router
-from app.api.tutor import router as tutor_router
-from app.config import missing_tutor_settings
-
+from app.api.documents import router as documents_router  # noqa: E402
+from app.api.tutor import router as tutor_router  # noqa: E402
+from app.config import missing_settings  # noqa: E402
 
 app = FastAPI(title="Mentora API")
 
@@ -24,13 +23,10 @@ app.include_router(tutor_router)
 
 @app.get("/health")
 async def health():
-    missing = missing_tutor_settings()
+    """Always available. Reports missing variable names, never their values."""
+    missing = missing_settings()
     return {
         "status": "ok",
-        "services": {
-            "tutor": {
-                "status": "ready" if not missing else "not_ready",
-                "missing_settings": missing,
-            }
-        },
+        "tutor": "ready" if not missing else "not_ready",
+        "missing_settings": missing,
     }
