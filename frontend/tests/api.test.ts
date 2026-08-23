@@ -44,6 +44,14 @@ describe("request construction", () => {
     expect(spy.mock.calls[0][1].method).toBe("POST");
   });
 
+  it("posts to the backend, never same-origin", async () => {
+    // A same-origin fallback posts to the Next dev server and 404s at :3000,
+    // which looks like a missing route rather than a missing env var.
+    const spy = mockFetch(ok());
+    await call();
+    expect(spy.mock.calls[0][0]).toMatch(/^https?:\/\//);
+  });
+
   it("sends the course, the mode, and the image", async () => {
     const spy = mockFetch(ok());
     await call({ mode: "stuck" });

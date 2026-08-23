@@ -1,6 +1,15 @@
 import type { NormalizedBounds, TutorMode, TutorResponse } from "@/types/tutor";
 
-export const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+/** Where the backend lives when NEXT_PUBLIC_API_BASE_URL is not set. */
+const DEFAULT_API_BASE_URL = "http://localhost:8000";
+
+/**
+ * Falling back to same-origin is a trap: the request quietly posts to the Next
+ * dev server and 404s at :3000, which reads as a missing route rather than a
+ * missing environment variable. Default to the local backend instead.
+ */
+export const apiBaseUrl =
+  process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE_URL;
 
 export class TutorApiError extends Error {
   readonly status: number;
