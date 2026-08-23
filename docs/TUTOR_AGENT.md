@@ -2,8 +2,10 @@
 
 The implementation contract for Mentora's whiteboard tutor.
 
-Product behavior is authoritative in `PRODUCT.md`; shared architecture in
-`ARCHITECTURE.md`.
+**This file is authoritative for the shapes that cross the wire today.**
+`PRODUCT.md` holds product intent and `ARCHITECTURE.md` holds direction; where
+either disagrees with this file or with `backend/app/schemas/tutor.py`, this
+file and the schema win.
 
 ## The loop
 

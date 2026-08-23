@@ -5,6 +5,11 @@ It is intentionally less detailed than a final production design.
 For product behavior, read `PRODUCT.md`.
 For agent workflow and branch rules, read `../AGENTS.md`.
 
+**This document describes direction, some of which is not built.** For the
+shapes that actually cross the wire today, `TUTOR_AGENT.md` and
+`backend/app/schemas/tutor.py` are authoritative and win any disagreement with
+this file. Sections that describe unbuilt work say so inline.
+
 ## 1. Architectural Goals
 Optimize for:
 1. reliable end-to-end demo
@@ -129,7 +134,9 @@ Conceptual representation:
 ```
 
 ## 7. Whiteboard Session
-A session is a persistent working document.
+A session is a persistent working document. Called a **space** in the UI and in
+the frontend code, and currently stored in browser localStorage rather than on
+the server. There is no problem entity yet, so `problem_id` below is aspirational.
 Conceptual representation:
 ```json
 {
@@ -162,7 +169,11 @@ Potential metadata:
 ```ts
 type ShapeOwner = "system" | "student" | "ai";
 ```
-Optional metadata may include `session_id`, `interaction_id`, `annotation_type`, or `problem_id`.
+Shapes the tutor draws carry `owner: "ai"` and the `interaction_id` that
+produced them, which is how re-rendering one interaction replaces its own
+shapes without disturbing earlier feedback. Ownership no longer crosses the
+wire as a shape list: the capture excludes tutor-authored shapes from the
+image and sends their bounds as `prior_annotations`.
 The critical invariant is that the system can distinguish what the problem said, what the student wrote, and what the AI wrote.
 
 ## 10. Frontend Responsibilities
@@ -215,7 +226,10 @@ Follow existing conventions if the repository already has them.
 ## 13. API Shape
 Possible routes:
 ```text
-GET  /health
+GET  /health                                  implemented
+POST /api/tutor/analyze                       implemented
+POST /api/courses/{course_id}/documents       implemented
+GET  /api/courses/{course_id}/search          implemented
 GET  /api/courses
 POST /api/courses
 GET  /api/courses/{course_id}
@@ -223,12 +237,13 @@ GET  /api/courses/{course_id}/sessions
 POST /api/courses/{course_id}/sessions
 GET  /api/sessions/{session_id}
 PUT  /api/sessions/{session_id}
-POST /api/courses/{course_id}/documents
 POST /api/questions/generate
 POST /api/problems/import
-POST /api/tutor/analyze
 GET  /api/courses/{course_id}/student-model
 ```
+
+Only the four marked lines exist. Sessions ("spaces" in the UI) live in
+browser localStorage, not on the server, so there is no session endpoint.
 Prefer domain operations over one endpoint per prompt.
 
 ## 14. Shared Schemas
@@ -304,13 +319,15 @@ Do not scatter conversion logic.
 ## 19. Annotation Renderer
 Frontend owns:
 ```text
-TutorAnnotation
+CanvasAction
       ↓
 Annotation Renderer
       ↓
 tldraw operations
 ```
-The renderer creates controlled text, math, arrows, highlights, circles, etc.
+The renderer creates controlled text, circles, checks, and crosses — the four
+implemented actions. `TutorAnnotation` was an earlier name for this and no
+longer exists.
 This boundary also enables future handwriting animation without changing tutor reasoning.
 
 ## 20. Canvas Capture
@@ -450,11 +467,12 @@ Conceptual representation:
 {
   "source": "imported",
   "prompt_text": "...",
-  "latex_blocks": [],
   "figures": [],
   "metadata": {}
 }
 ```
+Problem import is not built. The tutor reads the problem from the canvas image
+rather than from a structured problem record.
 The key boundary is: recognize first, render cleanly second.
 
 ## 28. Persistence
