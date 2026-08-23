@@ -26,3 +26,5 @@ class IngestionResult(BaseModel):
     filename: str
     total_chunks: int
     total_pages: int
+    # True when this ingest replaced an earlier copy of the same document.
+    replaced_existing: bool = False

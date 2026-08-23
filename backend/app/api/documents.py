@@ -36,6 +36,7 @@ async def upload_document(
             file_path=tmp_path,
             course_id=course_id,
             document_type=document_type,
+            filename=file.filename or Path(tmp_path).name,
         )
     finally:
         Path(tmp_path).unlink(missing_ok=True)
