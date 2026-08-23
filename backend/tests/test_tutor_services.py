@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import logging
 
 import httpx
 import pytest
@@ -82,7 +83,10 @@ def test_pinecone_results_take_precedence_over_seeded_taxonomy() -> None:
     assert result.references[0].filename == "lecture-3.pdf"
 
 
-def test_empty_pinecone_results_use_seeded_taxonomy_with_visible_warning() -> None:
+def test_empty_pinecone_results_use_seeded_taxonomy_with_visible_warning(
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
     fake = FakeWorkflow(workflow_result())
     service = TutorService(
         settings=settings(),
@@ -114,9 +118,12 @@ def test_empty_pinecone_results_use_seeded_taxonomy_with_visible_warning() -> No
     assert fake.calls[0]["context"]["retrieved_course_context"][0][
         "document_type"
     ] == "course_taxonomy"
+    assert "stage=retrieval_seed_fallback" in caplog.text
 
 
-def test_pinecone_failure_is_not_hidden_by_seeded_taxonomy() -> None:
+def test_pinecone_failure_is_not_hidden_by_seeded_taxonomy(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
     def failing_retriever(**_kwargs):
         raise RuntimeError("provider unavailable")
 
@@ -136,6 +143,8 @@ def test_pinecone_failure_is_not_hidden_by_seeded_taxonomy() -> None:
                 ],
             )
         )
+    assert "stage=retrieval_provider_error" in caplog.text
+    assert "provider_exception=RuntimeError" in caplog.text
 
 
 def test_service_enriches_learning_events_and_queues_webhook() -> None:

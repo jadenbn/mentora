@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -19,6 +20,7 @@ from app.schemas.tutor import CanvasAnalysis, TutorMode, TutorPlan
 
 
 APP_NAME = "mentora_tutor"
+logger = logging.getLogger("uvicorn.error")
 
 
 _STATUS = {"type": "string", "enum": ["correct", "incorrect", "partial", "uncertain"]}
@@ -284,6 +286,14 @@ class AdkTutorWorkflow:
         # ADK/Gemini performs transient HTTP retries. This second attempt is
         # specifically the bounded repair path for malformed structured output.
         for attempt in range(2):
+            logger.info(
+                "tutor.trace stage=workflow_attempt interaction_id=%s mode=%s "
+                "attempt=%s repair=%s",
+                interaction_id,
+                mode.value,
+                attempt + 1,
+                attempt == 1,
+            )
             try:
                 return await self._run_once(
                     interaction_id=f"{interaction_id}_{attempt}",
@@ -298,10 +308,30 @@ class AdkTutorWorkflow:
                 )
             except (ValidationError, ValueError, KeyError, json.JSONDecodeError) as exc:
                 last_error = exc
+                logger.warning(
+                    "tutor.trace stage=workflow_output_invalid interaction_id=%s "
+                    "mode=%s attempt=%s exception=%s",
+                    interaction_id,
+                    mode.value,
+                    attempt + 1,
+                    type(exc).__name__,
+                )
                 continue
             except TimeoutError as exc:
+                logger.exception(
+                    "tutor.trace stage=workflow_timeout interaction_id=%s mode=%s",
+                    interaction_id,
+                    mode.value,
+                )
                 raise TutorWorkflowError("tutor workflow timed out") from exc
             except Exception as exc:
+                logger.exception(
+                    "tutor.trace stage=workflow_provider_error interaction_id=%s "
+                    "mode=%s provider_exception=%s",
+                    interaction_id,
+                    mode.value,
+                    type(exc).__name__,
+                )
                 raise TutorWorkflowError("tutor provider request failed") from exc
         raise TutorWorkflowError("tutor returned malformed structured output") from last_error
 

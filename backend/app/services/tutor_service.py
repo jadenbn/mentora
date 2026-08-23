@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Callable
 from uuid import uuid4
@@ -20,6 +21,9 @@ from app.schemas.tutor import (
 )
 from app.services.embeddings import query_similar
 from app.services.tutor_context import retrieve_course_context
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 @dataclass(frozen=True)
@@ -51,11 +55,25 @@ class TutorService:
         seeded_taxonomy_fallback: list[dict] | None = None,
     ) -> TutorServiceResult:
         interaction_id = uuid4().hex
+        logger.info(
+            "tutor.trace stage=service_started request_id=%s interaction_id=%s mode=%s",
+            request.request_id,
+            interaction_id,
+            request.mode.value,
+        )
         course_context = await retrieve_course_context(
             request,
             top_k=self.settings.retrieval_top_k,
             retriever=self.retriever,
             seeded_taxonomy_fallback=seeded_taxonomy_fallback,
+        )
+        logger.info(
+            "tutor.trace stage=agent_context_ready request_id=%s interaction_id=%s "
+            "excerpt_count=%s seeded_fallback=%s",
+            request.request_id,
+            interaction_id,
+            len(course_context.excerpts),
+            course_context.used_seeded_taxonomy_fallback,
         )
         agent_context = {
             "request": request.model_dump(mode="json", exclude_none=True),
@@ -70,6 +88,14 @@ class TutorService:
             canvas_mime_type=canvas_mime_type,
             selection_image=selection_image,
             selection_mime_type=selection_mime_type,
+        )
+        logger.info(
+            "tutor.trace stage=workflow_complete request_id=%s interaction_id=%s "
+            "analysis_status=%s planned_actions=%s",
+            request.request_id,
+            interaction_id,
+            workflow_result.analysis.status.value,
+            len(workflow_result.plan.canvas_actions),
         )
         workflow_result = self._apply_safety_policy(request, workflow_result)
         if course_context.used_seeded_taxonomy_fallback:

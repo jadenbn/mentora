@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -20,6 +21,7 @@ from app.services.tutor_taxonomy import build_seeded_taxonomy_fallback
 
 
 router = APIRouter(prefix="/api/tutor", tags=["tutor"])
+logger = logging.getLogger("uvicorn.error")
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
@@ -96,6 +98,18 @@ async def analyze_tutor_request(
             detail=exc.errors(include_input=False),
         ) from exc
 
+    logger.info(
+        "tutor.trace stage=request_validated request_id=%s course_id=%s "
+        "mode=%s canvas_pixels=%sx%s shape_count=%s interaction_count=%s",
+        request.request_id,
+        request.course_id,
+        request.mode.value,
+        request.canvas.image_width,
+        request.canvas.image_height,
+        len(request.canvas.shapes),
+        len(request.recent_interactions),
+    )
+
     current_hint_count = (
         request.student_model.total_hints_used
         if request.student_model and request.student_model.total_hints_used
@@ -110,6 +124,15 @@ async def analyze_tutor_request(
                 current_hint_count=current_hint_count,
             )
         }
+    )
+    logger.info(
+        "tutor.trace stage=student_model_hydrated request_id=%s "
+        "attempted_topics=%s strengths=%s recurring_mistakes=%s hints=%s",
+        request.request_id,
+        len(request.student_model.attempted_topics),
+        len(request.student_model.strengths),
+        len(request.student_model.recurring_mistakes),
+        request.student_model.total_hints_used,
     )
     seeded_taxonomy_fallback = build_seeded_taxonomy_fallback(
         learning_session,
@@ -127,6 +150,14 @@ async def analyze_tutor_request(
         selection_bytes, selection_mime_type = await _read_image(
             selection_image, field_name="selection_image"
         )
+    logger.info(
+        "tutor.trace stage=images_validated request_id=%s canvas_bytes=%s "
+        "canvas_type=%s selection_bytes=%s",
+        request.request_id,
+        len(canvas_bytes),
+        canvas_mime_type,
+        len(selection_bytes) if selection_bytes else 0,
+    )
 
     try:
         result = await service.analyze(
@@ -138,16 +169,37 @@ async def analyze_tutor_request(
             seeded_taxonomy_fallback=seeded_taxonomy_fallback,
         )
     except CourseContextUnavailable as exc:
+        logger.exception(
+            "tutor.trace stage=course_context_failed request_id=%s course_id=%s",
+            request.request_id,
+            request.course_id,
+        )
         raise HTTPException(
             status_code=502,
             detail="Required course context is temporarily unavailable",
         ) from exc
     except TutorWorkflowError as exc:
+        logger.exception(
+            "tutor.trace stage=workflow_failed request_id=%s course_id=%s mode=%s",
+            request.request_id,
+            request.course_id,
+            request.mode.value,
+        )
         status_code = 504 if "timed out" in str(exc) else 502
         raise HTTPException(
             status_code=status_code,
             detail="Tutor analysis is temporarily unavailable",
         ) from exc
+
+    logger.info(
+        "tutor.trace stage=request_complete request_id=%s interaction_id=%s "
+        "status=%s action_count=%s warning_count=%s",
+        request.request_id,
+        result.response.interaction_id,
+        result.response.status.value,
+        len(result.response.canvas_actions),
+        len(result.response.warnings),
+    )
 
     settings = service.settings
     if result.webhook_envelope and settings.learning_metrics_webhook_url:

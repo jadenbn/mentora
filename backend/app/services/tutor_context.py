@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Callable
 
 from app.schemas.tutor import GroundingReference, TutorRequest
 from app.services.embeddings import query_similar
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class CourseContextUnavailable(RuntimeError):
@@ -51,6 +55,12 @@ async def retrieve_course_context(
     seeded_taxonomy_fallback: list[dict] | None = None,
 ) -> RetrievedCourseContext:
     query = build_retrieval_query(request)
+    logger.info(
+        "tutor.trace stage=retrieval_started request_id=%s course_id=%s top_k=%s",
+        request.request_id,
+        request.course_id,
+        top_k,
+    )
     try:
         results = await asyncio.to_thread(
             retriever,
@@ -59,13 +69,41 @@ async def retrieve_course_context(
             top_k=top_k,
         )
     except Exception as exc:  # provider errors are translated at the API boundary
+        logger.exception(
+            "tutor.trace stage=retrieval_provider_error request_id=%s "
+            "course_id=%s provider_exception=%s",
+            request.request_id,
+            request.course_id,
+            type(exc).__name__,
+        )
         raise CourseContextUnavailable("course context retrieval failed") from exc
 
+    logger.info(
+        "tutor.trace stage=retrieval_complete request_id=%s course_id=%s "
+        "result_count=%s",
+        request.request_id,
+        request.course_id,
+        len(results),
+    )
     used_seeded_taxonomy_fallback = False
     if not results and seeded_taxonomy_fallback:
         results = seeded_taxonomy_fallback
         used_seeded_taxonomy_fallback = True
+        logger.warning(
+            "tutor.trace stage=retrieval_seed_fallback request_id=%s "
+            "course_id=%s result_count=%s",
+            request.request_id,
+            request.course_id,
+            len(results),
+        )
     if not results:
+        logger.error(
+            "tutor.trace stage=retrieval_empty request_id=%s course_id=%s "
+            "seed_fallback_available=%s",
+            request.request_id,
+            request.course_id,
+            bool(seeded_taxonomy_fallback),
+        )
         raise CourseContextUnavailable("no course context was found for this request")
 
     excerpts: list[dict] = []
