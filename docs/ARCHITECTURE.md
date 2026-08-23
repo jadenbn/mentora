@@ -241,23 +241,22 @@ When changing a shared schema:
 - coordinate with affected teammates
 
 ## 15. Tutor Request
-Conceptual request:
-```json
-{
-  "course_id": "course_123",
-  "session_id": "session_456",
-  "problem_id": "problem_789",
-  "mode": "hint",
-  "canvas_image": "...",
-  "selected_region": {
-    "x": 0.2,
-    "y": 0.4,
-    "width": 0.3,
-    "height": 0.2
-  }
-}
+
+`POST /api/tutor/analyze` is multipart form data:
+
+```text
+course_id          retrieval scope (carried; retrieval is deferred)
+mode               mark | hint | explain | stuck
+canvas_image       PNG, JPEG, or WebP; maximum 10 MB
+prior_annotations  JSON array of normalized bounds; defaults to []
 ```
-Assemble large course context server-side rather than sending it from the browser every time.
+
+Four fields, no JSON request body. The browser sends an image and three
+scalars; anything larger belongs server-side.
+
+Tutor-authored shapes are excluded from the exported image and their positions
+are sent as `prior_annotations` instead, so the model cannot read its own
+handwriting back as student work. See `TUTOR_AGENT.md`.
 
 ## 16. Tutor Modes
 Backend-facing enum:
@@ -270,35 +269,24 @@ stuck
 Prompt/service behavior must differ by mode.
 
 ## 17. Structured Tutor Response
-Conceptual Pydantic shape:
-```python
-from typing import Literal
-from pydantic import BaseModel
 
-class Bounds(BaseModel):
-    x: float
-    y: float
-    width: float | None = None
-    height: float | None = None
-
-class TutorAnnotation(BaseModel):
-    type: Literal[
-        "text", "math", "arrow", "circle",
-        "underline", "highlight", "check", "cross"
-    ]
-    target: Bounds | None = None
-    x: float | None = None
-    y: float | None = None
-    text: str | None = None
-    latex: str | None = None
-
-class TutorResponse(BaseModel):
-    status: Literal["correct", "incorrect", "partial", "uncertain"]
-    annotations: list[TutorAnnotation]
-    summary: str | None = None
+```text
+interaction_id   server-minted; the renderer keys shape replacement on it
+status           correct | incorrect | partial | uncertain
+canvas_actions   at most 12
+summary          short plain-language explanation
 ```
-This schema is conceptual, not frozen.
-The invariant is: **validated structured output before tldraw rendering**.
+
+`canvas_actions` is a discriminated union of two shapes: `text` says something
+at a normalized point, and `circle` / `check` / `cross` point at a normalized
+box. There is no third shape, and no action carries a label — text is the one
+way to put words on a canvas.
+
+Gemini output is schema-constrained, then validated independently with
+Pydantic, then passed through a deterministic safety policy. The renderer never
+receives arbitrary tldraw operations.
+
+The invariant remains: **validated structured output before tldraw rendering**.
 
 ## 18. Coordinates
 Prefer normalized image-space coordinates at the AI/API boundary:
@@ -554,6 +542,11 @@ timestamp
 ```
 Do not make the core tutor loop depend on a sophisticated model.
 
+Learning events are not emitted yet. The tutor observes plenty worth
+recording, but the learning engine wants closed-vocabulary, slug-identified,
+float-typed facts and the tutor produces prose. That adapter is a design
+decision rather than a merge, and it waits until the canvas loop works.
+
 ## 34. Built-In Course
 Support at least one built-in demo course, likely Calculus I.
 Where practical, seed it through the same Course Context mechanisms as uploaded courses to avoid a separate architecture.
@@ -569,6 +562,24 @@ Provider Adapter
 AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
+
+The tutor is one Gemini call through a single ADK agent:
+
+```text
+canvas image + mode + prior annotations
+        ↓
+LlmAgent (Gemini multimodal, TutorPlan response schema)
+        ↓ independent Pydantic validation and safety policy
+TutorResponse
+```
+
+Reading the canvas and deciding what to draw are the same judgement, so
+splitting them only bought a second round trip on the path where
+responsiveness is the product.
+
+ADK performs up to three bounded transient HTTP attempts. The application makes
+one additional attempt only when structured output is malformed. The model
+defaults to `gemini-3.7-flash` and is replaceable through `GEMINI_MODEL`.
 
 ## 36. Prompt Organization
 Possible layout:
@@ -601,6 +612,10 @@ Potential response:
 }
 ```
 The algorithm can be approximate for the hackathon.
+
+Not implemented. The check needs to know what the course has covered, which
+means course retrieval, which is deferred — so a boundary decision today would
+be the model guessing. It returns with retrieval.
 
 ## 38. Error Handling
 Plan for:
@@ -638,6 +653,10 @@ Validate uploads.
 Treat model output as untrusted.
 Do not execute arbitrary model instructions.
 Avoid logging sensitive course content unnecessarily.
+
+Tutor readiness requires `GEMINI_API_KEY` and nothing else. `/health` and
+configuration errors report missing variable names only. Image type is verified
+from file signatures rather than trusting multipart headers.
 
 ## 42. Testing
 Prioritize deterministic tests for:

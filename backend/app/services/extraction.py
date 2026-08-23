@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import fitz  # PyMuPDF
+import pymupdf
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,7 +16,7 @@ class ExtractedPage:
 def extract_pdf(file_path: str | Path) -> list[ExtractedPage]:
     """Extract text from each page of a PDF."""
     pages: list[ExtractedPage] = []
-    with fitz.open(str(file_path)) as doc:
+    with pymupdf.open(str(file_path)) as doc:
         for i, page in enumerate(doc):
             text = page.get_text().strip()
             if text:

@@ -1,7 +1,13 @@
 .env
+.env.local
+.DS_Store
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.pytest_cache/
 .venv/
 venv/
+.idea/
+.vscode/
+test_data/
 *.db
-.pytest_cache/

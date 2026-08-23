@@ -37,6 +37,31 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     return [item.embedding for item in response.data]
 
 
+def vector_id(document_id: str, chunk_index: int) -> str:
+    """Stable id for a chunk. The `#` separator lets us list/delete by prefix."""
+    return f"{document_id}#{chunk_index}"
+
+
+def delete_document_vectors(document_id: str) -> int:
+    """Delete every vector belonging to a document. Returns count deleted."""
+    index = _get_index()
+    prefix = f"{document_id}#"
+
+    ids: list[str] = []
+    try:
+        for page in index.list(prefix=prefix):
+            ids.extend(page)
+    except Exception:
+        # `list()` needs a serverless index; fall back to a metadata filter.
+        index.delete(filter={"document_id": {"$eq": document_id}})
+        return 0
+
+    for i in range(0, len(ids), 1000):
+        index.delete(ids=ids[i : i + 1000])
+
+    return len(ids)
+
+
 def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
     """Embed chunks and upsert into Pinecone. Returns count upserted."""
     if not chunks:
@@ -48,9 +73,8 @@ def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
 
     vectors = []
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-        vector_id = f"{chunk.document_id}_{chunk.page}_{i}"
         vectors.append({
-            "id": vector_id,
+            "id": vector_id(chunk.document_id, i),
             "values": embedding,
             "metadata": {
                 "course_id": chunk.course_id,
