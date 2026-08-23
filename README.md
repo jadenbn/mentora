@@ -1,4 +1,5 @@
 ROLES:
+test:
 
 {jaden} - Whiteboard: build the app and canvas
 
