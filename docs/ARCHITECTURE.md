@@ -354,12 +354,13 @@ The capture boundary returns both the PNG's header-derived integer pixel
 dimensions and the exact world-space bounds used for export. Client validation
 rejects malformed dimensions before starting a multipart request.
 
-The analysis image and its structured shape companion contain only
-system/problem and student shapes. AI-owned shapes remain visible and
-persistent on the whiteboard but are excluded from analysis pixels and export
-bounds so the model cannot reinforce annotations that obscure student work.
-Prior tutor context travels separately through `recent_interactions` and is
-treated as untrusted history that must be independently reassessed.
+When student work exists, the analysis image and structured shape companion
+contain only student-owned shapes, cropped to their tight bounds plus a
+12-page-unit border. The structured `ProblemContext` supplies the problem
+without shrinking handwriting in a wide export. A blank board falls back to
+system/problem shapes. AI shapes never enter pixels or bounds; prior tutor
+context travels separately through `recent_interactions` as untrusted history.
+Legacy text and tldraw rich text are both included in structured shape context.
 
 ## 21. Select for AI
 Conceptual representation:
@@ -631,26 +632,27 @@ The latency-critical tutor implementation uses one Google ADK model call:
 ```text
 Canvas image + structured context + requested mode
         ↓
-Combined Canvas Analyst + mode-specific Tutor Planner agent
-        ↓ separate independently validated objects
-CanvasAnalysis + TutorPlan
-        ↓ independent Pydantic validation and safety policy
+Single mode-specific whiteboard tutor agent
+        ↓ literal observed work + grading + canvas actions
+Flat validated TutorAgentOutput
+        ↓ narrow consistency and client-capability policy
 TutorResponse
 ```
 
 ADK performs up to three bounded transient HTTP attempts. The application makes
-no additional provider request for malformed structured output. It removes
-irrelevant provider union fields, validates actions independently, and uses a
-minimal local canvas fallback when the analysis is valid but its plan is not.
+no additional provider request for malformed structured output. It validates
+actions independently and can use the agent's own issue or summary as a local
+canvas fallback when every proposed action is malformed.
 The model defaults to low-latency, high-throughput
 `gemini-3.5-flash-lite`, uses minimal thinking and a 1,024-token output ceiling,
 and is replaceable through `GEMINI_MODEL`. Canvas exports are capped at 1,280
 pixels on their longest edge. The default application timeout is eight seconds.
 
-Mathematically equivalent forms are graded as correct unless the problem or
-solution reference explicitly requires a particular simplified form. Once the
-analysis is correct, the deterministic service policy prevents corrective
-actions, contradictory plan status, and mistake learning events.
+The agent transcribes visible work before consulting the solution reference.
+Missing symbols are errors; relevant unreadable symbols produce `uncertain`
+feedback at their normalized location. Truly equivalent unsimplified forms are
+correct unless the problem requires a particular form. The service filters
+contradictory actions/events but never invents a correctness confirmation.
 
 ## 36. Prompt Organization
 Possible layout:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from app.agents.tutor_workflow import TutorWorkflowResult
-from app.schemas.tutor import CanvasAnalysis, LearningObservation, TutorPlan, TutorRequest
+from app.agents.tutor_workflow import TutorAgentOutput
+from app.schemas.tutor import LearningObservation, TutorRequest
 
 
 PNG_BYTES = (
@@ -78,40 +78,32 @@ def workflow_result(
     *,
     status: str = "partial",
     learning_observations: list[LearningObservation] | None = None,
-) -> TutorWorkflowResult:
-    return TutorWorkflowResult(
-        analysis=CanvasAnalysis.model_validate(
-            {
-                "status": status,
-                "confidence": 0.9,
-                "current_work_summary": "The student omitted the power-rule coefficient.",
-                "issues": ["Missing coefficient 2"],
-                "learning_observations": learning_observations or [],
-            }
-        ),
-        plan=TutorPlan.model_validate(
-            {
-                "status": status,
-                "confidence": 0.88,
-                "canvas_actions": [
-                    {
-                        "type": "text",
-                        "position": {"x": 0.43, "y": 0.35},
-                        "text": "What happens to the exponent?",
+) -> TutorAgentOutput:
+    return TutorAgentOutput.model_validate(
+        {
+            "status": status,
+            "confidence": 0.88,
+            "observed_work": "f'(x) = x",
+            "issues": ["Missing coefficient 2"],
+            "canvas_actions": [
+                {
+                    "type": "text",
+                    "position": {"x": 0.43, "y": 0.35},
+                    "text": "What happens to the exponent?",
+                },
+                {
+                    "type": "circle",
+                    "target": {
+                        "x": 0.2,
+                        "y": 0.35,
+                        "width": 0.2,
+                        "height": 0.1,
                     },
-                    {
-                        "type": "circle",
-                        "target": {
-                            "x": 0.2,
-                            "y": 0.35,
-                            "width": 0.2,
-                            "height": 0.1,
-                        },
-                    },
-                ],
-                "summary": "A restrained power-rule hint.",
-            }
-        ),
+                },
+            ],
+            "summary": "A restrained power-rule hint.",
+            "learning_observations": learning_observations or [],
+        }
     )
 
 

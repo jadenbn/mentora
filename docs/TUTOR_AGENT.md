@@ -25,10 +25,9 @@ Korey's query_similar retrieves required course excerpts
         ↓
 Google ADK Workflow
   single multimodal call
-    ├── Canvas Analyst result → CanvasAnalysis
-    └── mode-specific Tutor Planner result → TutorPlan
+    └── mode-specific tutor → flat TutorAgentOutput
         ↓
-Local action recovery + Pydantic validation + deterministic safety policy
+Independent action validation + narrow consistency policy
         ↓
 TutorResponse with normalized canvas_actions
         ├── returned to whiteboard
@@ -82,7 +81,7 @@ Fields:
 | Field | Required | Description |
 | --- | --- | --- |
 | `payload` | yes | JSON string matching `TutorRequest` version `1.0`. |
-| `canvas_image` | yes | Full canvas capture as PNG, JPEG, or WebP, maximum 10 MB. |
+| `canvas_image` | yes | Minimal student-work capture as PNG, JPEG, or WebP, maximum 10 MB. |
 | `selection_image` | no | Crop corresponding to `selection.bounds`, using the same image formats and limit. |
 
 The backend verifies image signatures. Renaming arbitrary data to `.png` is not
@@ -250,12 +249,12 @@ and height and remain inside the image. The backend returns at most 12 actions.
 
 ## Whiteboard integration notes for Jaden
 
-1. Export only system/problem and student shapes for the analysis image, read
-   its integer pixel dimensions from the PNG IHDR header, and retain the exact
-   image-to-world transform calculated from those same shapes. Keep AI-owned
-   shapes visible and persistent, but out of the analysis pixels and bounds.
-2. Mark every persistent whiteboard shape with `system`, `student`, or `ai`
-   ownership; send only the system and student subset in the analysis companion.
+1. When student work exists, export only student shapes with a 12-page-unit
+   border. Fall back to system/problem shapes on a blank board. Read integer
+   PNG dimensions from IHDR and retain the exact image-to-world transform.
+   Keep AI shapes visible and persistent but outside analysis pixels and bounds.
+2. Mark every persistent shape with `system`, `student`, or `ai` ownership and
+   keep the structured companion aligned with the shapes actually exported.
 3. Convert tldraw shape bounds to normalized image bounds once when building the
    request.
 4. If Select for AI is active, send both normalized selection bounds and the
@@ -297,16 +296,16 @@ taxonomy data does not hide a provider outage.
 - **Stuck** provides stronger scaffolding without needlessly finishing the
   problem.
 
-The Canvas Analyst may return `uncertain`. In that case the service removes
-checks/crosses, records no strength or mistake claims, and may return one short
-clarification action.
+The tutor returns `uncertain` when relevant notation cannot be read. The service
+removes checks/crosses and grading claims, then places a short clarification at
+the reported normalized symbol location.
 
-The analyst evaluates mathematical equivalence before presentation. Optional
-factor or coefficient simplification does not make an otherwise complete answer
-partial or incorrect unless the prompt or `solution_reference` explicitly
-requires that form. Prior tutor summaries are untrusted historical suggestions.
-For correct analysis, the service enforces a correct plan, permits only a check
-and mode-appropriate completion text, and removes contradictory mistake events.
+The agent first records `observed_work` from visible student pixels, then checks
+it against the problem and optional solution reference. It must not fill in a
+missing or faint exponent from the expected answer. Optional factor or
+coefficient simplification does not make an equivalent answer incomplete.
+Prior tutor summaries remain untrusted. Correct output is limited to checks and
+agent-authored text; the service does not manufacture completion language.
 
 If a proposed technique is outside the retrieved course boundary, all proposed
 actions are replaced with a single confirmation message. The frontend should
@@ -450,18 +449,18 @@ Run the opt-in Gemini fixture:
 RUN_LIVE_GEMINI_TEST=1 .venv/bin/python -m pytest -q -m live
 ```
 
-Add `-s` to print the validated analysis, plan, action count, and elapsed time:
+Add `-s` to print the flat validated result, action count, and elapsed time:
 
 ```bash
 RUN_LIVE_GEMINI_TEST=1 .venv/bin/python -m pytest -q -s -m live
 ```
 
-The latency-critical workflow performs the Canvas Analyst and mode-specific
-Tutor Planner roles in one Gemini request while preserving separate validated
-`CanvasAnalysis` and `TutorPlan` objects. Nullable or irrelevant provider union
-fields are removed locally, valid actions survive independently, and a valid
-analysis can produce a minimal local canvas fallback when its plan is malformed.
-An invalid analysis fails safely and is never retried as a second model request.
+The latency-critical workflow asks one mode-specific tutor agent for a flat
+result containing literal observed work, located uncertainties, grading,
+actions, and learning observations. Actions validate independently; when all
+are malformed, the agent's own issue or summary can become a minimal local text
+action. An invalid top-level result fails safely and is never repaired with a
+second model request.
 The default
 `gemini-3.5-flash-lite` model uses minimal thinking, medium image resolution,
 and a 1,024-token output ceiling. Full-canvas exports are capped at 1,280 pixels
@@ -476,8 +475,8 @@ model request; only the SDK's bounded transient HTTP retries can add attempts.
 
 Main extension boundaries:
 
-- `app/schemas/tutor.py`: versioned API and model-output contracts.
-- `app/prompts/tutor.py`: analyst rules and mode-specific tutor behavior.
+- `app/schemas/tutor.py`: versioned public API and canvas-action contracts.
+- `app/prompts/tutor.py`: literal-observation rules and mode-specific behavior.
 - `app/agents/tutor_workflow.py`: single-pass ADK agent, Gemini retries, and local output recovery.
 - `app/services/tutor_context.py`: query construction and Korey retrieval.
 - `app/services/tutor_service.py`: safety policy and response assembly.

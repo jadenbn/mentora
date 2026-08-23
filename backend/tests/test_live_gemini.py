@@ -25,11 +25,21 @@ load_dotenv(Path(__file__).parents[1] / ".env")
     os.getenv("RUN_LIVE_GEMINI_TEST") != "1" or not os.getenv("GEMINI_API_KEY"),
     reason="set RUN_LIVE_GEMINI_TEST=1 and GEMINI_API_KEY to call Gemini",
 )
-def test_live_gemini_returns_validated_analysis_and_actions() -> None:
+@pytest.mark.parametrize(
+    ("fixture_name", "student_text", "is_correct"),
+    [
+        ("chain_rule_wrong.png.b64", "y' = 4(3x² + 1)6x", False),
+        ("chain_rule_correct.png.b64", "y' = 4(3x² + 1)³(6x)", True),
+    ],
+)
+def test_live_gemini_grades_literal_chain_rule_notation(
+    fixture_name: str,
+    student_text: str,
+    is_correct: bool,
+) -> None:
     context = json.loads((FIXTURES / "calculus_context.json").read_text())
-    image = base64.b64decode(
-        (FIXTURES / "calculus_canvas.png.b64").read_text().strip()
-    )
+    context["request"]["canvas"]["shapes"][0]["text"] = student_text
+    image = base64.b64decode((FIXTURES / fixture_name).read_text().strip())
     workflow = AdkTutorWorkflow(
         model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
         timeout_seconds=90,
@@ -65,23 +75,23 @@ def test_live_gemini_returns_validated_analysis_and_actions() -> None:
         raise
     elapsed_seconds = time.perf_counter() - started_at
 
-    assert 0 <= result.analysis.confidence <= 1
-    assert 0 <= result.plan.confidence <= 1
-    assert len(result.plan.canvas_actions) <= 12
-    assert result.analysis.status.value == "correct"
-    assert result.plan.status.value == "correct"
-    assert all(action.type != "cross" for action in result.plan.canvas_actions)
+    assert 0 <= result.confidence <= 1
+    assert len(result.canvas_actions) <= 12
+    if is_correct:
+        assert result.status.value == "correct"
+        assert all(action.type != "cross" for action in result.canvas_actions)
+    else:
+        assert result.status.value in {"partial", "incorrect"}
+        assert "³" not in result.observed_work
 
     validation_summary = {
         "validation": "passed",
         "model": workflow.model,
         "elapsed_seconds": round(elapsed_seconds, 2),
-        "analysis": result.analysis.model_dump(mode="json"),
-        "plan": result.plan.model_dump(mode="json"),
+        "result": result.model_dump(mode="json"),
         "checks": {
-            "analysis_confidence_in_range": True,
-            "plan_confidence_in_range": True,
-            "canvas_action_count": len(result.plan.canvas_actions),
+            "confidence_in_range": True,
+            "canvas_action_count": len(result.canvas_actions),
             "canvas_action_limit": 12,
         },
     }

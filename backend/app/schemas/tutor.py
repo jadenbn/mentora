@@ -283,46 +283,6 @@ class LearningObservation(StrictModel):
         return self
 
 
-class CanvasAnalysis(StrictModel):
-    status: WorkStatus
-    confidence: float = Field(ge=0, le=1)
-    current_work_summary: str = Field(max_length=2_000)
-    student_intent: str | None = Field(default=None, max_length=1_000)
-    identified_steps: list[str] = Field(default_factory=list, max_length=50)
-    strengths: list[str] = Field(default_factory=list, max_length=30)
-    issues: list[str] = Field(default_factory=list, max_length=30)
-    learning_observations: list[LearningObservation] = Field(
-        default_factory=list, max_length=20
-    )
-    course_boundary: CourseBoundaryDecision = Field(
-        default_factory=CourseBoundaryDecision
-    )
-
-    @model_validator(mode="after")
-    def uncertain_analysis_does_not_grade(self) -> "CanvasAnalysis":
-        if self.status == WorkStatus.uncertain:
-            unsupported = [
-                item
-                for item in self.learning_observations
-                if item.type
-                in {LearningObservationType.mistake, LearningObservationType.strength}
-            ]
-            if unsupported:
-                raise ValueError("uncertain analysis cannot grade strengths or mistakes")
-        return self
-
-
-class TutorPlan(StrictModel):
-    status: WorkStatus
-    confidence: float = Field(ge=0, le=1)
-    canvas_actions: list[CanvasAction] = Field(default_factory=list, max_length=12)
-    summary: str | None = Field(default=None, max_length=1_000)
-    warnings: list[str] = Field(default_factory=list, max_length=20)
-    course_boundary: CourseBoundaryDecision = Field(
-        default_factory=CourseBoundaryDecision
-    )
-
-
 class GroundingReference(StrictModel):
     filename: str = Field(min_length=1, max_length=500)
     page: int = Field(ge=0)

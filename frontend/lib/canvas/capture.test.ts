@@ -17,13 +17,26 @@ function pngHeader(width: number, height: number): Blob {
   return new Blob([bytes], { type: "image/png" });
 }
 
-test("analysis capture excludes AI shapes from pixels, bounds, and context", async () => {
+test("analysis capture prefers student work and falls back to the problem", async () => {
   const systemId = "shape:problem" as TLShapeId;
   const studentId = "shape:student" as TLShapeId;
   const aiId = "shape:ai" as TLShapeId;
   const shapes = new Map([
     [systemId, { id: systemId, type: "text", meta: { owner: "system" }, props: { text: "Problem" } }],
-    [studentId, { id: studentId, type: "draw", meta: { owner: "student" }, props: {} }],
+    [studentId, {
+      id: studentId,
+      type: "text",
+      meta: { owner: "student" },
+      props: {
+        richText: {
+          type: "doc",
+          content: [{
+            type: "paragraph",
+            content: [{ type: "text", text: "y' = 4(3x²+1)6x" }],
+          }],
+        },
+      },
+    }],
     [aiId, { id: aiId, type: "text", meta: { owner: "ai" }, props: { text: "Old hint" } }],
   ]);
   let exportedIds: TLShapeId[] = [];
@@ -50,15 +63,25 @@ test("analysis capture excludes AI shapes from pixels, bounds, and context", asy
 
   const capture = await captureCanvasForAnalysis(fakeEditor);
   assert.ok(capture);
-  assert.deepEqual(exportedIds, [systemId, studentId]);
-  assert.deepEqual(boundedIds, [systemId, studentId]);
-  assert.deepEqual(capture.shapeIds, [systemId, studentId]);
+  assert.deepEqual(exportedIds, [studentId]);
+  assert.deepEqual(boundedIds, [studentId]);
+  assert.deepEqual(capture.shapeIds, [studentId]);
   assert.deepEqual(
-    buildCanvasContext(fakeEditor, capture).shapes.map((shape) => shape.owner),
-    ["system", "student"],
+    { x: capture.bounds.x, y: capture.bounds.y, w: capture.bounds.w, h: capture.bounds.h },
+    { x: -2, y: 8, w: 224, h: 124 },
   );
+  const context = buildCanvasContext(fakeEditor, capture);
+  assert.deepEqual(context.shapes.map((shape) => shape.owner), ["student"]);
+  assert.equal(context.shapes[0]?.text, "y' = 4(3x²+1)6x");
   assert.deepEqual(
     { width: capture.width, height: capture.height },
     { width: 1000, height: 500 },
   );
+
+  shapes.delete(studentId);
+  const fallback = await captureCanvasForAnalysis(fakeEditor);
+  assert.ok(fallback);
+  assert.deepEqual(exportedIds, [systemId]);
+  assert.deepEqual(boundedIds, [systemId]);
+  assert.deepEqual(fallback.shapeIds, [systemId]);
 });

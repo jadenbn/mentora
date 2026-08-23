@@ -5,20 +5,19 @@ from __future__ import annotations
 import unittest
 from uuid import uuid4
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.schemas.tutor import (
-    CanvasAnalysis,
+    CanvasAction,
     CanvasContext,
     CourseMetadata,
-    LearningObservation,
-    LearningObservationType,
     NormalizedBounds,
     ProblemContext,
-    TutorPlan,
     TutorRequest,
-    WorkStatus,
 )
+
+
+ACTION_ADAPTER = TypeAdapter(CanvasAction)
 
 
 def valid_request_data() -> dict:
@@ -118,64 +117,37 @@ class TutorSchemaTests(unittest.TestCase):
             TutorRequest.model_validate(payload)
 
     def test_validates_each_canvas_action_shape(self) -> None:
-        plan = TutorPlan.model_validate(
-            {
-                "status": "partial",
-                "confidence": 0.91,
-                "canvas_actions": [
-                    {
-                        "type": "text",
-                        "position": {"x": 0.4, "y": 0.4},
-                        "text": "Check the exponent.",
+        actions = [
+            ACTION_ADAPTER.validate_python(action)
+            for action in [
+                {
+                    "type": "text",
+                    "position": {"x": 0.4, "y": 0.4},
+                    "text": "Check the exponent.",
+                },
+                {
+                    "type": "arrow",
+                    "start": {"x": 0.5, "y": 0.4},
+                    "end": {"x": 0.35, "y": 0.38},
+                },
+                {
+                    "type": "circle",
+                    "target": {
+                        "x": 0.2,
+                        "y": 0.35,
+                        "width": 0.2,
+                        "height": 0.1,
                     },
-                    {
-                        "type": "arrow",
-                        "start": {"x": 0.5, "y": 0.4},
-                        "end": {"x": 0.35, "y": 0.38},
-                    },
-                    {
-                        "type": "circle",
-                        "target": {
-                            "x": 0.2,
-                            "y": 0.35,
-                            "width": 0.2,
-                            "height": 0.1,
-                        },
-                    },
-                ],
-            }
-        )
+                },
+            ]
+        ]
 
-        self.assertEqual([action.type for action in plan.canvas_actions], ["text", "arrow", "circle"])
+        self.assertEqual([action.type for action in actions], ["text", "arrow", "circle"])
 
     def test_rejects_action_with_wrong_fields(self) -> None:
         with self.assertRaises(ValidationError):
-            TutorPlan.model_validate(
-                {
-                    "status": "partial",
-                    "confidence": 0.8,
-                    "canvas_actions": [
-                        {"type": "math", "position": {"x": 0.3, "y": 0.4}, "text": "2x"}
-                    ],
-                }
-            )
-
-    def test_uncertain_analysis_cannot_claim_a_mistake(self) -> None:
-        with self.assertRaises(ValidationError):
-            CanvasAnalysis(
-                status=WorkStatus.uncertain,
-                confidence=0.3,
-                current_work_summary="The handwriting cannot be read reliably.",
-                learning_observations=[
-                    LearningObservation(
-                        type=LearningObservationType.mistake,
-                        topic="derivatives",
-                        skill="power rule",
-                        outcome=WorkStatus.incorrect,
-                        evidence="The exponent appears unchanged.",
-                        confidence=0.8,
-                    )
-                ],
+            ACTION_ADAPTER.validate_python(
+                {"type": "math", "position": {"x": 0.3, "y": 0.4}, "text": "2x"}
             )
 
 

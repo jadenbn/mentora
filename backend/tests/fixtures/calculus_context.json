@@ -14,21 +14,21 @@
       "expected_skills": ["calc1.derivatives.chain-rule"]
     },
     "canvas": {
-      "image_width": 1200,
-      "image_height": 800,
+      "image_width": 1100,
+      "image_height": 180,
       "shapes": [
         {
           "id": "student_step",
           "owner": "student",
           "shape_type": "text",
           "text": "y' = 4(3x² + 1)³(6x)",
-          "bounds": {"x": 0.2, "y": 0.35, "width": 0.45, "height": 0.1}
+          "bounds": {"x": 0.02, "y": 0.1, "width": 0.9, "height": 0.8}
         }
       ]
     },
     "selection": {
       "shape_ids": ["student_step"],
-      "bounds": {"x": 0.2, "y": 0.35, "width": 0.45, "height": 0.1}
+      "bounds": {"x": 0.02, "y": 0.1, "width": 0.9, "height": 0.8}
     }
   },
   "retrieved_course_context": [

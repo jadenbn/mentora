@@ -18,6 +18,7 @@ import { readPngDimensions } from "./png.ts";
 
 /** Keeps the upload well under the backend's 10 MB limit. */
 const MAX_IMAGE_EDGE = 1280;
+const CAPTURE_MARGIN = 12;
 
 export interface CanvasCapture {
   blob: Blob;
@@ -32,21 +33,41 @@ export interface CanvasCapture {
 export async function captureCanvasForAnalysis(
   editor: Editor,
 ): Promise<CanvasCapture | null> {
-  // Previous tutor feedback stays visible and persistent on the whiteboard,
-  // but must not be baked into the next vision request. Otherwise the model
-  // can mistake or reinforce its own annotations when they cover student work.
-  const shapeIds = [...editor.getCurrentPageShapeIds()].filter((id) => {
+  const ownedShapeIds = [...editor.getCurrentPageShapeIds()].map((id) => {
     const shape = editor.getShape(id);
-    return shape ? readOwner(shape.meta) !== "ai" : false;
+    return { id, owner: shape ? readOwner(shape.meta) : null };
   });
+  const studentShapeIds = ownedShapeIds
+    .filter(({ owner }) => owner === "student")
+    .map(({ id }) => id);
+  const systemShapeIds = ownedShapeIds
+    .filter(({ owner }) => owner === "system")
+    .map(({ id }) => id);
+
+  // The problem is already supplied as structured context. A tight crop of
+  // student work preserves small notation such as superscripts. On a blank
+  // board, system/problem shapes are the useful fallback for Stuck/Explain.
+  // AI feedback remains visible on the board but never re-enters analysis.
+  const shapeIds =
+    studentShapeIds.length > 0 ? studentShapeIds : systemShapeIds;
   if (shapeIds.length === 0) {
     return null;
   }
 
-  const bounds = editor.getShapesPageBounds(shapeIds);
-  if (!bounds || bounds.w <= 0 || bounds.h <= 0) {
+  const shapeBounds = editor.getShapesPageBounds(shapeIds);
+  if (!shapeBounds || shapeBounds.w <= 0 || shapeBounds.h <= 0) {
     return null;
   }
+  // Preserve tldraw's Box prototype: toImage clones the supplied bounds.
+  const bounds =
+    typeof shapeBounds.clone === "function"
+      ? shapeBounds.clone().expandBy(CAPTURE_MARGIN)
+      : ({
+          x: shapeBounds.x - CAPTURE_MARGIN,
+          y: shapeBounds.y - CAPTURE_MARGIN,
+          w: shapeBounds.w + CAPTURE_MARGIN * 2,
+          h: shapeBounds.h + CAPTURE_MARGIN * 2,
+        } as Box);
 
   const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bounds.w, bounds.h));
 
@@ -113,15 +134,29 @@ function clamp01(value: number): number {
 
 function readOwner(meta: unknown): ShapeOwner {
   const owner = (meta as { owner?: unknown } | null)?.owner;
-  if (owner === "ai" || owner === "system") {
-    return owner;
-  }
-  return "student";
+  return owner === "ai" || owner === "system" ? owner : "student";
+}
+
+function richTextToPlainText(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const node = value as { type?: unknown; text?: unknown; content?: unknown };
+  if (typeof node.text === "string") return node.text;
+  if (node.type === "hardBreak") return "\n";
+  const content = Array.isArray(node.content)
+    ? node.content.map(richTextToPlainText).join("")
+    : "";
+  return `${content}${node.type === "paragraph" || node.type === "heading" ? "\n" : ""}`;
 }
 
 function readText(props: unknown): string | undefined {
   const text = (props as { text?: unknown } | null)?.text;
-  return typeof text === "string" && text.length > 0 ? text : undefined;
+  if (typeof text === "string" && text.trim().length > 0) {
+    return text;
+  }
+
+  const richText = (props as { richText?: unknown } | null)?.richText;
+  const rendered = richTextToPlainText(richText).trim();
+  return rendered.length > 0 ? rendered : undefined;
 }
 
 /** Structured companion to the image: what is on the canvas and who put it there. */

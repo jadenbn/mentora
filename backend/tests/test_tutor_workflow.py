@@ -1,190 +1,203 @@
-"""Tests for ADK construction and local structured-output recovery."""
+"""Tests for the flat one-call tutor workflow and local validation."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from google.genai import types
 
 from app.agents.tutor_workflow import (
     AdkTutorWorkflow,
-    CANVAS_ANALYSIS_RESPONSE_SCHEMA,
-    TUTOR_PLAN_RESPONSE_SCHEMA,
-    TUTOR_WORKFLOW_RESPONSE_SCHEMA,
     TutorRateLimitError,
+    TutorWireOutput,
     TutorWorkflowError,
-    _drop_nulls,
-    _normalize_provider_output,
-    _validate_or_recover_plan,
+    validate_tutor_output,
 )
-from app.schemas.tutor import TutorMode
+from app.schemas.tutor import TutorMode, WorkStatus
 from tests.helpers import PNG_BYTES, workflow_result
 
 
-def test_every_tutor_mode_builds_a_distinct_planner_policy() -> None:
+def wire_output(**updates) -> dict:
+    payload = {
+        "status": "partial",
+        "confidence": 0.9,
+        "observed_work": "y' = 4(3x²+1)6x",
+        "uncertainties": [],
+        "issues": ["The cube on (3x²+1) is missing."],
+        "canvas_actions": [
+            {
+                "type": "text",
+                "position": {"x": 0.45, "y": 0.25},
+                "text": "What exponent should remain here?",
+            }
+        ],
+        "summary": "The outer power was reduced but not retained.",
+        "warnings": [],
+        "learning_observations": [],
+        "course_boundary": {
+            "requires_confirmation": False,
+            "technique": None,
+            "message": None,
+            "alternatives_available": False,
+        },
+    }
+    payload.update(updates)
+    return payload
+
+
+def test_every_mode_builds_one_distinct_literal_observation_policy() -> None:
     workflow = AdkTutorWorkflow(model="test-model")
-    instructions = {}
+    instructions = {
+        mode: workflow._build_agent(mode).instruction for mode in TutorMode
+    }
 
-    for mode in TutorMode:
-        agent = workflow._build_agent(mode)
-        instructions[mode] = agent.instruction
-
-    assert "do not reveal future solution steps" in instructions[TutorMode.mark]
-    assert "smallest useful spatial nudge" in instructions[TutorMode.hint]
-    assert "rather than giving a lecture" in instructions[TutorMode.explain]
+    assert "without revealing unfinished solution steps" in instructions[TutorMode.mark]
+    assert "smallest useful nudge" in instructions[TutorMode.hint]
+    assert "explanation local to the canvas" in instructions[TutorMode.explain]
     assert "stronger scaffolding" in instructions[TutorMode.stuck]
-    assert all("mathematical equivalence" in value for value in instructions.values())
-    assert all("no cross or corrective annotation" in value for value in instructions.values())
+    assert all("literal transcription" in value for value in instructions.values())
+    assert all("cube is missing" in value for value in instructions.values())
     assert len(set(instructions.values())) == 4
 
 
-def test_generation_is_tuned_for_interactive_latency() -> None:
+def test_agent_uses_one_flat_schema_and_low_latency_settings() -> None:
     agent = AdkTutorWorkflow(model="test-model")._build_agent(TutorMode.hint)
 
-    config = agent.generate_content_config
-    assert config.max_output_tokens == 1_024
-    assert config.thinking_config.thinking_level == types.ThinkingLevel.MINIMAL
-    assert config.media_resolution == types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
-    assert agent.model.retry_options.http_status_codes == [
-        408,
-        500,
-        502,
-        503,
-        504,
-    ]
+    assert agent.output_schema is TutorWireOutput
+    provider_schema = json.dumps(TutorWireOutput.model_json_schema())
+    assert not any(
+        keyword in provider_schema
+        for keyword in ["minimum", "maximum", "minLength", "maxLength", "maxItems"]
+    )
+    assert set(TutorWireOutput.model_json_schema()["required"]) == set(
+        TutorWireOutput.model_fields
+    )
+    assert agent.generate_content_config.max_output_tokens == 1_024
+    assert (
+        agent.generate_content_config.thinking_config.thinking_level
+        == types.ThinkingLevel.MINIMAL
+    )
+    assert (
+        agent.generate_content_config.media_resolution
+        == types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
+    )
+    assert agent.model.retry_options.http_status_codes == [408, 500, 502, 503, 504]
 
 
-def test_provider_schemas_remove_unsupported_additional_properties() -> None:
-    unsupported = {
-        "additionalProperties",
-        "$defs",
-        "$ref",
-        "oneOf",
-        "discriminator",
-        "const",
-        "exclusiveMinimum",
-        "exclusiveMaximum",
-    }
+def test_missing_exponent_evidence_cannot_remain_correct() -> None:
+    result, _ = validate_tutor_output(
+        wire_output(status="correct", issues=["The cube is missing."])
+    )
 
-    def contains_unsupported_keyword(value) -> bool:
-        if isinstance(value, dict):
-            return bool(unsupported.intersection(value)) or any(
-                contains_unsupported_keyword(item) for item in value.values()
-            )
-        if isinstance(value, list):
-            return any(contains_unsupported_keyword(item) for item in value)
-        return False
-
-    assert not contains_unsupported_keyword(CANVAS_ANALYSIS_RESPONSE_SCHEMA)
-    assert not contains_unsupported_keyword(TUTOR_PLAN_RESPONSE_SCHEMA)
-    assert not contains_unsupported_keyword(TUTOR_WORKFLOW_RESPONSE_SCHEMA)
+    assert result.observed_work == "y' = 4(3x²+1)6x"
+    assert result.status == WorkStatus.partial
+    assert all(action.type != "check" for action in result.canvas_actions)
 
 
-def test_provider_null_placeholders_are_removed_before_union_validation() -> None:
-    assert _drop_nulls(
-        {"type": "text", "text": "Try factoring", "latex": None, "items": [None]}
-    ) == {"type": "text", "text": "Try factoring", "items": [None]}
+def test_equivalent_unsimplified_answer_can_remain_correct() -> None:
+    payload = wire_output(
+        status="correct",
+        observed_work="y' = 4(3x²+1)³(6x)",
+        issues=[],
+        canvas_actions=[
+            {
+                "type": "check",
+                "target": {"x": 0.1, "y": 0.2, "width": 0.7, "height": 0.2},
+            }
+        ],
+    )
+    payload.pop("summary")
+    payload["course_boundary"].pop("technique")
+    payload["course_boundary"].pop("message")
+    result, _ = validate_tutor_output(payload)
+
+    assert result.status == WorkStatus.correct
+    assert [action.type for action in result.canvas_actions] == ["check"]
 
 
-def test_irrelevant_provider_union_fields_are_removed_locally() -> None:
-    raw = {
-        "plan": {
-            "canvas_actions": [
+def test_located_uncertainty_overrides_a_grade() -> None:
+    result, _ = validate_tutor_output(
+        wire_output(
+            status="correct",
+            issues=[],
+            uncertainties=[
                 {
-                    "type": "text",
-                    "purpose": "hint",
-                    "position": {"x": 0.2, "y": 0.3},
-                    "text": "This action is valid.",
-                    "target": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
-                    "label": "provider union placeholder",
+                    "description": "The exponent above the closing parenthesis is unclear.",
+                    "target": {"x": 0.52, "y": 0.16, "width": 0.05, "height": 0.08},
                 }
-            ]
-        }
-    }
+            ],
+        )
+    )
 
-    normalized = _normalize_provider_output(raw)
-
-    assert normalized["plan"]["canvas_actions"] == [
-        {
-            "type": "text",
-            "purpose": "hint",
-            "position": {"x": 0.2, "y": 0.3},
-            "text": "This action is valid.",
-        }
-    ]
+    assert result.status == WorkStatus.uncertain
+    assert result.uncertainties[0].target.x == 0.52
 
 
 def test_invalid_actions_are_dropped_without_discarding_valid_feedback() -> None:
-    analysis = workflow_result().analysis
-    plan, dropped, locations = _validate_or_recover_plan(
-        {
-            "status": "partial",
-            "confidence": 0.8,
-            "canvas_actions": [
+    result, locations = validate_tutor_output(
+        wire_output(
+            canvas_actions=[
                 {
                     "type": "text",
                     "position": {"x": 0.2, "y": 0.3},
                     "text": "Check the exponent.",
+                    "target": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
                 },
-                {"type": "circle", "label": "missing target"},
-            ],
-            "warnings": [],
-            "course_boundary": {
-                "requires_confirmation": False,
-                "alternatives_available": False,
-            },
-        },
-        analysis,
-    )
-
-    assert [action.type for action in plan.canvas_actions] == ["text"]
-    assert dropped == 1
-    assert locations
-    assert "Some invalid tutor actions were omitted." in plan.warnings
-
-
-def test_all_invalid_actions_use_a_safe_local_canvas_fallback() -> None:
-    analysis = workflow_result().analysis
-    plan, dropped, _locations = _validate_or_recover_plan(
-        {
-            "status": "partial",
-            "confidence": 0.8,
-            "canvas_actions": [{"type": "circle"}],
-        },
-        analysis,
-    )
-
-    assert dropped == 1
-    assert [action.type for action in plan.canvas_actions] == ["text"]
-    assert plan.canvas_actions[0].purpose == "safe_local_recovery"
-
-
-def test_malformed_analysis_is_not_retried_with_another_provider_call() -> None:
-    class BrokenWorkflow(AdkTutorWorkflow):
-        def __init__(self):
-            super().__init__(model="test-model")
-            self.attempts = 0
-
-        async def _run_once(self, **_kwargs):
-            self.attempts += 1
-            raise ValueError("malformed output")
-
-    workflow = BrokenWorkflow()
-    with pytest.raises(TutorWorkflowError, match="malformed structured output"):
-        asyncio.run(
-            workflow.run(
-                interaction_id="interaction",
-                user_id="user",
-                mode=TutorMode.hint,
-                context={},
-                canvas_image=PNG_BYTES,
-                canvas_mime_type="image/png",
-                selection_image=None,
-                selection_mime_type=None,
-            )
+                {"type": "circle"},
+            ]
         )
+    )
 
+    assert [action.type for action in result.canvas_actions] == ["text"]
+    assert locations
+    assert "Some invalid tutor actions were omitted." in result.warnings
+
+
+def test_all_invalid_actions_recover_from_agent_issue_without_a_correct_template() -> None:
+    result, _ = validate_tutor_output(
+        wire_output(canvas_actions=[{"type": "circle"}])
+    )
+
+    assert [action.type for action in result.canvas_actions] == ["text"]
+    assert result.canvas_actions[0].purpose == "safe_local_recovery"
+    assert result.canvas_actions[0].text == "The cube on (3x²+1) is missing."
+
+
+def run_workflow(workflow: AdkTutorWorkflow, mode: TutorMode = TutorMode.hint):
+    return asyncio.run(
+        workflow.run(
+            interaction_id="interaction",
+            user_id="user",
+            mode=mode,
+            context={},
+            canvas_image=PNG_BYTES,
+            canvas_mime_type="image/png",
+            selection_image=None,
+            selection_mime_type=None,
+        )
+    )
+
+
+class StubWorkflow(AdkTutorWorkflow):
+    def __init__(self, *, error=None, delay: float = 0, timeout: float = 8):
+        super().__init__(model="test-model", timeout_seconds=timeout)
+        self.error, self.delay, self.attempts = error, delay, 0
+
+    async def _run_once(self, **_kwargs):
+        self.attempts += 1
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.error:
+            raise self.error
+        return workflow_result()
+
+
+def test_malformed_output_is_not_retried_with_another_model_call() -> None:
+    workflow = StubWorkflow(error=ValueError("malformed output"))
+    with pytest.raises(TutorWorkflowError, match="malformed structured output"):
+        run_workflow(workflow)
     assert workflow.attempts == 1
 
 
@@ -192,49 +205,13 @@ def test_provider_quota_errors_have_a_distinct_safe_failure() -> None:
     class QuotaError(Exception):
         code = 429
 
-    class QuotaWorkflow(AdkTutorWorkflow):
-        async def _run_once(self, **_kwargs):
-            raise QuotaError("raw provider quota details")
-
+    workflow = StubWorkflow(error=QuotaError("raw provider quota details"))
     with pytest.raises(TutorRateLimitError, match="quota exhausted"):
-        asyncio.run(
-            QuotaWorkflow(model="test-model").run(
-                interaction_id="interaction",
-                user_id="user",
-                mode=TutorMode.mark,
-                context={},
-                canvas_image=PNG_BYTES,
-                canvas_mime_type="image/png",
-                selection_image=None,
-                selection_mime_type=None,
-            )
-        )
+        run_workflow(workflow, TutorMode.mark)
 
 
-def test_workflow_timeout_bounds_the_single_provider_call() -> None:
-    class SlowWorkflow(AdkTutorWorkflow):
-        def __init__(self):
-            super().__init__(model="test-model", timeout_seconds=0.01)
-            self.attempts = 0
-
-        async def _run_once(self, **_kwargs):
-            self.attempts += 1
-            await asyncio.sleep(1)
-            return workflow_result()
-
-    workflow = SlowWorkflow()
+def test_timeout_bounds_the_single_provider_call() -> None:
+    workflow = StubWorkflow(delay=1, timeout=0.01)
     with pytest.raises(TutorWorkflowError, match="timed out"):
-        asyncio.run(
-            workflow.run(
-                interaction_id="interaction",
-                user_id="user",
-                mode=TutorMode.hint,
-                context={},
-                canvas_image=PNG_BYTES,
-                canvas_mime_type="image/png",
-                selection_image=None,
-                selection_mime_type=None,
-            )
-        )
-
+        run_workflow(workflow)
     assert workflow.attempts == 1

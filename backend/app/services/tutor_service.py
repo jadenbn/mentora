@@ -1,4 +1,4 @@
-"""Application service coordinating retrieval, agents, and learning events."""
+"""Application service coordinating retrieval, tutor output, and learning events."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ from dataclasses import dataclass
 from typing import Callable
 from uuid import uuid4
 
-from app.agents.tutor_workflow import TutorWorkflow, TutorWorkflowResult
+from app.agents.tutor_workflow import TutorAgentOutput, TutorWorkflow
 from app.config import TutorSettings
 from app.schemas.tutor import (
     LearningDelivery,
     LearningDeliveryStatus,
     LearningEvent,
+    LearningObservationType,
     LearningWebhookEnvelope,
     TextAction,
-    TutorMode,
     TutorRequest,
     TutorResponse,
     WorkStatus,
@@ -78,15 +78,14 @@ class TutorService:
             len(course_context.excerpts),
             course_context.used_seeded_taxonomy_fallback,
         )
-        agent_context = {
-            "request": request.model_dump(mode="json", exclude_none=True),
-            "retrieved_course_context": course_context.excerpts,
-        }
-        workflow_result = await self.workflow.run(
+        output = await self.workflow.run(
             interaction_id=interaction_id,
             user_id=request.user_id,
             mode=request.mode,
-            context=agent_context,
+            context={
+                "request": request.model_dump(mode="json", exclude_none=True),
+                "retrieved_course_context": course_context.excerpts,
+            },
             canvas_image=canvas_image,
             canvas_mime_type=canvas_mime_type,
             selection_image=selection_image,
@@ -94,25 +93,23 @@ class TutorService:
         )
         logger.info(
             "tutor.trace stage=workflow_complete request_id=%s interaction_id=%s "
-            "analysis_status=%s planned_actions=%s",
+            "status=%s actions=%s uncertainties=%s",
             request.request_id,
             interaction_id,
-            workflow_result.analysis.status.value,
-            len(workflow_result.plan.canvas_actions),
+            output.status.value,
+            len(output.canvas_actions),
+            len(output.uncertainties),
         )
-        workflow_result = self._apply_safety_policy(request, workflow_result)
+        output = self._apply_safety_policy(request, output)
+
         if course_context.used_seeded_taxonomy_fallback:
-            if course_context.fallback_reason == "pinecone_index_missing":
-                warning = (
-                    "The configured course index was not found; feedback is grounded "
-                    "in the built-in seeded course taxonomy."
-                )
-            else:
-                warning = (
-                    "No uploaded course excerpts were found; feedback is grounded in "
-                    "the built-in seeded course taxonomy."
-                )
-            workflow_result.plan.warnings.append(warning)
+            output.warnings.append(
+                "The configured course index was not found; feedback is grounded "
+                "in the built-in seeded course taxonomy."
+                if course_context.fallback_reason == "pinecone_index_missing"
+                else "No uploaded course excerpts were found; feedback is grounded "
+                "in the built-in seeded course taxonomy."
+            )
 
         events = [
             LearningEvent(
@@ -127,10 +124,10 @@ class TutorService:
                 trigger=request.trigger,
                 difficulty=request.problem.difficulty,
             )
-            for observation in workflow_result.analysis.learning_observations
+            for observation in output.learning_observations
         ]
-        webhook_envelope = None
         delivery_status = LearningDeliveryStatus.disabled
+        webhook_envelope = None
         if events and self.settings.learning_metrics_webhook_url:
             delivery_status = LearningDeliveryStatus.queued
             webhook_envelope = LearningWebhookEnvelope(
@@ -138,153 +135,110 @@ class TutorService:
                 events=events,
             )
 
-        boundary = workflow_result.plan.course_boundary
-        if workflow_result.analysis.course_boundary.requires_confirmation:
-            boundary = workflow_result.analysis.course_boundary
-        response = TutorResponse(
-            interaction_id=interaction_id,
-            request_id=request.request_id,
-            status=workflow_result.plan.status,
-            confidence=min(
-                workflow_result.analysis.confidence,
-                workflow_result.plan.confidence,
-            ),
-            canvas_actions=workflow_result.plan.canvas_actions,
-            summary=workflow_result.plan.summary,
-            grounding_references=course_context.references,
-            warnings=workflow_result.plan.warnings,
-            course_boundary=boundary,
-            learning_events=events,
-            learning_delivery=LearningDelivery(
-                status=delivery_status,
-                event_count=len(events),
-            ),
-        )
         return TutorServiceResult(
-            response=response,
+            response=TutorResponse(
+                interaction_id=interaction_id,
+                request_id=request.request_id,
+                status=output.status,
+                confidence=output.confidence,
+                canvas_actions=output.canvas_actions,
+                summary=output.summary,
+                grounding_references=course_context.references,
+                warnings=output.warnings[:20],
+                course_boundary=output.course_boundary,
+                learning_events=events,
+                learning_delivery=LearningDelivery(
+                    status=delivery_status,
+                    event_count=len(events),
+                ),
+            ),
             webhook_envelope=webhook_envelope,
         )
 
     @staticmethod
     def _apply_safety_policy(
         request: TutorRequest,
-        result: TutorWorkflowResult,
-    ) -> TutorWorkflowResult:
-        analysis = result.analysis.model_copy(deep=True)
-        plan = result.plan.model_copy(deep=True)
-        boundary = analysis.course_boundary
-        if not boundary.requires_confirmation:
-            boundary = plan.course_boundary
-        if boundary.requires_confirmation:
+        result: TutorAgentOutput,
+    ) -> TutorAgentOutput:
+        output = result.model_copy(deep=True)
+
+        if output.uncertainties:
+            output.status = WorkStatus.uncertain
+        if output.status == WorkStatus.uncertain:
+            output.canvas_actions = [
+                action
+                for action in output.canvas_actions
+                if action.type not in {"check", "cross"}
+            ]
+            output.learning_observations = [
+                observation
+                for observation in output.learning_observations
+                if observation.type
+                not in {
+                    LearningObservationType.mistake,
+                    LearningObservationType.strength,
+                }
+            ]
+            if output.uncertainties and not any(
+                action.type == "text" for action in output.canvas_actions
+            ):
+                uncertainty = output.uncertainties[0]
+                output.canvas_actions.append(
+                    TextAction(
+                        type="text",
+                        position={
+                            "x": uncertainty.target.x,
+                            "y": uncertainty.target.y,
+                        },
+                        text=f"{uncertainty.description} Please rewrite this symbol."[
+                            :240
+                        ],
+                        purpose="clarify_ambiguous_symbol",
+                    )
+                )
+        elif output.status == WorkStatus.correct:
+            output.canvas_actions = [
+                action
+                for action in output.canvas_actions
+                if action.type in {"check", "text"}
+            ]
+            output.learning_observations = [
+                observation
+                for observation in output.learning_observations
+                if observation.type != LearningObservationType.mistake
+                and observation.outcome == WorkStatus.correct
+            ]
+
+        if output.course_boundary.requires_confirmation:
             position = {"x": 0.5, "y": 0.5}
             if request.selection:
                 position = {
                     "x": request.selection.bounds.x,
                     "y": request.selection.bounds.y,
                 }
-            plan.canvas_actions = [
+            output.canvas_actions = [
                 TextAction(
                     type="text",
                     position=position,
                     text=(
-                        boundary.message or "This method may be outside your course."
+                        output.course_boundary.message
+                        or "This method may be outside your course."
                     )[:240],
                     purpose="course_boundary_confirmation",
                 )
             ]
-            plan.course_boundary = boundary
-
-        # Action IDs are backend identifiers, not model-controlled values.
-        for action in plan.canvas_actions:
-            action.action_id = uuid4().hex
 
         supported = set(request.client_capabilities.supported_actions)
         if supported:
-            filtered = [action for action in plan.canvas_actions if action.type in supported]
-            if len(filtered) != len(plan.canvas_actions):
-                plan.warnings.append("Some actions were omitted because the client does not support them.")
-            plan.canvas_actions = filtered
-
-        if analysis.status == WorkStatus.correct and not boundary.requires_confirmation:
-            # A completed solution must never be turned back into an error by a
-            # contradictory planner response. Keep at most one valid spatial
-            # check and use deterministic, mode-specific completion language.
-            checks = [
-                action for action in plan.canvas_actions if action.type == "check"
-            ][:1]
-            completion_text = TutorService._correct_completion_text(request.mode)
-            plan.status = WorkStatus.correct
-            plan.summary = completion_text
-            plan.canvas_actions = checks
-            if request.mode != TutorMode.mark or not checks:
-                position = {"x": 0.5, "y": 0.5}
-                existing_text = next(
-                    (
-                        action
-                        for action in result.plan.canvas_actions
-                        if action.type == "text"
-                    ),
-                    None,
-                )
-                if existing_text is not None:
-                    position = existing_text.position.model_dump()
-                elif request.selection:
-                    position = {
-                        "x": request.selection.bounds.x,
-                        "y": request.selection.bounds.y,
-                    }
-                plan.canvas_actions.append(
-                    TextAction(
-                        type="text",
-                        position=position,
-                        text=completion_text,
-                        purpose="confirm_complete_work",
-                    )
-                )
-            analysis.issues = []
-            analysis.learning_observations = [
-                observation
-                for observation in analysis.learning_observations
-                if observation.type.value != "mistake"
-                and observation.outcome == WorkStatus.correct
+            filtered = [
+                action for action in output.canvas_actions if action.type in supported
             ]
-
-        if analysis.status == WorkStatus.uncertain:
-            plan.status = WorkStatus.uncertain
-            plan.canvas_actions = [
-                action
-                for action in plan.canvas_actions
-                if action.type not in {"check", "cross"}
-            ]
-            if not plan.canvas_actions and (
-                not supported or "text" in supported
-            ):
-                position = {"x": 0.5, "y": 0.5}
-                if request.selection:
-                    position = {
-                        "x": request.selection.bounds.x,
-                        "y": request.selection.bounds.y,
-                    }
-                plan.canvas_actions.append(
-                    TextAction(
-                        type="text",
-                        position=position,
-                        text="I can’t read this clearly—could you rewrite or select the step?",
-                        purpose="request_clarification",
-                    )
+            if len(filtered) != len(output.canvas_actions):
+                output.warnings.append(
+                    "Some actions were omitted because the client does not support them."
                 )
-        return TutorWorkflowResult(analysis=analysis, plan=plan)
+            output.canvas_actions = filtered
 
-    @staticmethod
-    def _correct_completion_text(mode: TutorMode) -> str:
-        return {
-            TutorMode.mark: "Correct—this work completes the problem.",
-            TutorMode.hint: "This is already correct—no additional step is required.",
-            TutorMode.explain: (
-                "This result is mathematically correct; any further algebraic "
-                "simplification is optional."
-            ),
-            TutorMode.stuck: (
-                "You’ve completed the problem correctly—there is no missing next step."
-            ),
-        }[mode]
+        for action in output.canvas_actions:
+            action.action_id = uuid4().hex
+        return output
