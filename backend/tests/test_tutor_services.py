@@ -65,7 +65,9 @@ def test_service_enriches_learning_events_and_queues_webhook() -> None:
         mistake_tag="power-rule-coefficient",
         confidence=0.91,
     )
-    fake = FakeWorkflow(workflow_result(learning_observations=[observation]))
+    raw_result = workflow_result(learning_observations=[observation])
+    raw_result.plan.canvas_actions[0].action_id = "model-controlled-id"
+    fake = FakeWorkflow(raw_result)
     service = TutorService(
         settings=settings(webhook_url="https://learning.example/events"),
         workflow=fake,
@@ -90,6 +92,7 @@ def test_service_enriches_learning_events_and_queues_webhook() -> None:
     assert event.interaction_id == result.response.interaction_id
     assert event.mistake_tag == "power-rule-coefficient"
     assert result.response.grounding_references[0].filename == "lecture-3.pdf"
+    assert result.response.canvas_actions[0].action_id != "model-controlled-id"
 
 
 def test_course_boundary_replaces_plan_with_confirmation_only() -> None:

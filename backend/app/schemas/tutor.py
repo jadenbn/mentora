@@ -179,7 +179,9 @@ class TutorRequest(StrictModel):
 
 
 class CanvasActionBase(StrictModel):
-    action_id: str = Field(default_factory=lambda: uuid4().hex)
+    action_id: str = Field(
+        default_factory=lambda: uuid4().hex, min_length=1, max_length=64
+    )
     purpose: str | None = Field(default=None, max_length=160)
 
 

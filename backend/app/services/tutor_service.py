@@ -9,7 +9,6 @@ from uuid import uuid4
 from app.agents.tutor_workflow import TutorWorkflow, TutorWorkflowResult
 from app.config import TutorSettings
 from app.schemas.tutor import (
-    CourseBoundaryDecision,
     LearningDelivery,
     LearningDeliveryStatus,
     LearningEvent,
@@ -143,11 +142,17 @@ class TutorService:
                 TextAction(
                     type="text",
                     position=position,
-                    text=boundary.message or "This method may be outside your course.",
+                    text=(
+                        boundary.message or "This method may be outside your course."
+                    )[:240],
                     purpose="course_boundary_confirmation",
                 )
             ]
             plan.course_boundary = boundary
+
+        # Action IDs are backend identifiers, not model-controlled values.
+        for action in plan.canvas_actions:
+            action.action_id = uuid4().hex
 
         supported = set(request.client_capabilities.supported_actions)
         if supported:
