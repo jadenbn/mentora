@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from google.genai import types
 
 from app.agents.tutor_workflow import (
     AdkTutorWorkflow,
@@ -31,6 +32,22 @@ def test_every_tutor_mode_builds_a_distinct_planner_policy() -> None:
     assert "rather than giving a lecture" in instructions[TutorMode.explain]
     assert "stronger scaffolding" in instructions[TutorMode.stuck]
     assert len(set(instructions.values())) == 4
+
+
+def test_generation_is_tuned_for_interactive_latency() -> None:
+    root = AdkTutorWorkflow(model="test-model")._build_agent(TutorMode.hint)
+    analyst = next(node for node in root.sub_agents if node.name == "canvas_analyst")
+
+    config = analyst.generate_content_config
+    assert config.max_output_tokens == 2_048
+    assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
+    assert analyst.model.retry_options.http_status_codes == [
+        408,
+        500,
+        502,
+        503,
+        504,
+    ]
 
 
 def test_provider_schemas_remove_unsupported_additional_properties() -> None:

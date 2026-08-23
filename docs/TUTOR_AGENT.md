@@ -390,6 +390,23 @@ Run the opt-in Gemini fixture:
 RUN_LIVE_GEMINI_TEST=1 .venv/bin/python -m pytest -q -m live
 ```
 
+Add `-s` to print the validated analysis, plan, action count, and elapsed time:
+
+```bash
+RUN_LIVE_GEMINI_TEST=1 .venv/bin/python -m pytest -q -s -m live
+```
+
+The workflow makes two sequential Gemini requests, one per specialist. Gemini 3
+is configured with low thinking and a 2,048-token output ceiling to keep this
+interactive path responsive. Provider `429` responses are not retried because
+free-tier daily quota exhaustion cannot be repaired inside a request; this also
+avoids honoring long provider retry delays. Transient timeouts and `5xx`
+responses still receive bounded retries.
+
+If the live test reports `RESOURCE_EXHAUSTED` with a daily request limit, wait
+for the quota reset or use a Gemini project with available quota. A two-stage
+test consumes at least two model requests when successful.
+
 Main extension boundaries:
 
 - `app/schemas/tutor.py`: versioned API and model-output contracts.

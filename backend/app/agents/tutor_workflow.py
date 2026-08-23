@@ -223,11 +223,19 @@ class AdkTutorWorkflow:
                 max_delay=4,
                 exp_base=2,
                 jitter=0.2,
+                # A 429 can carry a long provider Retry-After value (43 seconds
+                # on the free tier). Retrying cannot fix a daily quota and
+                # makes an interactive canvas request appear to hang.
+                http_status_codes=[408, 500, 502, 503, 504],
             ),
         )
         generation_config = types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=8_192,
+            max_output_tokens=2_048,
+            # Gemini 3 defaults to high thinking, which is unnecessary for the
+            # small schema-bound analyst and planner stages.
+            thinking_config=types.ThinkingConfig(
+                thinking_level=types.ThinkingLevel.LOW
+            ),
         )
         analyst = LlmAgent(
             name="canvas_analyst",
