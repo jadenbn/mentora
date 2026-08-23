@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { ChevronLeft } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ArrowToolbarItem,
   DefaultStylePanel,
@@ -22,15 +22,22 @@ import {
   TextToolbarItem,
   TldrawUiMenuContextProvider,
   TldrawUiToolbar,
-  toRichText,
 } from "tldraw";
 import { TutorControls } from "@/features/tutor/TutorControls";
-import { TutorAnnotation } from "@/types/annotations";
-import { testAnnotation } from "@/lib/api/api";
+import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
+import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
+import type { TutorMode, TutorResponse } from "@/types/tutor";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
+
+// TODO: these arrive from course/problem plumbing once those workstreams land.
+// The backend requires all of them, and prompt_text must be non-empty.
+const PLACEHOLDER_USER_ID = "user_local";
+const PLACEHOLDER_COURSE_ID = "course_demo";
+const PLACEHOLDER_PROBLEM_ID = "problem_demo";
+const PLACEHOLDER_PROBLEM_TEXT = "Work shown on the whiteboard.";
 
 function CanvasToolbar() {
   return (
@@ -54,14 +61,77 @@ function CanvasToolbar() {
   );
 }
 
-function CanvasPanel({
-  annotation,
-  onAnnotationChange,
-  onDrawAnnotation,
+function TutorResult({
+  response,
+  error,
 }: {
-  annotation: TutorAnnotation;
-  onAnnotationChange: (annotation: TutorAnnotation) => void;
-  onDrawAnnotation: (annotation: TutorAnnotation) => void;
+  response: TutorResponse | null;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+        {error}
+      </p>
+    );
+  }
+
+  if (!response) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 space-y-2 text-xs text-slate-700">
+      <p>
+        <span className="font-semibold capitalize text-slate-950">
+          {response.status}
+        </span>{" "}
+        · {Math.round(response.confidence * 100)}% confident ·{" "}
+        {response.canvas_actions.length} annotation
+        {response.canvas_actions.length === 1 ? "" : "s"}
+      </p>
+
+      {response.summary ? <p>{response.summary}</p> : null}
+
+      {response.course_boundary.requires_confirmation ? (
+        <p className="rounded border border-amber-200 bg-amber-50 p-2 text-amber-900">
+          {response.course_boundary.message ??
+            "This may go beyond what the course has covered."}
+        </p>
+      ) : null}
+
+      {response.warnings.length > 0 ? (
+        <ul className="list-disc pl-4 text-amber-800">
+          {response.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {response.grounding_references.length > 0 ? (
+        <p className="text-slate-500">
+          Sources:{" "}
+          {response.grounding_references
+            .map((reference) => `${reference.filename} p.${reference.page}`)
+            .join(", ")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function CanvasPanel({
+  onAnalyze,
+  onClear,
+  busyMode,
+  response,
+  error,
+}: {
+  onAnalyze: (mode: TutorMode) => void;
+  onClear: () => void;
+  busyMode: TutorMode | null;
+  response: TutorResponse | null;
+  error: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -101,115 +171,73 @@ function CanvasPanel({
           </div>
         </section>
 
-        <section className="mt-6">
+        <section className="mt-6 border-t border-slate-200 pt-5">
           <h3 className="text-sm font-semibold text-slate-950">Tutor</h3>
           <div className="mt-2">
-            <TutorControls />
-          </div>
-        </section>
-
-        <form
-          className="mt-6 border-t border-slate-200 pt-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onDrawAnnotation(annotation);
-          }}
-        >
-          <h3 className="text-sm font-semibold text-slate-950">
-            Test tutor annotation
-          </h3>
-          <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-700">
-            Text
-            <input
-              className="w-full min-w-0 rounded border border-slate-300 px-2 py-1"
-              value={annotation.text}
-              onChange={(event) =>
-                onAnnotationChange({ ...annotation, text: event.target.value })
-              }
+            <TutorControls
+              busyMode={busyMode}
+              onAnalyze={onAnalyze}
+              onClear={onClear}
             />
-          </label>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-700">
-              X
-              <input
-                className="w-full min-w-0 rounded border border-slate-300 px-2 py-1"
-                type="number"
-                value={annotation.x}
-                onChange={(event) =>
-                  onAnnotationChange({
-                    ...annotation,
-                    x: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
-            <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-700">
-              Y
-              <input
-                className="w-full min-w-0 rounded border border-slate-300 px-2 py-1"
-                type="number"
-                value={annotation.y}
-                onChange={(event) =>
-                  onAnnotationChange({
-                    ...annotation,
-                    y: Number(event.target.value),
-                  })
-                }
-              />
-            </label>
           </div>
-          <button
-            className="mt-3 hover:cursor-grab rounded bg-blue-700 px-3 py-2 text-sm font-semibold text-white"
-            type="submit"
-          >
-            Add tutor note
-          </button>
-        </form>
+          <TutorResult error={error} response={response} />
+        </section>
       </aside>
     </>
   );
 }
 
-export function Whiteboard() {
+export function Whiteboard({ sessionId }: { sessionId: string }) {
   const editor = useRef<Editor | null>(null);
-  const [annotation, setAnnotation] = useState<TutorAnnotation>({
-    text: "Check this sign",
-    x: 300,
-    y: 200,
-  });
+  const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
+  const [response, setResponse] = useState<TutorResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  function drawTutorAnnotation(nextAnnotation: TutorAnnotation) {
-    editor.current?.createShape({
-      type: "text",
-      x: nextAnnotation.x,
-      y: nextAnnotation.y,
-      meta: { owner: "ai" },
-      props: {
-        richText: toRichText(nextAnnotation.text),
-        color: "red",
-        size: "m",
-      },
-    });
-  }
+  const handleAnalyze = useCallback(
+    async (mode: TutorMode) => {
+      const current = editor.current;
+      if (!current || busyMode !== null) {
+        return;
+      }
 
-  async function requestTestAnnotation() {
-    const annotation: TutorAnnotation = await testAnnotation({
-      x: 10,
-      y: 20,
-      text: "hello!",
-    });
+      setBusyMode(mode);
+      setError(null);
 
-    drawTutorAnnotation(annotation);
-  }
+      try {
+        const result = await runTutorAnalysis({
+          editor: current,
+          mode,
+          userId: PLACEHOLDER_USER_ID,
+          courseId: PLACEHOLDER_COURSE_ID,
+          sessionId,
+          problemId: PLACEHOLDER_PROBLEM_ID,
+          problemText: PLACEHOLDER_PROBLEM_TEXT,
+        });
+        setResponse(result);
+      } catch (caught) {
+        setResponse(null);
+        setError(
+          caught instanceof EmptyCanvasError || caught instanceof Error
+            ? caught.message
+            : "The tutor request failed.",
+        );
+      } finally {
+        setBusyMode(null);
+      }
+    },
+    [busyMode, sessionId],
+  );
+
+  const handleClear = useCallback(() => {
+    if (editor.current) {
+      clearAiShapes(editor.current);
+    }
+    setResponse(null);
+    setError(null);
+  }, []);
 
   return (
     <div className="relative h-full">
-      <button
-        className="bg-black text-white w-20 h-10"
-        onClick={requestTestAnnotation}
-      >
-        hello hello{" "}
-      </button>
       <Tldraw
         hideUi
         onMount={(mountedEditor) => {
@@ -219,9 +247,11 @@ export function Whiteboard() {
       >
         <CanvasToolbar />
         <CanvasPanel
-          annotation={annotation}
-          onAnnotationChange={setAnnotation}
-          onDrawAnnotation={drawTutorAnnotation}
+          busyMode={busyMode}
+          error={error}
+          onAnalyze={handleAnalyze}
+          onClear={handleClear}
+          response={response}
         />
       </Tldraw>
     </div>
