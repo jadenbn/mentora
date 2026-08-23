@@ -9,7 +9,13 @@
  */
 
 import { createShapeId, toRichText } from "tldraw";
-import type { Box, Editor, TLShapePartial, TLShapeId } from "tldraw";
+import type {
+  Box,
+  Editor,
+  TLDefaultColorStyle,
+  TLShapePartial,
+  TLShapeId,
+} from "tldraw";
 import { toWorldPoint, toWorldRect } from "@/lib/annotations/geometry";
 import type { CanvasAction, MarkType } from "@/types/tutor";
 
@@ -25,7 +31,7 @@ export interface RenderContext {
 type AiShapeMeta = { owner: typeof AI_SHAPE_OWNER; interactionId: string };
 
 /** How each mark draws. Circling outlines; a check or cross is a glyph. */
-const MARKS: Record<MarkType, { glyph?: string; color: string }> = {
+const MARKS: Record<MarkType, { glyph?: string; color: TLDefaultColorStyle }> = {
   circle: { color: "red" },
   check: { glyph: "✓", color: "green" },
   cross: { glyph: "✗", color: "red" },

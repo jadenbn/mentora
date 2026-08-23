@@ -125,44 +125,6 @@ export function crossStrokes(rect: WorldRect, jitter: () => number): Stroke[] {
   ];
 }
 
-/** Shaft plus two head barbs, so the arrowhead is drawn last. */
-export function arrowStrokes(from: Vec2, to: Vec2, jitter: () => number): Stroke[] {
-  const angle = Math.atan2(to.y - from.y, to.x - from.x);
-  const length = Math.hypot(to.x - from.x, to.y - from.y);
-  const head = Math.max(8, Math.min(24, length * 0.18));
-  const spread = Math.PI / 7;
-
-  const barb = (offset: number): Stroke =>
-    lineStroke(
-      to,
-      {
-        x: to.x - Math.cos(angle + offset) * head,
-        y: to.y - Math.sin(angle + offset) * head,
-      },
-      jitter,
-      4,
-    );
-
-  return [lineStroke(from, to, jitter, 20), barb(spread), barb(-spread)];
-}
-
-/** Rectangle outline, drawn as one continuous stroke back to the start. */
-export function rectangleStroke(rect: WorldRect, jitter: () => number): Stroke {
-  const corners: Vec2[] = [
-    { x: rect.x, y: rect.y },
-    { x: rect.x + rect.w, y: rect.y },
-    { x: rect.x + rect.w, y: rect.y + rect.h },
-    { x: rect.x, y: rect.y + rect.h },
-    { x: rect.x, y: rect.y },
-  ];
-  const stroke: Stroke = [];
-  for (let i = 0; i < corners.length - 1; i++) {
-    const segment = lineStroke(corners[i], corners[i + 1], jitter, 6);
-    stroke.push(...(i === 0 ? segment : segment.slice(1)));
-  }
-  return stroke;
-}
-
 /** Total pen distance, used to pace a stroke at a constant speed. */
 export function strokeLength(stroke: Stroke): number {
   let total = 0;

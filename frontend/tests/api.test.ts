@@ -11,7 +11,7 @@ import { analyzeCanvas, TutorApiError } from "@/lib/api/api";
 const IMAGE = new Blob(["png"], { type: "image/png" });
 
 function mockFetch(response: Partial<Response> & { json?: () => Promise<unknown> }) {
-  const spy = vi.fn(async () => response as Response);
+  const spy = vi.fn(async (_url: string, _init: RequestInit) => response as Response);
   vi.stubGlobal("fetch", spy);
   return spy;
 }
@@ -118,11 +118,14 @@ describe("failure mapping", () => {
   });
 
   it("survives an error body that is not JSON", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: false,
-      status: 500,
-      json: async () => { throw new SyntaxError("not json"); },
-    }) as unknown as Response));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, _init: RequestInit) => ({
+        ok: false,
+        status: 500,
+        json: async () => { throw new SyntaxError("not json"); },
+      }) as unknown as Response),
+    );
     await expect(call()).rejects.toBeInstanceOf(TutorApiError);
   });
 

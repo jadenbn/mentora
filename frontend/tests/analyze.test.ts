@@ -35,7 +35,10 @@ const priorMark = (id: string) => ({
 });
 
 function mockFetch(body: unknown = RESPONSE, ok = true, status = 200) {
-  const spy = vi.fn(async () => ({ ok, status, json: async () => body }) as Response);
+  const spy = vi.fn(
+    async (_url: string, _init: RequestInit) =>
+      ({ ok, status, json: async () => body }) as Response,
+  );
   vi.stubGlobal("fetch", spy);
   return spy;
 }

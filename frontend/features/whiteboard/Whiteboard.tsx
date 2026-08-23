@@ -39,13 +39,6 @@ const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
 
-// TODO: user and problem still come from nowhere. The backend requires both,
-// and prompt_text must be non-empty. The course id is real now: it comes from
-// the space this canvas belongs to.
-const PLACEHOLDER_USER_ID = "user_local";
-const PLACEHOLDER_PROBLEM_ID = "problem_demo";
-const PLACEHOLDER_PROBLEM_TEXT = "Work shown on the whiteboard.";
-
 function CanvasToolbar() {
   return (
     <TldrawUiToolbar
@@ -93,36 +86,11 @@ function TutorResult({
         <span className="font-semibold capitalize text-slate-950">
           {response.status}
         </span>{" "}
-        · {Math.round(response.confidence * 100)}% confident ·{" "}
-        {response.canvas_actions.length} annotation
+        · {response.canvas_actions.length} annotation
         {response.canvas_actions.length === 1 ? "" : "s"}
       </p>
 
       {response.summary ? <p>{response.summary}</p> : null}
-
-      {response.course_boundary.requires_confirmation ? (
-        <p className="rounded border border-amber-200 bg-amber-50 p-2 text-amber-900">
-          {response.course_boundary.message ??
-            "This may go beyond what the course has covered."}
-        </p>
-      ) : null}
-
-      {response.warnings.length > 0 ? (
-        <ul className="list-disc pl-4 text-amber-800">
-          {response.warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      ) : null}
-
-      {response.grounding_references.length > 0 ? (
-        <p className="text-slate-500">
-          Sources:{" "}
-          {response.grounding_references
-            .map((reference) => `${reference.filename} p.${reference.page}`)
-            .join(", ")}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -254,12 +222,7 @@ export function Whiteboard({
         const result = await runTutorAnalysis({
           editor: current,
           mode,
-          userId: PLACEHOLDER_USER_ID,
           courseId,
-          // The wire contract still calls a space's id the session id.
-          sessionId: spaceId,
-          problemId: PLACEHOLDER_PROBLEM_ID,
-          problemText: PLACEHOLDER_PROBLEM_TEXT,
         });
         setResponse(result);
       } catch (caught) {
@@ -273,7 +236,7 @@ export function Whiteboard({
         setBusyMode(null);
       }
     },
-    [busyMode, courseId, spaceId],
+    [busyMode, courseId],
   );
 
   /** Testing only: draw a random tutor-shaped annotation with animation. */

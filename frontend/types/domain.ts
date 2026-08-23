@@ -6,12 +6,7 @@ export interface Course {
   description: string;
 }
 
-/**
- * A persistent whiteboard document. Called a "space" in the UI.
- *
- * The backend contract still names this `session_id` on the wire (see
- * docs/TUTOR_AGENT.md), so a space's id is sent as the session id.
- */
+/** A persistent whiteboard document, local to the browser. */
 export interface Space {
   id: string;
   courseId: string;

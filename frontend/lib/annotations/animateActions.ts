@@ -14,15 +14,12 @@ import {
   type AnimationHandle,
 } from "@/lib/annotations/animate";
 import {
-  arrowStrokes,
   checkStrokes,
   crossStrokes,
   ellipseStroke,
   makeJitter,
-  rectangleStroke,
   toWorldPoint,
   toWorldRect,
-  underlineStrokes,
   type Stroke,
 } from "@/lib/annotations/geometry";
 import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
@@ -36,35 +33,32 @@ export interface AnimateContext {
   interactionId: string;
 }
 
-function metaFor(action: CanvasAction, context: AnimateContext) {
-  return {
-    owner: AI_SHAPE_OWNER,
-    interactionId: context.interactionId,
-    actionId: action.action_id,
-  };
+function metaFor(context: AnimateContext) {
+  return { owner: AI_SHAPE_OWNER, interactionId: context.interactionId };
+}
+
+/** Deterministic wobble seed from the action itself, so a replay looks identical. */
+function seedFor(action: CanvasAction): string {
+  return action.type === "text"
+    ? `text:${action.position.x},${action.position.y}:${action.text}`
+    : `${action.type}:${action.target.x},${action.target.y}`;
 }
 
 /** Strokes for the geometric actions; null for the text-shaped ones. */
 function strokesFor(action: CanvasAction, frame: Box): Stroke[] | null {
-  const jitter = makeJitter(action.action_id, JITTER);
+  if (action.type === "text") {
+    return null;
+  }
+  const jitter = makeJitter(seedFor(action), JITTER);
+  const rect = toWorldRect(action.target, frame);
 
   switch (action.type) {
     case "circle":
-      return [ellipseStroke(toWorldRect(action.target, frame), jitter)];
-    case "highlight":
-      return [rectangleStroke(toWorldRect(action.target, frame), jitter)];
-    case "underline":
-      return underlineStrokes(toWorldRect(action.target, frame), jitter);
+      return [ellipseStroke(rect, jitter)];
     case "check":
-      return checkStrokes(toWorldRect(action.target, frame), jitter);
+      return checkStrokes(rect, jitter);
     case "cross":
-      return crossStrokes(toWorldRect(action.target, frame), jitter);
-    case "arrow":
-      return arrowStrokes(
-        toWorldPoint(action.start, frame),
-        toWorldPoint(action.end, frame),
-        jitter,
-      );
+      return crossStrokes(rect, jitter);
     default:
       return null;
   }
@@ -72,8 +66,6 @@ function strokesFor(action: CanvasAction, frame: Box): Stroke[] | null {
 
 const COLORS: Partial<Record<CanvasAction["type"], TLDefaultColorStyle>> = {
   check: "green",
-  highlight: "yellow",
-  math: "violet",
 };
 
 function colorFor(action: CanvasAction): TLDefaultColorStyle {
@@ -86,7 +78,7 @@ function stepFor(
   context: AnimateContext,
   onShape: (id: TLShapeId) => void,
 ): (() => AnimationHandle) | null {
-  const meta = metaFor(action, context);
+  const meta = metaFor(context);
   const color = colorFor(action);
 
   const strokes = strokesFor(action, context.bounds);
@@ -94,10 +86,9 @@ function stepFor(
     return () => animateStrokes(editor, strokes, { meta, color, onShape });
   }
 
-  if (action.type === "text" || action.type === "math") {
-    const body = action.type === "text" ? action.text : action.latex;
+  if (action.type === "text") {
     const at = toWorldPoint(action.position, context.bounds);
-    return () => animateText(editor, at, body, { meta, color, onShape });
+    return () => animateText(editor, at, action.text, { meta, color, onShape });
   }
 
   // Unrecognised action from a newer backend: skip rather than guess.

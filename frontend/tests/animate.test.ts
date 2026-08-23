@@ -13,7 +13,6 @@ import {
   sequence,
 } from "@/lib/annotations/animate";
 import {
-  arrowStrokes,
   checkStrokes,
   crossStrokes,
   ellipseStroke,
@@ -253,10 +252,6 @@ describe("stroke geometry", () => {
 
   it("a check is a single continuous stroke", () => {
     expect(checkStrokes(RECT, noJitter)).toHaveLength(1);
-  });
-
-  it("an arrow is a shaft plus two barbs", () => {
-    expect(arrowStrokes({ x: 0, y: 0 }, { x: 100, y: 0 }, noJitter)).toHaveLength(3);
   });
 
   it("jitter is deterministic for the same action id", () => {
