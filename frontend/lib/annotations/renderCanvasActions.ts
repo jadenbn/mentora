@@ -10,7 +10,7 @@
  */
 
 import { createShapeId, toRichText } from "tldraw";
-import type { Box, Editor, TLShapeId } from "tldraw";
+import type { Box, Editor, TLShapePartial, TLShapeId } from "tldraw";
 import type {
   CanvasAction,
   NormalizedBounds,
@@ -26,12 +26,14 @@ export interface RenderContext {
   interactionId: string;
 }
 
-interface AiShapeMeta {
+type AiShapeMeta = {
   owner: typeof AI_SHAPE_OWNER;
   interactionId: string;
   actionId: string;
-  [key: string]: unknown;
-}
+};
+
+/** tldraw's palette names, narrowed to the ones this renderer uses. */
+type AnnotationColor = "red" | "green" | "yellow" | "violet";
 
 export function renderCanvasActions(
   editor: Editor,
@@ -104,7 +106,10 @@ function metaFor(action: CanvasAction, context: RenderContext): AiShapeMeta {
   };
 }
 
-function buildShape(action: CanvasAction, context: RenderContext) {
+function buildShape(
+  action: CanvasAction,
+  context: RenderContext,
+): TLShapePartial | null {
   const frame = context.bounds;
   const id = createShapeId();
   const meta = metaFor(action, context);
@@ -240,8 +245,8 @@ function markShape(
   target: NormalizedBounds,
   frame: Box,
   glyph: string,
-  color: string,
-) {
+  color: AnnotationColor,
+): TLShapePartial {
   const rect = toWorldRect(target, frame);
   return {
     id,
