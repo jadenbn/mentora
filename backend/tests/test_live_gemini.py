@@ -50,3 +50,18 @@ def test_live_gemini_returns_validated_analysis_and_actions() -> None:
     assert 0 <= result.analysis.confidence <= 1
     assert 0 <= result.plan.confidence <= 1
     assert len(result.plan.canvas_actions) <= 12
+
+    validation_summary = {
+        "validation": "passed",
+        "model": workflow.model,
+        "analysis": result.analysis.model_dump(mode="json"),
+        "plan": result.plan.model_dump(mode="json"),
+        "checks": {
+            "analysis_confidence_in_range": True,
+            "plan_confidence_in_range": True,
+            "canvas_action_count": len(result.plan.canvas_actions),
+            "canvas_action_limit": 12,
+        },
+    }
+    print("\nValidated Gemini tutor result:")
+    print(json.dumps(validation_summary, indent=2))
