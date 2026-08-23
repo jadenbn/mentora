@@ -9,12 +9,14 @@ import os
 from pathlib import Path
 
 import pytest
+from dotenv import load_dotenv
 
 from app.agents.tutor_workflow import AdkTutorWorkflow
 from app.schemas.tutor import TutorMode
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
+load_dotenv(Path(__file__).parents[1] / ".env")
 
 
 @pytest.mark.live

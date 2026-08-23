@@ -5,13 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
-from google.adk.agents import LlmAgent
+from google.adk.agents import LlmAgent, SequentialAgent
 from google.adk.models import Gemini
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from google.adk.workflow import START, Workflow
 from google.genai import types
 from pydantic import ValidationError
 
@@ -20,6 +19,167 @@ from app.schemas.tutor import CanvasAnalysis, TutorMode, TutorPlan
 
 
 APP_NAME = "mentora_tutor"
+
+
+_STATUS = {"type": "string", "enum": ["correct", "incorrect", "partial", "uncertain"]}
+_POINT = {
+    "type": "object",
+    "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+    "required": ["x", "y"],
+}
+_BOUNDS = {
+    "type": "object",
+    "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "width": {"type": "number"},
+        "height": {"type": "number"},
+    },
+    "required": ["x", "y", "width", "height"],
+}
+_COURSE_BOUNDARY = {
+    "type": "object",
+    "properties": {
+        "requires_confirmation": {"type": "boolean"},
+        "technique": {"type": "string", "nullable": True},
+        "message": {"type": "string", "nullable": True},
+        "alternatives_available": {"type": "boolean"},
+    },
+    "required": [
+        "requires_confirmation",
+        "technique",
+        "message",
+        "alternatives_available",
+    ],
+}
+
+# ADK 2.x sends output_schema through Gemini's legacy response_schema API. Keep
+# these provider schemas intentionally simple: that endpoint rejects Pydantic's
+# additionalProperties and complex discriminated unions. The full strict models
+# below remain the authoritative validation boundary.
+CANVAS_ANALYSIS_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "status": _STATUS,
+        "confidence": {"type": "number"},
+        "current_work_summary": {"type": "string"},
+        "student_intent": {"type": "string", "nullable": True},
+        "identified_steps": {"type": "array", "items": {"type": "string"}},
+        "strengths": {"type": "array", "items": {"type": "string"}},
+        "issues": {"type": "array", "items": {"type": "string"}},
+        "learning_observations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": ["strength", "mistake", "progress", "help_usage"],
+                    },
+                    "topic": {"type": "string"},
+                    "skill": {"type": "string"},
+                    "outcome": _STATUS,
+                    "evidence": {"type": "string"},
+                    "mistake_tag": {"type": "string", "nullable": True},
+                    "confidence": {"type": "number"},
+                },
+                "required": [
+                    "type",
+                    "topic",
+                    "skill",
+                    "outcome",
+                    "evidence",
+                    "mistake_tag",
+                    "confidence",
+                ],
+            },
+        },
+        "course_boundary": _COURSE_BOUNDARY,
+    },
+    "required": [
+        "status",
+        "confidence",
+        "current_work_summary",
+        "student_intent",
+        "identified_steps",
+        "strengths",
+        "issues",
+        "learning_observations",
+        "course_boundary",
+    ],
+}
+
+TUTOR_PLAN_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "status": _STATUS,
+        "confidence": {"type": "number"},
+        "canvas_actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "text",
+                            "math",
+                            "arrow",
+                            "circle",
+                            "underline",
+                            "highlight",
+                            "check",
+                            "cross",
+                        ],
+                    },
+                    "purpose": {"type": "string", "nullable": True},
+                    "position": {**_POINT, "nullable": True},
+                    "text": {"type": "string", "nullable": True},
+                    "latex": {"type": "string", "nullable": True},
+                    "start": {**_POINT, "nullable": True},
+                    "end": {**_POINT, "nullable": True},
+                    "target": {**_BOUNDS, "nullable": True},
+                    "label": {"type": "string", "nullable": True},
+                },
+                "required": [
+                    "type",
+                    "purpose",
+                    "position",
+                    "text",
+                    "latex",
+                    "start",
+                    "end",
+                    "target",
+                    "label",
+                ],
+            },
+        },
+        "summary": {"type": "string", "nullable": True},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "course_boundary": _COURSE_BOUNDARY,
+    },
+    "required": [
+        "status",
+        "confidence",
+        "canvas_actions",
+        "summary",
+        "warnings",
+        "course_boundary",
+    ],
+}
+
+
+def _drop_nulls(value: Any) -> Any:
+    """Remove provider-only null placeholders before strict union validation."""
+    if isinstance(value, dict):
+        return {
+            key: _drop_nulls(item)
+            for key, item in value.items()
+            if item is not None
+        }
+    if isinstance(value, list):
+        return [_drop_nulls(item) for item in value]
+    return value
 
 
 class TutorWorkflowError(RuntimeError):
@@ -54,7 +214,7 @@ class AdkTutorWorkflow:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
-    def _build_agent(self, mode: TutorMode) -> Workflow:
+    def _build_agent(self, mode: TutorMode) -> SequentialAgent:
         model = Gemini(
             model=self.model,
             retry_options=types.HttpRetryOptions(
@@ -74,7 +234,7 @@ class AdkTutorWorkflow:
             description="Interprets student work and produces learning evidence.",
             model=model,
             instruction=CANVAS_ANALYST_INSTRUCTION,
-            output_schema=CanvasAnalysis,
+            output_schema=CANVAS_ANALYSIS_RESPONSE_SCHEMA,
             output_key="canvas_analysis",
             generate_content_config=generation_config,
             disallow_transfer_to_parent=True,
@@ -88,16 +248,16 @@ class AdkTutorWorkflow:
                 tutor_planner_instruction(mode)
                 + "\n\nValidated Canvas Analyst result:\n{canvas_analysis}"
             ),
-            output_schema=TutorPlan,
+            output_schema=TUTOR_PLAN_RESPONSE_SCHEMA,
             output_key="tutor_plan",
             generate_content_config=generation_config,
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
         )
-        return Workflow(
+        return SequentialAgent(
             name="whiteboard_tutor_workflow",
             description="Analyzes the canvas, then plans restrained tutor feedback.",
-            edges=[(START, analyst, planner)],
+            sub_agents=[analyst, planner],
         )
 
     async def run(
@@ -195,6 +355,8 @@ class AdkTutorWorkflow:
         )
         if session is None:
             raise ValueError("ADK session was not available after workflow completion")
-        analysis = CanvasAnalysis.model_validate(session.state.get("canvas_analysis"))
-        plan = TutorPlan.model_validate(session.state.get("tutor_plan"))
+        analysis = CanvasAnalysis.model_validate(
+            _drop_nulls(session.state.get("canvas_analysis"))
+        )
+        plan = TutorPlan.model_validate(_drop_nulls(session.state.get("tutor_plan")))
         return TutorWorkflowResult(analysis=analysis, plan=plan)
