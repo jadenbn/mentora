@@ -1,5 +1,8 @@
 .env
 .pytest_cache/
 .venv/
+venv/
+.hypothesis/
 __pycache__/
 *.py[cod]
+*.db
