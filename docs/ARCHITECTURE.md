@@ -579,7 +579,7 @@ responsiveness is the product.
 
 ADK performs up to three bounded transient HTTP attempts. The application makes
 one additional attempt only when structured output is malformed. The model
-defaults to `gemini-3-flash` and is replaceable through `GEMINI_MODEL`.
+defaults to `gemini-3.7-flash` and is replaceable through `GEMINI_MODEL`.
 
 ## 36. Prompt Organization
 Possible layout:

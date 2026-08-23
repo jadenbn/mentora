@@ -32,7 +32,7 @@ One required credential:
 GEMINI_API_KEY
 ```
 
-Optional: `GEMINI_MODEL` (default `gemini-3-flash`),
+Optional: `GEMINI_MODEL` (default `gemini-3.7-flash`),
 `TUTOR_REQUEST_TIMEOUT_SECONDS` (default 45).
 
 `GET /health` is always available and reports missing variable *names*, never
