@@ -22,22 +22,33 @@ import {
   TextToolbarItem,
   TldrawUiMenuContextProvider,
   TldrawUiToolbar,
+  toRichText,
 } from "tldraw";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
-import type { TutorMode, TutorResponse } from "@/types/tutor";
+import type {
+  PriorTutorInteraction,
+  ProblemContext,
+  TutorMode,
+  TutorResponse,
+} from "@/types/tutor";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
 
-// TODO: these arrive from course/problem plumbing once those workstreams land.
-// The backend requires all of them, and prompt_text must be non-empty.
-const PLACEHOLDER_USER_ID = "user_local";
-const PLACEHOLDER_COURSE_ID = "course_demo";
-const PLACEHOLDER_PROBLEM_ID = "problem_demo";
-const PLACEHOLDER_PROBLEM_TEXT = "Work shown on the whiteboard.";
+const DEMO_USER_ID = "user_local";
+
+export interface WhiteboardProblem {
+  id: string;
+  context: ProblemContext;
+}
+
+interface AssistanceCounts {
+  hints: number;
+  stuck: number;
+}
 
 function CanvasToolbar() {
   return (
@@ -187,8 +198,19 @@ function CanvasPanel({
   );
 }
 
-export function Whiteboard({ sessionId }: { sessionId: string }) {
+export function Whiteboard({
+  courseId,
+  sessionId,
+  problem,
+}: {
+  courseId: string;
+  sessionId: string;
+  problem: WhiteboardProblem;
+}) {
   const editor = useRef<Editor | null>(null);
+  const requestInFlight = useRef(false);
+  const recentInteractions = useRef<PriorTutorInteraction[]>([]);
+  const assistance = useRef<AssistanceCounts>({ hints: 0, stuck: 0 });
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -196,10 +218,11 @@ export function Whiteboard({ sessionId }: { sessionId: string }) {
   const handleAnalyze = useCallback(
     async (mode: TutorMode) => {
       const current = editor.current;
-      if (!current || busyMode !== null) {
+      if (!current || requestInFlight.current) {
         return;
       }
 
+      requestInFlight.current = true;
       setBusyMode(mode);
       setError(null);
 
@@ -207,12 +230,30 @@ export function Whiteboard({ sessionId }: { sessionId: string }) {
         const result = await runTutorAnalysis({
           editor: current,
           mode,
-          userId: PLACEHOLDER_USER_ID,
-          courseId: PLACEHOLDER_COURSE_ID,
+          userId: DEMO_USER_ID,
+          courseId,
           sessionId,
-          problemId: PLACEHOLDER_PROBLEM_ID,
-          problemText: PLACEHOLDER_PROBLEM_TEXT,
+          problemId: problem.id,
+          problem: problem.context,
+          recentInteractions: recentInteractions.current,
+          studentModel: {
+            total_hints_used: assistance.current.hints,
+          },
         });
+        recentInteractions.current = [
+          ...recentInteractions.current,
+          {
+            interaction_id: result.interaction_id,
+            mode,
+            summary: result.summary ?? `${mode} feedback was added to the canvas.`,
+            created_at: new Date().toISOString(),
+          },
+        ].slice(-20);
+        if (mode === "hint") {
+          assistance.current.hints += 1;
+        } else if (mode === "stuck") {
+          assistance.current.stuck += 1;
+        }
         setResponse(result);
       } catch (caught) {
         setResponse(null);
@@ -222,10 +263,11 @@ export function Whiteboard({ sessionId }: { sessionId: string }) {
             : "The tutor request failed.",
         );
       } finally {
+        requestInFlight.current = false;
         setBusyMode(null);
       }
     },
-    [busyMode, sessionId],
+    [courseId, problem, sessionId],
   );
 
   const handleClear = useCallback(() => {
@@ -242,6 +284,19 @@ export function Whiteboard({ sessionId }: { sessionId: string }) {
         hideUi
         onMount={(mountedEditor) => {
           editor.current = mountedEditor;
+          if (mountedEditor.getCurrentPageShapeIds().size === 0) {
+            mountedEditor.createShape({
+              type: "text",
+              x: 120,
+              y: 80,
+              meta: { owner: "system", problemId: problem.id },
+              props: {
+                richText: toRichText(problem.context.prompt_text),
+                color: "black",
+                size: "l",
+              },
+            });
+          }
         }}
         options={{ maxPages: 1 }}
       >

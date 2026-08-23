@@ -11,7 +11,13 @@ export default async function CoursePage({ params }: { params: Promise<{ courseI
           <p className="text-sm font-semibold tracking-[0.18em] text-blue-700">COURSE</p>
           <h1 className="mt-1 text-3xl font-bold text-slate-950">{courseId}</h1>
         </div>
-        <Link className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white" href="/sessions/local-preview">
+        <Link
+          className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white"
+          href={{
+            pathname: "/sessions/local-preview",
+            query: { courseId },
+          }}
+        >
           Open whiteboard shell
         </Link>
       </header>

@@ -12,6 +12,9 @@ import {
 import { renderCanvasActions } from "@/lib/annotations/renderCanvasActions";
 import type {
   ClientCapabilities,
+  PriorTutorInteraction,
+  ProblemContext,
+  StudentModelSnapshot,
   TutorMode,
   TutorRequest,
   TutorResponse,
@@ -50,7 +53,9 @@ export interface TutorAnalysisOptions {
   courseId: string;
   sessionId: string;
   problemId: string;
-  problemText: string;
+  problem: ProblemContext;
+  recentInteractions?: PriorTutorInteraction[];
+  studentModel?: StudentModelSnapshot;
   signal?: AbortSignal;
 }
 
@@ -73,8 +78,10 @@ export async function runTutorAnalysis(
     problem_id: options.problemId,
     mode: options.mode,
     trigger: "manual",
-    problem: { prompt_text: options.problemText, source: "manual" },
+    problem: options.problem,
     canvas: buildCanvasContext(editor, capture),
+    recent_interactions: options.recentInteractions ?? [],
+    student_model: options.studentModel ?? null,
     locale: "en",
     client_capabilities: CLIENT_CAPABILITIES,
   };

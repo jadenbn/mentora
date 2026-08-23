@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {};
-
-module.exports = {
+const nextConfig: NextConfig = {
+  agentRules: false,
   allowedDevOrigins: ["128.189.139.20"],
 };
 

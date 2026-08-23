@@ -88,7 +88,8 @@ export interface CourseMetadata {
 export interface PriorTutorInteraction {
   interaction_id: string;
   mode: TutorMode;
-  summary?: string | null;
+  summary: string;
+  created_at?: string | null;
 }
 
 export interface StudentModelSnapshot {
