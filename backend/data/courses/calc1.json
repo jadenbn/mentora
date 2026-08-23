@@ -1,0 +1,110 @@
+{
+  "course_id": "calc1",
+  "skills": [
+    {
+      "id": "calc1.limits.evaluation",
+      "name": "Limit evaluation",
+      "description": "Evaluating limits by direct substitution, factoring, or rationalizing.",
+      "difficulty_band": 0.25,
+      "prereqs": []
+    },
+    {
+      "id": "calc1.limits.continuity",
+      "name": "Continuity",
+      "description": "Determining whether a function is continuous at a point using the limit definition.",
+      "difficulty_band": 0.3,
+      "prereqs": ["calc1.limits.evaluation"]
+    },
+    {
+      "id": "calc1.algebra.sign-handling",
+      "name": "Sign handling",
+      "description": "Tracking negative signs correctly through multi-step algebraic manipulation.",
+      "difficulty_band": 0.2,
+      "prereqs": []
+    },
+    {
+      "id": "calc1.derivatives.power-rule",
+      "name": "Power rule",
+      "description": "Differentiating polynomial terms of the form x^n.",
+      "difficulty_band": 0.25,
+      "prereqs": ["calc1.limits.evaluation"]
+    },
+    {
+      "id": "calc1.derivatives.product-rule",
+      "name": "Product rule",
+      "description": "Differentiating a product of two functions, f(x)g(x).",
+      "difficulty_band": 0.4,
+      "prereqs": ["calc1.derivatives.power-rule"]
+    },
+    {
+      "id": "calc1.derivatives.quotient-rule",
+      "name": "Quotient rule",
+      "description": "Differentiating a ratio of two functions, f(x)/g(x).",
+      "difficulty_band": 0.45,
+      "prereqs": ["calc1.derivatives.product-rule"]
+    },
+    {
+      "id": "calc1.derivatives.chain-rule",
+      "name": "Chain rule",
+      "description": "Differentiating composed functions f(g(x)).",
+      "difficulty_band": 0.5,
+      "prereqs": ["calc1.derivatives.power-rule"]
+    },
+    {
+      "id": "calc1.derivatives.trig",
+      "name": "Trig derivatives",
+      "description": "Differentiating sin, cos, tan, and their compositions.",
+      "difficulty_band": 0.5,
+      "prereqs": ["calc1.derivatives.chain-rule"]
+    },
+    {
+      "id": "calc1.derivatives.exponential",
+      "name": "Exponential derivatives",
+      "description": "Differentiating e^x, a^x, and their compositions.",
+      "difficulty_band": 0.5,
+      "prereqs": ["calc1.derivatives.chain-rule"]
+    },
+    {
+      "id": "calc1.derivatives.implicit",
+      "name": "Implicit differentiation",
+      "description": "Differentiating both sides of an equation not solved for y.",
+      "difficulty_band": 0.6,
+      "prereqs": ["calc1.derivatives.chain-rule"]
+    },
+    {
+      "id": "calc1.applications.related-rates",
+      "name": "Related rates",
+      "description": "Relating the rates of change of two or more quantities via implicit differentiation.",
+      "difficulty_band": 0.7,
+      "prereqs": ["calc1.derivatives.implicit"]
+    },
+    {
+      "id": "calc1.applications.optimization",
+      "name": "Optimization",
+      "description": "Finding maxima and minima of a modeled quantity using derivatives.",
+      "difficulty_band": 0.7,
+      "prereqs": ["calc1.derivatives.power-rule", "calc1.derivatives.product-rule"]
+    },
+    {
+      "id": "calc1.integrals.basic-antiderivatives",
+      "name": "Basic antiderivatives",
+      "description": "Reversing the power rule to find antiderivatives of polynomial terms.",
+      "difficulty_band": 0.4,
+      "prereqs": ["calc1.derivatives.power-rule"]
+    },
+    {
+      "id": "calc1.integrals.u-substitution",
+      "name": "U-substitution",
+      "description": "Integrating a composed function by substituting for its inner function.",
+      "difficulty_band": 0.6,
+      "prereqs": ["calc1.integrals.basic-antiderivatives", "calc1.derivatives.chain-rule"]
+    },
+    {
+      "id": "calc1.integrals.by-parts",
+      "name": "Integration by parts",
+      "description": "Integrating a product of two functions using the by-parts formula.",
+      "difficulty_band": 0.65,
+      "prereqs": ["calc1.integrals.u-substitution", "calc1.derivatives.product-rule"]
+    }
+  ]
+}

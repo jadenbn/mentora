@@ -13,3 +13,10 @@ pinecone-client>=5.0.0
 
 # Utilities
 python-dotenv>=1.0.0
+
+# Learning engine
+sqlmodel>=0.0.22
+
+# Dev
+pytest>=8.0.0
+hypothesis>=6.100.0
