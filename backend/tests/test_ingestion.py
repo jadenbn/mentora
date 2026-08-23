@@ -72,15 +72,15 @@ def test_guard_drops_errors_outside_expected_skills(session):
         difficulty=0.5,
         correct=False,
         errors=[
-            ErrorReport(skill_id="calc1.a", misconception="sign-error"),
-            ErrorReport(skill_id="calc1.b", misconception="dropped-term"),
+            ErrorReport(skill_id="calc1.a", misconception="careless-error"),
+            ErrorReport(skill_id="calc1.b", misconception="conceptual-error"),
         ],
     )
     result = svc.record_attempt(session, "calc1", payload)
 
     assert result.dropped_errors == 1
     state_a = session.get(SkillState, ("stu1", "calc1.a"))
-    assert state_a.misconception_counts == {"sign-error": 1}
+    assert state_a.misconception_counts == {"careless-error": 1}
     state_b = session.get(SkillState, ("stu1", "calc1.b"))
     assert state_b is None  # never touched, since its only error was dropped
 

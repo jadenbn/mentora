@@ -6,12 +6,13 @@ from enum import Enum
 
 
 class MisconceptionTag(str, Enum):
-    DROPPED_TERM = "dropped-term"
-    SIGN_ERROR = "sign-error"
-    WRONG_RULE_SELECTED = "wrong-rule-selected"
-    INCOMPLETE_SIMPLIFICATION = "incomplete-simplification"
-    ARITHMETIC_SLIP = "arithmetic-slip"
-    NOTATION_ERROR = "notation-error"
+    """Subject-agnostic: these must mean the same thing in any course, since
+    a single closed vocabulary is shared across every taxonomy."""
+
+    CONCEPTUAL_ERROR = "conceptual-error"  # wrong idea/method chosen
+    PROCEDURAL_ERROR = "procedural-error"  # right idea, executed incorrectly
+    CARELESS_ERROR = "careless-error"      # right idea and method, slipped
+    INCOMPLETE = "incomplete"              # correct so far, not finished
     NO_ATTEMPT = "no-attempt"
 
 
