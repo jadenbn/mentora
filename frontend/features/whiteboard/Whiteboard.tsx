@@ -25,6 +25,9 @@ import {
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
+import { animateCanvasActions } from "@/lib/annotations/animateActions";
+import { randomDemoActions } from "@/lib/annotations/demoAnnotation";
+import type { AnimationHandle } from "@/lib/annotations/animate";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
 import { touchSpace } from "@/lib/spaces/store";
@@ -126,12 +129,14 @@ function TutorResult({
 function CanvasPanel({
   onAnalyze,
   onClear,
+  onAnimateDemo,
   busyMode,
   response,
   error,
 }: {
   onAnalyze: (mode: TutorMode) => void;
   onClear: () => void;
+  onAnimateDemo: () => void;
   busyMode: TutorMode | null;
   response: TutorResponse | null;
   error: string | null;
@@ -185,6 +190,17 @@ function CanvasPanel({
           </div>
           <TutorResult error={error} response={response} />
         </section>
+
+        <section className="mt-6 border-t border-slate-200 pt-5">
+          <h3 className="text-sm font-semibold text-slate-950">Testing</h3>
+          <button
+            className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+            onClick={onAnimateDemo}
+            type="button"
+          >
+            Animate test note
+          </button>
+        </section>
       </aside>
     </>
   );
@@ -200,6 +216,7 @@ export function Whiteboard({
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const animation = useRef<AnimationHandle | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
@@ -241,7 +258,23 @@ export function Whiteboard({
     [busyMode, courseId, spaceId],
   );
 
+  /** Testing only: draw a random tutor-shaped annotation with animation. */
+  const handleAnimateDemo = useCallback(() => {
+    const current = editor.current;
+    if (!current) {
+      return;
+    }
+    // A second press interrupts the first rather than overlapping it.
+    animation.current?.cancel();
+    animation.current = animateCanvasActions(current, randomDemoActions(), {
+      bounds: current.getViewportPageBounds(),
+      interactionId: `demo_${Date.now()}`,
+    });
+  }, []);
+
   const handleClear = useCallback(() => {
+    animation.current?.cancel();
+    animation.current = null;
     if (editor.current) {
       clearAiShapes(editor.current);
     }
@@ -254,6 +287,8 @@ export function Whiteboard({
     return () => {
       disposeAutosave.current?.();
       disposeAutosave.current = null;
+      animation.current?.cancel();
+      animation.current = null;
       if (savedTimer.current !== null) {
         clearTimeout(savedTimer.current);
         savedTimer.current = null;
@@ -303,6 +338,7 @@ export function Whiteboard({
           busyMode={busyMode}
           error={error}
           onAnalyze={handleAnalyze}
+          onAnimateDemo={handleAnimateDemo}
           onClear={handleClear}
           response={response}
         />
