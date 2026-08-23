@@ -13,7 +13,7 @@ export default async function SessionPage({ params }: { params: Promise<{ sessio
         </div>
       </header>
       <section className="min-h-0 flex-1" aria-label="Whiteboard canvas">
-        <Whiteboard />
+        <Whiteboard sessionId={sessionId} />
       </section>
     </main>
   );
