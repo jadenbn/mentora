@@ -27,6 +27,7 @@ class Attempt(SQLModel, table=True):
     correct: bool
     partial: bool = Field(default=False)
     hints_used: int = Field(default=0)
+    stuck_requests: int = Field(default=0)
     total_time_ms: int | None = Field(default=None)
     # Only errors that survived the expected_skills guard. See
     # student_model_service.record_attempt for why unvalidated errors from

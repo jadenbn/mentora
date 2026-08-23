@@ -7,11 +7,15 @@ import os
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.agents.tutor_workflow import TutorWorkflowError
 from app.api.tutor import get_tutor_service
 from app.config import TutorSettings
+from app.db import get_session
 from app.main import app
+from app.models.attempt import Attempt
 from app.services.tutor_context import CourseContextUnavailable
 from app.services.tutor_service import TutorService
 from tests.helpers import PNG_BYTES, retrieval_results, tutor_request, workflow_result
@@ -44,10 +48,16 @@ def fake_service() -> TutorService:
     )
 
 
-def post_tutor(client: TestClient, *, image: bytes = PNG_BYTES, content_type: str = "image/png"):
+def post_tutor(
+    client: TestClient,
+    *,
+    mode: str = "hint",
+    image: bytes = PNG_BYTES,
+    content_type: str = "image/png",
+):
     return client.post(
         "/api/tutor/analyze",
-        data={"payload": tutor_request().model_dump_json()},
+        data={"payload": tutor_request(mode=mode).model_dump_json()},
         files={"canvas_image": ("canvas.png", image, content_type)},
     )
 
@@ -94,6 +104,30 @@ def test_tutor_accepts_valid_multipart_request() -> None:
     assert body["status"] == "partial"
     assert [action["type"] for action in body["canvas_actions"]] == ["text", "circle"]
     assert body["grounding_references"][0]["filename"] == "lecture-3.pdf"
+
+
+def test_tutor_modes_do_not_create_mastery_attempts() -> None:
+    test_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(test_engine)
+
+    def learning_session():
+        with Session(test_engine) as session:
+            yield session
+
+    app.dependency_overrides[get_tutor_service] = fake_service
+    app.dependency_overrides[get_session] = learning_session
+    try:
+        with patch.dict(os.environ, REQUIRED_ENV, clear=True), TestClient(app) as client:
+            assert post_tutor(client, mode="hint").status_code == 200
+            assert post_tutor(client, mode="stuck").status_code == 200
+        with Session(test_engine) as session:
+            assert session.exec(select(Attempt)).all() == []
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_tutor_rejects_spoofed_or_unsupported_image() -> None:

@@ -6,8 +6,9 @@ backend retrieves relevant course material, uses a multimodal Gemini agent
 workflow to interpret the work, and returns validated spatial actions for the
 whiteboard renderer.
 
-The tutor also emits evidence-based learning events so future questions and
-feedback can adapt to what the student does well and where they struggle.
+The tutor also emits evidence-based learning events and reads Ren's durable
+student model so future feedback can adapt to what the student does well and
+where they struggle.
 
 ## Repository
 
@@ -40,6 +41,10 @@ PINECONE_INDEX_NAME
 The tutor endpoint is `POST /api/tutor/analyze`. It accepts multipart form data
 with a JSON `payload`, a required `canvas_image`, and an optional
 `selection_image`. See `docs/TUTOR_AGENT.md` for complete examples.
+
+The learning engine exposes explicit attempt ingestion, student-model reads,
+and adaptive next-problem specifications under `/api/courses/{course_id}`.
+Tutor actions do not silently create completed attempts.
 
 ## Tests
 

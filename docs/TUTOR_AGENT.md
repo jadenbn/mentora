@@ -30,7 +30,8 @@ Pydantic validation + deterministic safety policy
         ↓
 TutorResponse with normalized canvas_actions
         ├── returned to whiteboard
-        └── learning events posted to optional webhook in background
+        ├── learning events posted to optional webhook in background
+        └── durable student model was read before agent execution
 ```
 
 Gemini never calls tldraw. It can only produce the action types defined in
@@ -56,6 +57,7 @@ TUTOR_REQUEST_TIMEOUT_SECONDS=45
 TUTOR_RETRIEVAL_TOP_K=5
 LEARNING_METRICS_WEBHOOK_URL=
 LEARNING_METRICS_WEBHOOK_SECRET=
+MENTORA_DB_PATH=
 ```
 
 The OpenAI and Pinecone values belong to the existing course-context retrieval
@@ -261,6 +263,12 @@ and height and remain inside the image. The backend returns at most 12 actions.
 8. Persist AI shapes with the session and deduplicate repeated responses by
    `interaction_id` or the caller-generated `request_id`.
 
+Successful Hint and Stuck responses should be appended to
+`recent_interactions` for the next request. Failed requests do not count.
+Clearing AI shapes is a presentation action and must not erase interaction or
+assistance history. Hint sends `mode: "hint"`; I'm Stuck sends `mode: "stuck"`
+so the planner applies its stronger scaffolding policy.
+
 If `client_capabilities.supported_actions` is non-empty, the backend removes
 unsupported actions and adds a warning. An empty list means the client supports
 the complete version `1.0` action set.
@@ -283,6 +291,34 @@ present the returned `course_boundary` choice before requesting a follow-up
 analysis that uses the new technique.
 
 ## Learning-engine contract for Ren
+
+### Tutor observations versus completed attempts
+
+Tutor analysis events describe what the agents observed during one
+interaction. They remain available in `TutorResponse.learning_events` and may
+be delivered to the optional webhook, but they do not update mastery.
+
+Mastery changes only through:
+
+```text
+POST /api/courses/{course_id}/attempts
+```
+
+The attempt payload carries taxonomy-compatible `expected_skills`, numeric
+difficulty, outcome, `hints_used`, and `stuck_requests`. Both assistance counts
+default to zero. A correct attempt after any Stuck request receives the
+multi-hint assistance score, and is never counted as correct-unassisted.
+
+Before every tutor workflow, the backend loads the course-scoped student model
+from SQLite. Skills with mastery at least `0.75` and confidence at least `0.5`
+become strengths in the prompt snapshot; attempted skills, recurring
+misconceptions, and completed-attempt hint totals are included as well.
+
+SQLite defaults to `backend/mentora.db`. `MENTORA_DB_PATH` overrides the path,
+and startup adds the backward-compatible `stuck_requests` column when an older
+local database is detected.
+
+### Learning observation delivery
 
 Every supported learning observation is included in `learning_events` even
 when webhook delivery is disabled. Fields include:

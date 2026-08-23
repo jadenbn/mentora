@@ -227,7 +227,9 @@ POST /api/courses/{course_id}/documents
 POST /api/questions/generate
 POST /api/problems/import
 POST /api/tutor/analyze
+POST /api/courses/{course_id}/attempts
 GET  /api/courses/{course_id}/student-model
+GET  /api/courses/{course_id}/next-problem-spec
 ```
 Prefer domain operations over one endpoint per prompt.
 
@@ -557,6 +559,20 @@ tag, confidence, tutor mode, difficulty, and request/session identifiers. When
 the background. Delivery is best effort and non-blocking; the response copy is
 the fallback until the learning engine provides durable ingestion.
 
+Ren's learning engine separately persists explicit completed attempts in
+SQLite and derives course-scoped skill mastery and next-problem specifications.
+Tutor interactions are observational: Mark, Hint, Explain, and Stuck never
+silently create an attempt or change mastery. Before each tutor workflow, the
+backend adapts durable skill state into the existing `StudentModelSnapshot` so
+the agents receive attempted topics, recurring misconceptions, established
+strengths, and historical hint usage.
+
+Completed attempts track `hints_used` and `stuck_requests` separately. Any
+Stuck use applies the stronger multi-hint assistance score; it is not treated
+as unassisted success. Existing SQLite databases receive the additive
+`stuck_requests` column during startup. The default database is
+`backend/mentora.db` and can be overridden with `MENTORA_DB_PATH`.
+
 ## 34. Built-In Course
 Support at least one built-in demo course, likely Calculus I.
 Where practical, seed it through the same Course Context mechanisms as uploaded courses to avoid a separate architecture.
@@ -662,6 +678,7 @@ Tutor readiness requires `GEMINI_API_KEY`, `OPENAI_API_KEY`,
 errors report missing variable names only. Image type is verified from file
 signatures rather than trusting multipart headers. Optional learning webhooks
 may be signed with HMAC-SHA256 through `LEARNING_METRICS_WEBHOOK_SECRET`.
+Learning-engine state uses local SQLite and never requires provider secrets.
 
 ## 42. Testing
 Prioritize deterministic tests for:

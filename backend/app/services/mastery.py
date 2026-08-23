@@ -46,9 +46,16 @@ HALFLIFE_DAYS = 14.0
 PREREQ_BLEED = 0.10
 
 
-def score_attempt(correct: bool, hints_used: int, partial: bool) -> float:
+def score_attempt(
+    correct: bool,
+    hints_used: int,
+    partial: bool,
+    stuck_requests: int = 0,
+) -> float:
     """Map an attempt's raw outcome to a 0..1 score."""
     if correct:
+        if stuck_requests > 0:
+            return SCORE_CORRECT_MULTI_HINT
         if hints_used == 0:
             return SCORE_CORRECT_UNASSISTED
         if hints_used == 1:

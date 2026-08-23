@@ -108,6 +108,18 @@ def test_score_attempt_table() -> None:
     assert score_attempt(correct=False, hints_used=0, partial=False) == 0.00
 
 
+def test_stuck_request_uses_stronger_assistance_score() -> None:
+    assert (
+        score_attempt(
+            correct=True,
+            hints_used=0,
+            partial=False,
+            stuck_requests=1,
+        )
+        == 0.45
+    )
+
+
 @given(delta=st.floats(min_value=-1.0, max_value=1.0, allow_nan=False).filter(lambda d: abs(d) > 1e-9))
 def test_prereq_delta_is_a_fraction_of_delta(delta) -> None:
     result = prereq_delta(delta)

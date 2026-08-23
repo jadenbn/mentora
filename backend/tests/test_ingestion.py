@@ -61,6 +61,28 @@ def test_record_attempt_updates_mastery(session):
     assert state.streak == 1
 
 
+def test_stuck_request_is_persisted_and_not_unassisted(session):
+    _skill(session, "calc1.a", name="Skill A")
+    payload = AttemptCreate(
+        student_id="stu1",
+        session_id="sess1",
+        problem_id="p1",
+        expected_skills=["calc1.a"],
+        difficulty=0.5,
+        correct=True,
+        stuck_requests=1,
+    )
+
+    result = svc.record_attempt(session, "calc1", payload)
+
+    expected = update_mastery(0.5, 0.45, 0.5, 0)
+    assert result.updated_skills["calc1.a"] == pytest.approx(expected)
+    state = session.get(SkillState, ("stu1", "calc1.a"))
+    assert state.correct_unassisted == 0
+    attempt = session.exec(select(Attempt)).one()
+    assert attempt.stuck_requests == 1
+
+
 def test_guard_drops_errors_outside_expected_skills(session):
     _skill(session, "calc1.a")
     _skill(session, "calc1.b")
@@ -190,3 +212,42 @@ def test_get_student_model_applies_decay_on_read(session):
     # stored value is untouched -- decay is read-time only
     stored = session.get(SkillState, ("stu1", "calc1.a"))
     assert stored.mastery == 0.9
+
+
+def test_tutor_snapshot_maps_mastery_and_hint_history(session):
+    _skill(session, "calc1.a", name="Chain rule")
+    session.add(
+        SkillState(
+            student_id="stu1",
+            course_id="calc1",
+            skill_id="calc1.a",
+            mastery=0.85,
+            attempts=4,
+            misconception_counts={"sign-error": 2},
+        )
+    )
+    session.add(
+        Attempt(
+            student_id="stu1",
+            course_id="calc1",
+            session_id="sess1",
+            problem_id="p1",
+            expected_skills=["calc1.a"],
+            difficulty=0.5,
+            correct=True,
+            hints_used=2,
+        )
+    )
+    session.commit()
+
+    snapshot = svc.get_tutor_snapshot(
+        session,
+        "calc1",
+        "stu1",
+        current_hint_count=1,
+    )
+
+    assert snapshot.attempted_topics == ["Chain rule"]
+    assert snapshot.strengths == ["Chain rule"]
+    assert snapshot.recurring_mistakes == ["Chain rule: sign-error"]
+    assert snapshot.total_hints_used == 3

@@ -6,11 +6,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
+from sqlmodel import Session
 
 from app.agents.tutor_workflow import AdkTutorWorkflow, TutorWorkflowError
 from app.config import TutorSettings, missing_tutor_settings
+from app.db import get_session
 from app.schemas.tutor import TutorRequest, TutorResponse
 from app.services.learning_events import publish_learning_events
+from app.services.student_model_service import get_tutor_snapshot
 from app.services.tutor_context import CourseContextUnavailable
 from app.services.tutor_service import TutorService
 
@@ -73,6 +76,7 @@ async def analyze_tutor_request(
     canvas_image: Annotated[UploadFile, File()],
     selection_image: Annotated[UploadFile | None, File()] = None,
     service: TutorService = Depends(get_tutor_service),
+    learning_session: Session = Depends(get_session),
 ) -> TutorResponse:
     missing = missing_tutor_settings()
     if missing:
@@ -90,6 +94,22 @@ async def analyze_tutor_request(
             status_code=422,
             detail=exc.errors(include_input=False),
         ) from exc
+
+    current_hint_count = (
+        request.student_model.total_hints_used
+        if request.student_model and request.student_model.total_hints_used
+        else 0
+    )
+    request = request.model_copy(
+        update={
+            "student_model": get_tutor_snapshot(
+                learning_session,
+                request.course_id,
+                request.user_id,
+                current_hint_count=current_hint_count,
+            )
+        }
+    )
 
     canvas_bytes, canvas_mime_type = await _read_image(
         canvas_image, field_name="canvas_image"

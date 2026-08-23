@@ -13,11 +13,14 @@ from app.models.skill import Skill
 from app.models.skill_state import SkillState
 from app.models.student_profile import StudentProfile
 from app.schemas.learning import AttemptCreate, AttemptResult, SkillStateOut, StudentModelResponse
+from app.schemas.tutor import StudentModelSnapshot
 from app.services.mastery import apply_decay, confidence, prereq_delta, score_attempt, update_mastery
 
 logger = logging.getLogger(__name__)
 
 TOP_MISCONCEPTIONS_LIMIT = 3
+STRENGTH_MASTERY_THRESHOLD = 0.75
+STRENGTH_CONFIDENCE_THRESHOLD = 0.5
 
 
 class UnknownSkillError(ValueError):
@@ -86,7 +89,12 @@ def record_attempt(session: Session, course_id: str, payload: AttemptCreate) -> 
         )
 
     profile = _get_or_create_profile(session, payload.student_id, course_id)
-    score = score_attempt(correct=payload.correct, hints_used=payload.hints_used, partial=payload.partial)
+    score = score_attempt(
+        correct=payload.correct,
+        hints_used=payload.hints_used,
+        partial=payload.partial,
+        stuck_requests=payload.stuck_requests,
+    )
 
     errors_by_skill: dict[str, list[str]] = {}
     for err in valid_errors:
@@ -104,7 +112,11 @@ def record_attempt(session: Session, course_id: str, payload: AttemptCreate) -> 
 
         state.mastery = new_mastery
         state.attempts += 1
-        if payload.correct and payload.hints_used == 0:
+        if (
+            payload.correct
+            and payload.hints_used == 0
+            and payload.stuck_requests == 0
+        ):
             state.correct_unassisted += 1
         state.streak = _update_streak(state.streak, payload.correct)
         if skill_id in errors_by_skill:
@@ -146,6 +158,7 @@ def record_attempt(session: Session, course_id: str, payload: AttemptCreate) -> 
         correct=payload.correct,
         partial=payload.partial,
         hints_used=payload.hints_used,
+        stuck_requests=payload.stuck_requests,
         total_time_ms=payload.total_time_ms,
         errors=[e.model_dump(mode="json") for e in valid_errors],
     )
@@ -182,3 +195,43 @@ def get_student_model(session: Session, course_id: str, student_id: str) -> Stud
         )
 
     return StudentModelResponse(student_id=student_id, course_id=course_id, skills=out)
+
+
+def get_tutor_snapshot(
+    session: Session,
+    course_id: str,
+    student_id: str,
+    *,
+    current_hint_count: int = 0,
+) -> StudentModelSnapshot:
+    """Adapt durable mastery state to the tutor's compact prompt contract."""
+    model = get_student_model(session, course_id, student_id)
+    attempts = session.exec(
+        select(Attempt).where(
+            Attempt.course_id == course_id,
+            Attempt.student_id == student_id,
+        )
+    ).all()
+
+    attempted_topics: list[str] = []
+    recurring_mistakes: list[str] = []
+    strengths: list[str] = []
+    for skill in model.skills:
+        if skill.attempts > 0:
+            attempted_topics.append(skill.skill_name)
+        recurring_mistakes.extend(
+            f"{skill.skill_name}: {tag}" for tag in skill.top_misconceptions
+        )
+        if (
+            skill.mastery >= STRENGTH_MASTERY_THRESHOLD
+            and skill.confidence >= STRENGTH_CONFIDENCE_THRESHOLD
+        ):
+            strengths.append(skill.skill_name)
+
+    return StudentModelSnapshot(
+        attempted_topics=attempted_topics,
+        recurring_mistakes=recurring_mistakes,
+        strengths=strengths,
+        total_hints_used=sum(attempt.hints_used for attempt in attempts)
+        + current_hint_count,
+    )

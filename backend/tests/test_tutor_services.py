@@ -15,6 +15,7 @@ from app.schemas.tutor import (
     LearningObservation,
     LearningObservationType,
     LearningWebhookEnvelope,
+    StudentModelSnapshot,
     TutorPlan,
     WorkStatus,
 )
@@ -93,6 +94,39 @@ def test_service_enriches_learning_events_and_queues_webhook() -> None:
     assert event.mistake_tag == "power-rule-coefficient"
     assert result.response.grounding_references[0].filename == "lecture-3.pdf"
     assert result.response.canvas_actions[0].action_id != "model-controlled-id"
+
+
+def test_student_model_snapshot_reaches_agent_context() -> None:
+    fake = FakeWorkflow(workflow_result())
+    service = TutorService(
+        settings=settings(),
+        workflow=fake,
+        retriever=retriever,
+    )
+    request = tutor_request().model_copy(
+        update={
+            "student_model": StudentModelSnapshot(
+                attempted_topics=["Chain rule"],
+                strengths=["Power rule"],
+                total_hints_used=3,
+            )
+        }
+    )
+
+    asyncio.run(
+        service.analyze(
+            request=request,
+            canvas_image=PNG_BYTES,
+            canvas_mime_type="image/png",
+            selection_image=None,
+            selection_mime_type=None,
+        )
+    )
+
+    student_model = fake.calls[0]["context"]["request"]["student_model"]
+    assert student_model["attempted_topics"] == ["Chain rule"]
+    assert student_model["strengths"] == ["Power rule"]
+    assert student_model["total_hints_used"] == 3
 
 
 def test_course_boundary_replaces_plan_with_confirmation_only() -> None:

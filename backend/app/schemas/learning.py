@@ -22,8 +22,9 @@ class AttemptCreate(BaseModel):
     correct: bool
     partial: bool = False
     hints_used: int = Field(default=0, ge=0)
+    stuck_requests: int = Field(default=0, ge=0)
     total_time_ms: int | None = None
-    errors: list[ErrorReport] = []
+    errors: list[ErrorReport] = Field(default_factory=list)
 
 
 class AttemptResult(BaseModel):
@@ -53,6 +54,6 @@ class GenerationSpec(BaseModel):
     skill_description: str
     target_difficulty: float
     target_misconception: MisconceptionTag | None = None
-    avoid_forms: list[str] = []
-    prereq_mastery: dict[str, float] = {}
+    avoid_forms: list[str] = Field(default_factory=list)
+    prereq_mastery: dict[str, float] = Field(default_factory=dict)
     is_review: bool = False
