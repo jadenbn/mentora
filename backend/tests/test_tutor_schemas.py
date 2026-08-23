@@ -1,0 +1,177 @@
+"""Deterministic tests for the public tutor API contract."""
+
+from __future__ import annotations
+
+import unittest
+from uuid import uuid4
+
+from pydantic import ValidationError
+
+from app.schemas.tutor import (
+    CanvasAnalysis,
+    CanvasContext,
+    CourseMetadata,
+    LearningObservation,
+    LearningObservationType,
+    NormalizedBounds,
+    ProblemContext,
+    TutorPlan,
+    TutorRequest,
+    WorkStatus,
+)
+
+
+def valid_request_data() -> dict:
+    return {
+        "request_id": str(uuid4()),
+        "user_id": "user_1",
+        "course_id": "course_1",
+        "session_id": "session_1",
+        "problem_id": "problem_1",
+        "mode": "hint",
+        "problem": {
+            "prompt_text": "Differentiate f(x) = x^2.",
+            "topic": "derivatives",
+            "difficulty": "easy",
+            "expected_skills": ["power rule"],
+        },
+        "course": {
+            "name": "Calculus I",
+            "covered_topics": ["power rule"],
+        },
+        "canvas": {
+            "image_width": 1200,
+            "image_height": 800,
+            "shapes": [
+                {
+                    "id": "problem",
+                    "owner": "system",
+                    "shape_type": "text",
+                    "text": "Differentiate f(x) = x^2.",
+                    "bounds": {"x": 0.1, "y": 0.1, "width": 0.3, "height": 0.1},
+                },
+                {
+                    "id": "student_step",
+                    "owner": "student",
+                    "shape_type": "draw",
+                    "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1},
+                },
+                {
+                    "id": "old_hint",
+                    "owner": "ai",
+                    "shape_type": "text",
+                    "text": "Recall the power rule",
+                    "bounds": {"x": 0.5, "y": 0.35, "width": 0.2, "height": 0.1},
+                },
+            ],
+        },
+        "selection": {
+            "shape_ids": ["student_step"],
+            "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1},
+        },
+    }
+
+
+class TutorSchemaTests(unittest.TestCase):
+    def test_accepts_context_with_all_shape_owners(self) -> None:
+        request = TutorRequest.model_validate(valid_request_data())
+
+        self.assertEqual(
+            {shape.owner.value for shape in request.canvas.shapes},
+            {"system", "student", "ai"},
+        )
+
+    def test_rejects_bounds_outside_image(self) -> None:
+        with self.assertRaises(ValidationError):
+            NormalizedBounds(x=0.9, y=0.2, width=0.2, height=0.1)
+
+    def test_rejects_unknown_selected_shape(self) -> None:
+        payload = valid_request_data()
+        payload["selection"]["shape_ids"] = ["does_not_exist"]
+
+        with self.assertRaises(ValidationError):
+            TutorRequest.model_validate(payload)
+
+    def test_rejects_duplicate_shape_ids(self) -> None:
+        payload = valid_request_data()
+        duplicate = payload["canvas"]["shapes"][0].copy()
+        payload["canvas"]["shapes"].append(duplicate)
+
+        with self.assertRaises(ValidationError):
+            TutorRequest.model_validate(payload)
+
+    def test_validates_each_canvas_action_shape(self) -> None:
+        plan = TutorPlan.model_validate(
+            {
+                "status": "partial",
+                "confidence": 0.91,
+                "canvas_actions": [
+                    {
+                        "type": "text",
+                        "position": {"x": 0.4, "y": 0.4},
+                        "text": "Check the exponent.",
+                    },
+                    {
+                        "type": "arrow",
+                        "start": {"x": 0.5, "y": 0.4},
+                        "end": {"x": 0.35, "y": 0.38},
+                    },
+                    {
+                        "type": "circle",
+                        "target": {
+                            "x": 0.2,
+                            "y": 0.35,
+                            "width": 0.2,
+                            "height": 0.1,
+                        },
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual([action.type for action in plan.canvas_actions], ["text", "arrow", "circle"])
+
+    def test_rejects_action_with_wrong_fields(self) -> None:
+        with self.assertRaises(ValidationError):
+            TutorPlan.model_validate(
+                {
+                    "status": "partial",
+                    "confidence": 0.8,
+                    "canvas_actions": [
+                        {"type": "math", "position": {"x": 0.3, "y": 0.4}, "text": "2x"}
+                    ],
+                }
+            )
+
+    def test_uncertain_analysis_cannot_claim_a_mistake(self) -> None:
+        with self.assertRaises(ValidationError):
+            CanvasAnalysis(
+                status=WorkStatus.uncertain,
+                confidence=0.3,
+                current_work_summary="The handwriting cannot be read reliably.",
+                learning_observations=[
+                    LearningObservation(
+                        type=LearningObservationType.mistake,
+                        topic="derivatives",
+                        skill="power rule",
+                        outcome=WorkStatus.incorrect,
+                        evidence="The exponent appears unchanged.",
+                        confidence=0.8,
+                    )
+                ],
+            )
+
+
+class TutorSchemaConstructionTests(unittest.TestCase):
+    def test_core_context_models_are_independently_reusable(self) -> None:
+        canvas = CanvasContext(image_width=100, image_height=100)
+        problem = ProblemContext(prompt_text="Solve x + 1 = 2")
+        course = CourseMetadata(name="Algebra")
+
+        self.assertEqual(canvas.shapes, [])
+        self.assertEqual(problem.source, "manual")
+        self.assertEqual(course.name, "Algebra")
+
+
+if __name__ == "__main__":
+    unittest.main()
