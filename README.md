@@ -1,65 +1,87 @@
 # Mentora
 
-Mentora is a persistent, course-aware AI whiteboard tutor. A student works by
-hand on a tldraw canvas, then asks for Mark, Hint, Explain, or I'm Stuck. The
-backend retrieves relevant course material, uses a multimodal Gemini agent
-workflow to interpret the work, and returns validated spatial actions for the
-whiteboard renderer.
-
-The tutor also emits evidence-based learning events so future questions and
-feedback can adapt to what the student does well and where they struggle.
+Mentora is a persistent AI whiteboard tutor. A student works by hand on a
+tldraw canvas, then asks for Mark, Hint, Explain, or I'm Stuck. The backend
+sends the canvas to a multimodal Gemini agent and returns validated spatial
+actions for the whiteboard renderer to draw.
 
 ## Repository
 
 - `frontend/`: Next.js, React, and tldraw whiteboard UI.
-- `backend/`: FastAPI course ingestion/retrieval and Gemini tutor services.
+- `backend/`: FastAPI tutor service and course ingestion.
 - `docs/PRODUCT.md`: authoritative product behavior.
 - `docs/ARCHITECTURE.md`: system boundaries and shared contracts.
-- `docs/TUTOR_AGENT.md`: tutor API, ADK workflow, and integration guide.
+- `docs/TUTOR_AGENT.md`: the tutor API contract.
 
-## Backend quick start
+## Setup on a new machine
+
+Four things are gitignored and must be recreated: `backend/.venv`,
+`backend/.env`, `frontend/.env.local`, and `frontend/node_modules`.
+
+### Backend
+
+Needs Python 3.11 or newer (`asyncio.timeout`).
 
 ```bash
 cd backend
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env      # then paste a real GEMINI_API_KEY into it
+.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-Configure all four required integrations in `backend/.env`:
+Only `GEMINI_API_KEY` is required. The OpenAI and Pinecone keys in
+`.env.example` are for course ingestion, which the tutor does not use — see
+"Deferred" in `docs/TUTOR_AGENT.md`.
+
+Check it came up configured:
+
+```bash
+curl -s localhost:8000/health     # {"status":"ok","tutor":"ready","missing_settings":[]}
+```
+
+### Frontend
+
+```bash
+cd frontend
+bun install
+cp .env.example .env.local        # already points at localhost:8000
+bun dev
+```
+
+Then open `localhost:3000` → My courses → a course → New space → draw → tap a
+tutor button.
+
+## The tutor endpoint
+
+`POST /api/tutor/analyze`, multipart form data:
 
 ```text
-GEMINI_API_KEY
-OPENAI_API_KEY
-PINECONE_API_KEY
-PINECONE_INDEX_NAME
+course_id          retrieval scope (carried; retrieval is deferred)
+mode               mark | hint | explain | stuck
+canvas_image       PNG, JPEG, or WebP; maximum 10 MB
+prior_annotations  JSON array of normalized bounds; defaults to []
 ```
 
-The tutor endpoint is `POST /api/tutor/analyze`. It accepts multipart form data
-with a JSON `payload`, a required `canvas_image`, and an optional
-`selection_image`. See `docs/TUTOR_AGENT.md` for complete examples.
+Full contract in `docs/TUTOR_AGENT.md`.
 
 ## Tests
 
 ```bash
-cd backend
-.venv/bin/python -m pytest -q
+cd backend  && .venv/bin/python -m pytest -q -m "not live"    # 101, no provider calls
+cd frontend && bun run test                                    # 166
 ```
 
-The normal suite is deterministic and does not call providers. To run the
-opt-in Gemini check after configuring a key:
+The opt-in live check spends one real Gemini request:
 
 ```bash
-RUN_LIVE_GEMINI_TEST=1 .venv/bin/python -m pytest -q -m live
+cd backend && RUN_LIVE_GEMINI=1 .venv/bin/python -m pytest -q -m live -s
 ```
 
-Korey's credentialed RAG pipeline check remains available separately:
+Korey's credentialed RAG pipeline check needs the OpenAI and Pinecone keys:
 
 ```bash
-cd backend
-.venv/bin/python test_pipeline.py
+cd backend && .venv/bin/python test_pipeline.py
 ```
 
 ## Team workstreams
@@ -67,4 +89,5 @@ cd backend
 - Jaden: whiteboard and frontend integration.
 - Andre: AI/Vision and backend tutor APIs.
 - Korey: course context ingestion and retrieval.
-- Ren: question generation and learning engine.
+- Ren: question generation and learning engine (`ren/learning-engine`, not yet
+  integrated — see "Deferred" in `docs/TUTOR_AGENT.md`).
