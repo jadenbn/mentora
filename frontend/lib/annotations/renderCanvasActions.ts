@@ -1,66 +1,62 @@
 /**
- * Annotation renderer (ARCHITECTURE.md section 19).
+ * The annotation renderer.
  *
- * This module is the ONLY place that converts the tutor's normalized
- * image-space coordinates into tldraw world coordinates. Nothing else in the
- * app should do that arithmetic.
+ * The only place normalized image coordinates become tldraw world
+ * coordinates. Nothing else in the app should do that arithmetic.
  *
- * The tutor never drives tldraw directly: it returns a validated, closed set of
- * canvas actions, and this file decides what each one looks like on the canvas.
+ * The tutor never drives tldraw: it returns a closed set of validated actions,
+ * and this file decides what each one looks like on the canvas.
  */
 
 import { createShapeId, toRichText } from "tldraw";
 import type { Box, Editor, TLShapePartial, TLShapeId } from "tldraw";
 import { toWorldPoint, toWorldRect } from "@/lib/annotations/geometry";
-import type { CanvasAction, NormalizedBounds } from "@/types/tutor";
+import type { CanvasAction, MarkType } from "@/types/tutor";
 
-/** Marks every shape this module creates, so AI output stays distinguishable. */
+/** Marks every shape this module creates, so tutor output stays identifiable. */
 export const AI_SHAPE_OWNER = "ai";
 
 export interface RenderContext {
-  /** World-space rectangle the analyzed image covered, from captureCanvasForAnalysis. */
+  /** World rectangle the analyzed image covered, from captureCanvasForAnalysis. */
   bounds: Box;
   interactionId: string;
 }
 
-type AiShapeMeta = {
-  owner: typeof AI_SHAPE_OWNER;
-  interactionId: string;
-  actionId: string;
-};
+type AiShapeMeta = { owner: typeof AI_SHAPE_OWNER; interactionId: string };
 
-/** tldraw's palette names, narrowed to the ones this renderer uses. */
-type AnnotationColor = "red" | "green" | "yellow" | "violet";
+/** How each mark draws. Circling outlines; a check or cross is a glyph. */
+const MARKS: Record<MarkType, { glyph?: string; color: string }> = {
+  circle: { color: "red" },
+  check: { glyph: "✓", color: "green" },
+  cross: { glyph: "✗", color: "red" },
+};
 
 export function renderCanvasActions(
   editor: Editor,
   actions: CanvasAction[],
   context: RenderContext,
 ): void {
-  // Re-rendering the same interaction replaces its shapes instead of stacking
-  // duplicates on top of them (ARCHITECTURE.md section 39).
-  clearInteraction(editor, context.interactionId);
+  // Re-rendering one interaction replaces its shapes rather than stacking
+  // duplicates. Feedback from other interactions is left alone, so a follow-up
+  // does not wipe the conversation it is continuing.
+  deleteWhere(
+    editor,
+    (meta) =>
+      meta.owner === AI_SHAPE_OWNER && meta.interactionId === context.interactionId,
+  );
 
   const partials = actions
     .map((action) => buildShape(action, context))
-    .filter((partial): partial is NonNullable<typeof partial> => partial !== null);
+    .filter((partial): partial is TLShapePartial => partial !== null);
 
   if (partials.length > 0) {
     editor.createShapes(partials);
   }
 }
 
-/** Remove every AI-authored shape from the current page. */
+/** Remove every tutor-authored shape from the current page. */
 export function clearAiShapes(editor: Editor): void {
   deleteWhere(editor, (meta) => meta.owner === AI_SHAPE_OWNER);
-}
-
-function clearInteraction(editor: Editor, interactionId: string): void {
-  deleteWhere(
-    editor,
-    (meta) =>
-      meta.owner === AI_SHAPE_OWNER && meta.interactionId === interactionId,
-  );
 }
 
 function deleteWhere(
@@ -79,162 +75,62 @@ function deleteWhere(
   }
 }
 
-function metaFor(action: CanvasAction, context: RenderContext): AiShapeMeta {
-  return {
-    owner: AI_SHAPE_OWNER,
-    interactionId: context.interactionId,
-    actionId: action.action_id,
-  };
-}
-
 function buildShape(
   action: CanvasAction,
   context: RenderContext,
 ): TLShapePartial | null {
   const frame = context.bounds;
   const id = createShapeId();
-  const meta = metaFor(action, context);
+  const meta: AiShapeMeta = {
+    owner: AI_SHAPE_OWNER,
+    interactionId: context.interactionId,
+  };
 
-  switch (action.type) {
-    case "text": {
-      const at = toWorldPoint(action.position, frame);
-      return {
-        id,
-        type: "text" as const,
-        x: at.x,
-        y: at.y,
-        meta,
-        props: { richText: toRichText(action.text), color: "red", size: "m" },
-      };
-    }
-
-    case "math": {
-      // No LaTeX renderer on the canvas yet, so the source is shown verbatim.
-      // client_capabilities reports supports_latex: false, so the backend
-      // should not normally send this.
-      const at = toWorldPoint(action.position, frame);
-      return {
-        id,
-        type: "text" as const,
-        x: at.x,
-        y: at.y,
-        meta,
-        props: { richText: toRichText(action.latex), color: "violet", size: "m" },
-      };
-    }
-
-    case "arrow": {
-      const from = toWorldPoint(action.start, frame);
-      const to = toWorldPoint(action.end, frame);
-      return {
-        id,
-        type: "arrow" as const,
-        x: from.x,
-        y: from.y,
-        meta,
-        props: {
-          start: { x: 0, y: 0 },
-          end: { x: to.x - from.x, y: to.y - from.y },
-          color: "red",
-          size: "m",
-          arrowheadStart: "none",
-          arrowheadEnd: "arrow",
-          ...(action.label ? { richText: toRichText(action.label) } : {}),
-        },
-      };
-    }
-
-    case "circle": {
-      const rect = toWorldRect(action.target, frame);
-      return {
-        id,
-        type: "geo" as const,
-        x: rect.x,
-        y: rect.y,
-        meta,
-        props: {
-          geo: "ellipse",
-          w: rect.w,
-          h: rect.h,
-          color: "red",
-          fill: "none",
-          dash: "draw",
-          size: "m",
-          ...(action.label ? { richText: toRichText(action.label) } : {}),
-        },
-      };
-    }
-
-    case "highlight": {
-      const rect = toWorldRect(action.target, frame);
-      return {
-        id,
-        type: "geo" as const,
-        x: rect.x,
-        y: rect.y,
-        meta,
-        props: {
-          geo: "rectangle",
-          w: rect.w,
-          h: rect.h,
-          color: "yellow",
-          fill: "semi",
-          dash: "solid",
-          size: "s",
-          ...(action.label ? { richText: toRichText(action.label) } : {}),
-        },
-      };
-    }
-
-    case "underline": {
-      // A headless arrow along the bottom edge reads as a rule under the work.
-      const rect = toWorldRect(action.target, frame);
-      return {
-        id,
-        type: "arrow" as const,
-        x: rect.x,
-        y: rect.y + rect.h,
-        meta,
-        props: {
-          start: { x: 0, y: 0 },
-          end: { x: rect.w, y: 0 },
-          color: "red",
-          size: "s",
-          arrowheadStart: "none",
-          arrowheadEnd: "none",
-          ...(action.label ? { richText: toRichText(action.label) } : {}),
-        },
-      };
-    }
-
-    case "check":
-      return markShape(id, meta, action.target, frame, "✓", "green");
-
-    case "cross":
-      return markShape(id, meta, action.target, frame, "✗", "red");
-
-    default:
-      // Unknown action type from a newer backend: skip it rather than guess.
-      return null;
+  if (action.type === "text") {
+    const at = toWorldPoint(action.position, frame);
+    return {
+      id,
+      type: "text" as const,
+      x: at.x,
+      y: at.y,
+      meta,
+      props: { richText: toRichText(action.text), color: "red", size: "m" },
+    };
   }
-}
 
-/** A check or cross, placed just past the top-right corner of the target. */
-function markShape(
-  id: TLShapeId,
-  meta: AiShapeMeta,
-  target: NormalizedBounds,
-  frame: Box,
-  glyph: string,
-  color: AnnotationColor,
-): TLShapePartial {
-  const rect = toWorldRect(target, frame);
+  const mark = MARKS[action.type as MarkType];
+  if (!mark) {
+    // An action type from a newer backend: skip it rather than guess.
+    return null;
+  }
+
+  const rect = toWorldRect(action.target, frame);
+  if (!mark.glyph) {
+    return {
+      id,
+      type: "geo" as const,
+      x: rect.x,
+      y: rect.y,
+      meta,
+      props: {
+        geo: "ellipse",
+        w: rect.w,
+        h: rect.h,
+        color: mark.color,
+        fill: "none",
+        dash: "draw",
+        size: "m",
+      },
+    };
+  }
+
+  // A check or cross sits just past the top-right corner of what it marks.
   return {
     id,
     type: "text" as const,
     x: rect.x + rect.w,
     y: rect.y,
     meta,
-    props: { richText: toRichText(glyph), color, size: "l" },
+    props: { richText: toRichText(mark.glyph), color: mark.color, size: "l" },
   };
 }
