@@ -31,7 +31,7 @@ def test_live_gemini_returns_validated_analysis_and_actions() -> None:
         (FIXTURES / "calculus_canvas.png.b64").read_text().strip()
     )
     workflow = AdkTutorWorkflow(
-        model=os.getenv("GEMINI_MODEL", "gemini-3.7-flash"),
+        model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
         timeout_seconds=90,
     )
 

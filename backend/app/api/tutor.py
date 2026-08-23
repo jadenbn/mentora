@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -109,6 +110,7 @@ async def analyze_tutor_request(
         len(request.canvas.shapes),
         len(request.recent_interactions),
     )
+    request_started = time.perf_counter()
 
     current_hint_count = (
         request.student_model.total_hints_used
@@ -193,12 +195,13 @@ async def analyze_tutor_request(
 
     logger.info(
         "tutor.trace stage=request_complete request_id=%s interaction_id=%s "
-        "status=%s action_count=%s warning_count=%s",
+        "status=%s action_count=%s warning_count=%s elapsed_ms=%s",
         request.request_id,
         result.response.interaction_id,
         result.response.status.value,
         len(result.response.canvas_actions),
         len(result.response.warnings),
+        round((time.perf_counter() - request_started) * 1_000),
     )
 
     settings = service.settings

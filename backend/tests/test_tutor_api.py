@@ -71,6 +71,8 @@ def test_health_lists_missing_names_without_values() -> None:
     tutor_health = response.json()["services"]["tutor"]
     assert tutor_health["status"] == "not_ready"
     assert tutor_health["missing_settings"] == list(REQUIRED_ENV)
+    assert tutor_health["model"] == "gemini-3.5-flash-lite"
+    assert tutor_health["timeout_seconds"] == 8
 
 
 def test_tutor_requires_all_provider_settings_without_exposing_values() -> None:

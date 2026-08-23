@@ -31,13 +31,13 @@ class TutorSettings:
     @classmethod
     def from_environment(cls) -> "TutorSettings":
         return cls(
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.7-flash"),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
             learning_metrics_webhook_url=os.getenv("LEARNING_METRICS_WEBHOOK_URL"),
             learning_metrics_webhook_secret=os.getenv(
                 "LEARNING_METRICS_WEBHOOK_SECRET"
             ),
             request_timeout_seconds=float(
-                os.getenv("TUTOR_REQUEST_TIMEOUT_SECONDS", "45")
+                os.getenv("TUTOR_REQUEST_TIMEOUT_SECONDS", "8")
             ),
             retrieval_top_k=int(os.getenv("TUTOR_RETRIEVAL_TOP_K", "5")),
         )

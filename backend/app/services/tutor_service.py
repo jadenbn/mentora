@@ -56,10 +56,12 @@ class TutorService:
     ) -> TutorServiceResult:
         interaction_id = uuid4().hex
         logger.info(
-            "tutor.trace stage=service_started request_id=%s interaction_id=%s mode=%s",
+            "tutor.trace stage=service_started request_id=%s interaction_id=%s "
+            "mode=%s model=%s",
             request.request_id,
             interaction_id,
             request.mode.value,
+            self.settings.gemini_model,
         )
         course_context = await retrieve_course_context(
             request,

@@ -24,8 +24,9 @@ Korey's query_similar retrieves required course excerpts
         └── successful empty result on seeded course: expected-skill taxonomy fallback
         ↓
 Google ADK Workflow
-  Canvas Analyst → CanvasAnalysis
-  Tutor Planner  → TutorPlan
+  single multimodal call
+    ├── Canvas Analyst result → CanvasAnalysis
+    └── mode-specific Tutor Planner result → TutorPlan
         ↓
 Pydantic validation + deterministic safety policy
         ↓
@@ -53,8 +54,8 @@ PINECONE_INDEX_NAME
 Optional settings:
 
 ```text
-GEMINI_MODEL=gemini-3.7-flash
-TUTOR_REQUEST_TIMEOUT_SECONDS=45
+GEMINI_MODEL=gemini-3.5-flash-lite
+TUTOR_REQUEST_TIMEOUT_SECONDS=8
 TUTOR_RETRIEVAL_TOP_K=5
 LEARNING_METRICS_WEBHOOK_URL=
 LEARNING_METRICS_WEBHOOK_SECRET=
@@ -66,7 +67,8 @@ pipeline. The Gemini key belongs only on the backend. Never put provider keys
 in a `NEXT_PUBLIC_*` variable.
 
 `GET /health` always remains available. It reports tutor `ready` or `not_ready`
-and lists missing variable names, never secret values.
+and lists missing variable names, the selected model, and the total workflow
+timeout, never secret values.
 
 ## Analyze endpoint
 
@@ -449,22 +451,25 @@ Add `-s` to print the validated analysis, plan, action count, and elapsed time:
 RUN_LIVE_GEMINI_TEST=1 .venv/bin/python -m pytest -q -s -m live
 ```
 
-The workflow makes two sequential Gemini requests, one per specialist. Gemini 3
-is configured with low thinking and a 2,048-token output ceiling to keep this
-interactive path responsive. Provider `429` responses are not retried because
-free-tier daily quota exhaustion cannot be repaired inside a request; this also
-avoids honoring long provider retry delays. Transient timeouts and `5xx`
-responses still receive bounded retries.
+The latency-critical workflow performs the Canvas Analyst and mode-specific
+Tutor Planner roles in one Gemini request while preserving separate validated
+`CanvasAnalysis` and `TutorPlan` objects. The default
+`gemini-3.5-flash-lite` model uses minimal thinking, medium image resolution,
+and a 1,024-token output ceiling. Full-canvas exports are capped at 1,280 pixels
+on their longest edge. Provider `429` responses are not retried because quota
+exhaustion cannot be repaired inside an interactive request; transient timeouts
+and `5xx` responses still receive bounded SDK retries.
 
-If the live test reports `RESOURCE_EXHAUSTED` with a daily request limit, wait
-for the quota reset or use a Gemini project with available quota. A two-stage
-test consumes at least two model requests when successful.
+If the live test reports `RESOURCE_EXHAUSTED`, check the active model limits in
+Google AI Studio or use a Gemini project with available quota. A successful
+interaction normally consumes one model request; a malformed structured result
+may consume one additional bounded repair request.
 
 Main extension boundaries:
 
 - `app/schemas/tutor.py`: versioned API and model-output contracts.
 - `app/prompts/tutor.py`: analyst rules and mode-specific tutor behavior.
-- `app/agents/tutor_workflow.py`: ADK graph, Gemini retries, and repair attempt.
+- `app/agents/tutor_workflow.py`: single-pass ADK agent, Gemini retries, and repair attempt.
 - `app/services/tutor_context.py`: query construction and Korey retrieval.
 - `app/services/tutor_service.py`: safety policy and response assembly.
 - `app/services/learning_events.py`: webhook signing and delivery.

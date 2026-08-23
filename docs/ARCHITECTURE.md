@@ -615,20 +615,24 @@ AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
 
-The tutor implementation uses a Google ADK graph:
+The latency-critical tutor implementation uses one Google ADK model call:
 
 ```text
-Canvas Analyst (Gemini multimodal + CanvasAnalysis schema)
-        ↓ validated ADK state handoff
-Tutor Planner (Gemini + TutorPlan schema)
+Canvas image + structured context + requested mode
+        ↓
+Combined Canvas Analyst + mode-specific Tutor Planner agent
+        ↓ separate independently validated objects
+CanvasAnalysis + TutorPlan
         ↓ independent Pydantic validation and safety policy
 TutorResponse
 ```
 
 ADK performs up to three bounded transient HTTP attempts. The application makes
 one additional full workflow attempt only when structured output is malformed.
-The model defaults to `gemini-3.7-flash` and is replaceable through
-`GEMINI_MODEL`.
+The model defaults to low-latency, high-throughput
+`gemini-3.5-flash-lite`, uses minimal thinking and a 1,024-token output ceiling,
+and is replaceable through `GEMINI_MODEL`. Canvas exports are capped at 1,280
+pixels on their longest edge. The default application timeout is eight seconds.
 
 ## 36. Prompt Organization
 Possible layout:

@@ -1,14 +1,15 @@
-"""Two-stage Google ADK workflow for whiteboard interpretation and tutoring."""
+"""Low-latency Google ADK workflow for whiteboard interpretation and tutoring."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from google.adk.agents import LlmAgent, SequentialAgent
+from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -170,6 +171,15 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
     ],
 }
 
+TUTOR_WORKFLOW_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "analysis": CANVAS_ANALYSIS_RESPONSE_SCHEMA,
+        "plan": TUTOR_PLAN_RESPONSE_SCHEMA,
+    },
+    "required": ["analysis", "plan"],
+}
+
 
 def _drop_nulls(value: Any) -> Any:
     """Remove provider-only null placeholders before strict union validation."""
@@ -210,13 +220,13 @@ class TutorWorkflow(Protocol):
 
 
 class AdkTutorWorkflow:
-    """Runs specialist ADK agents sequentially with structured state handoff."""
+    """Runs analyst and planner roles in one schema-bound multimodal call."""
 
-    def __init__(self, *, model: str, timeout_seconds: float = 45) -> None:
+    def __init__(self, *, model: str, timeout_seconds: float = 8) -> None:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
-    def _build_agent(self, mode: TutorMode) -> SequentialAgent:
+    def _build_agent(self, mode: TutorMode) -> LlmAgent:
         model = Gemini(
             model=self.model,
             retry_options=types.HttpRetryOptions(
@@ -232,42 +242,33 @@ class AdkTutorWorkflow:
             ),
         )
         generation_config = types.GenerateContentConfig(
-            max_output_tokens=2_048,
-            # Gemini 3 defaults to high thinking, which is unnecessary for the
-            # small schema-bound analyst and planner stages.
+            max_output_tokens=1_024,
+            # Canvas feedback is an interactive, schema-bound task. Minimal
+            # thinking and medium image resolution reduce latency while keeping
+            # handwriting readable.
             thinking_config=types.ThinkingConfig(
-                thinking_level=types.ThinkingLevel.LOW
+                thinking_level=types.ThinkingLevel.MINIMAL
             ),
+            media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
         )
-        analyst = LlmAgent(
-            name="canvas_analyst",
-            description="Interprets student work and produces learning evidence.",
-            model=model,
-            instruction=CANVAS_ANALYST_INSTRUCTION,
-            output_schema=CANVAS_ANALYSIS_RESPONSE_SCHEMA,
-            output_key="canvas_analysis",
-            generate_content_config=generation_config,
-            disallow_transfer_to_parent=True,
-            disallow_transfer_to_peers=True,
-        )
-        planner = LlmAgent(
-            name="tutor_planner",
-            description="Plans validated, spatial whiteboard tutor actions.",
+        return LlmAgent(
+            name="whiteboard_tutor",
+            description=(
+                "Interprets student work and plans validated spatial tutor feedback."
+            ),
             model=model,
             instruction=(
-                tutor_planner_instruction(mode)
-                + "\n\nValidated Canvas Analyst result:\n{canvas_analysis}"
+                CANVAS_ANALYST_INSTRUCTION
+                + "\n\nAfter completing that analysis, perform the Tutor Planner "
+                "role below in the same response. Keep analysis and plan as "
+                "separate top-level objects named 'analysis' and 'plan'.\n\n"
+                + tutor_planner_instruction(mode)
             ),
-            output_schema=TUTOR_PLAN_RESPONSE_SCHEMA,
-            output_key="tutor_plan",
+            output_schema=TUTOR_WORKFLOW_RESPONSE_SCHEMA,
+            output_key="tutor_result",
             generate_content_config=generation_config,
             disallow_transfer_to_parent=True,
             disallow_transfer_to_peers=True,
-        )
-        return SequentialAgent(
-            name="whiteboard_tutor_workflow",
-            description="Analyzes the canvas, then plans restrained tutor feedback.",
-            sub_agents=[analyst, planner],
         )
 
     async def run(
@@ -283,9 +284,11 @@ class AdkTutorWorkflow:
         selection_mime_type: str | None,
     ) -> TutorWorkflowResult:
         last_error: Exception | None = None
+        deadline = asyncio.get_running_loop().time() + self.timeout_seconds
         # ADK/Gemini performs transient HTTP retries. This second attempt is
         # specifically the bounded repair path for malformed structured output.
         for attempt in range(2):
+            attempt_started = time.perf_counter()
             logger.info(
                 "tutor.trace stage=workflow_attempt interaction_id=%s mode=%s "
                 "attempt=%s repair=%s",
@@ -295,17 +298,31 @@ class AdkTutorWorkflow:
                 attempt == 1,
             )
             try:
-                return await self._run_once(
-                    interaction_id=f"{interaction_id}_{attempt}",
-                    user_id=user_id,
-                    mode=mode,
-                    context=context,
-                    canvas_image=canvas_image,
-                    canvas_mime_type=canvas_mime_type,
-                    selection_image=selection_image,
-                    selection_mime_type=selection_mime_type,
-                    repair_attempt=attempt == 1,
+                remaining_seconds = max(
+                    0,
+                    deadline - asyncio.get_running_loop().time(),
                 )
+                async with asyncio.timeout(remaining_seconds):
+                    result = await self._run_once(
+                        interaction_id=f"{interaction_id}_{attempt}",
+                        user_id=user_id,
+                        mode=mode,
+                        context=context,
+                        canvas_image=canvas_image,
+                        canvas_mime_type=canvas_mime_type,
+                        selection_image=selection_image,
+                        selection_mime_type=selection_mime_type,
+                        repair_attempt=attempt == 1,
+                    )
+                logger.info(
+                    "tutor.trace stage=workflow_attempt_complete interaction_id=%s "
+                    "mode=%s attempt=%s elapsed_ms=%s",
+                    interaction_id,
+                    mode.value,
+                    attempt + 1,
+                    round((time.perf_counter() - attempt_started) * 1_000),
+                )
+                return result
             except (ValidationError, ValueError, KeyError, json.JSONDecodeError) as exc:
                 last_error = exc
                 logger.warning(
@@ -378,13 +395,12 @@ class AdkTutorWorkflow:
         parts.append(types.Part.from_text(text=request_text))
 
         message = types.Content(role="user", parts=parts)
-        async with asyncio.timeout(self.timeout_seconds):
-            async for _event in runner.run_async(
-                user_id=user_id,
-                session_id=interaction_id,
-                new_message=message,
-            ):
-                pass
+        async for _event in runner.run_async(
+            user_id=user_id,
+            session_id=interaction_id,
+            new_message=message,
+        ):
+            pass
 
         session = await session_service.get_session(
             app_name=APP_NAME,
@@ -393,8 +409,9 @@ class AdkTutorWorkflow:
         )
         if session is None:
             raise ValueError("ADK session was not available after workflow completion")
-        analysis = CanvasAnalysis.model_validate(
-            _drop_nulls(session.state.get("canvas_analysis"))
-        )
-        plan = TutorPlan.model_validate(_drop_nulls(session.state.get("tutor_plan")))
+        output = _drop_nulls(session.state.get("tutor_result"))
+        if not isinstance(output, dict):
+            raise ValueError("ADK tutor result was not a structured object")
+        analysis = CanvasAnalysis.model_validate(output.get("analysis"))
+        plan = TutorPlan.model_validate(output.get("plan"))
         return TutorWorkflowResult(analysis=analysis, plan=plan)

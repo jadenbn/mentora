@@ -10,7 +10,7 @@ load_dotenv()
 from app.api.documents import router as documents_router
 from app.api.learning import router as learning_router
 from app.api.tutor import router as tutor_router
-from app.config import missing_tutor_settings
+from app.config import TutorSettings, missing_tutor_settings
 from app.db import engine, init_db
 from app.services.taxonomy import seed_all_courses
 
@@ -40,12 +40,15 @@ app.include_router(learning_router)
 @app.get("/health")
 async def health():
     missing = missing_tutor_settings()
+    tutor_settings = TutorSettings.from_environment()
     return {
         "status": "ok",
         "services": {
             "tutor": {
                 "status": "ready" if not missing else "not_ready",
                 "missing_settings": missing,
+                "model": tutor_settings.gemini_model,
+                "timeout_seconds": tutor_settings.request_timeout_seconds,
             },
             "learning_engine": {"status": "ready"},
         },
