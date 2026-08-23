@@ -265,6 +265,17 @@ describe("startAutosave", () => {
     expect(localStorage.getItem(sessionStorageKey("session_1"))).toBeNull();
   });
 
+  it("cancels a write that was already queued when disposed", () => {
+    // Navigating away mid-stroke must not fire a save after teardown.
+    const { editor, emitChange } = makeStoreEditor();
+    const dispose = startAutosave(editor, "session_1", { debounceMs: 500 });
+    emitChange();
+    vi.advanceTimersByTime(400);
+    dispose();
+    vi.advanceTimersByTime(2_000);
+    expect(localStorage.getItem(sessionStorageKey("session_1"))).toBeNull();
+  });
+
   it("unsubscribes from the store on dispose", () => {
     const { editor, listeners } = makeStoreEditor();
     const dispose = startAutosave(editor, "session_1");

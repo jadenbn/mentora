@@ -17,7 +17,7 @@ bun run test:watch   # watch mode
 | `renderCanvasActions.test.ts` | `lib/annotations/renderCanvasActions.ts` — all eight action types, coordinate conversion, provenance |
 | `api.test.ts` | `lib/api/api.ts` — multipart construction, error mapping |
 | `analyze.test.ts` | `lib/tutor/analyze.ts` — capture → request → render, with only the network mocked |
-| `persistence.test.ts` | **specification only — currently failing on purpose.** See below. |
+| `persistence.test.ts` | `lib/canvas/persistence.ts` — key scoping, versioned envelope, guarded storage, debounced autosave |
 
 ## The coordinate invariant
 
@@ -28,17 +28,15 @@ them back to tldraw world space. `capture.test.ts` and
 is deliberately not `(0,0)`, so an implementation that forgets the offset fails
 rather than coincidentally passing.
 
-## persistence.test.ts is a specification
+## Canvas persistence
 
-Those 31 tests fail against the stub in `lib/canvas/persistence.ts`, which
-throws. Each failure names one behaviour still to build:
+`lib/canvas/persistence.ts` stores one versioned envelope per session in
+localStorage. The tests pin the behaviour that is easy to get subtly wrong:
 
-- a namespaced, per-session localStorage key
-- a versioned envelope, so a future format change is detected rather than
-  restored as garbage
-- guarded storage access — Safari private mode and quota exhaustion both throw,
-  and losing persistence must never break the canvas
-- debounced autosave, so a burst of pen strokes is one write and not fifty
-- a dispose function that genuinely unsubscribes
-
-When they pass, reloading a session no longer loses the student's work.
+- a snapshot written by a newer format is ignored, not restored as garbage
+- every storage path is guarded — Safari private mode and quota exhaustion both
+  throw, and losing persistence must never break the canvas
+- autosave is trailing-edge debounced, so a burst of fifty strokes is one write
+- dispose cancels a write that was already queued, so navigating away mid-stroke
+  cannot fire a save after teardown
+- a failed write leaves the subscription intact for the next change
