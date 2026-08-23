@@ -23,6 +23,7 @@ import {
   TldrawUiMenuContextProvider,
   TldrawUiToolbar,
 } from "tldraw";
+import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
@@ -198,6 +199,8 @@ export function Whiteboard({
 }) {
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -251,8 +254,24 @@ export function Whiteboard({
     return () => {
       disposeAutosave.current?.();
       disposeAutosave.current = null;
+      if (savedTimer.current !== null) {
+        clearTimeout(savedTimer.current);
+        savedTimer.current = null;
+      }
     };
   }, [spaceId]);
+
+  /** Flash the indicator, restarting the countdown if saves come back to back. */
+  const flashSaved = useCallback(() => {
+    setJustSaved(true);
+    if (savedTimer.current !== null) {
+      clearTimeout(savedTimer.current);
+    }
+    savedTimer.current = setTimeout(() => {
+      savedTimer.current = null;
+      setJustSaved(false);
+    }, 1_600);
+  }, []);
 
   const handleMount = useCallback(
     (mountedEditor: Editor) => {
@@ -262,10 +281,13 @@ export function Whiteboard({
       loadCanvas(mountedEditor, spaceId);
       disposeAutosave.current?.();
       disposeAutosave.current = startAutosave(mountedEditor, spaceId, {
-        onSave: () => touchSpace(spaceId),
+        onSave: () => {
+          touchSpace(spaceId);
+          flashSaved();
+        },
       });
     },
-    [spaceId],
+    [flashSaved, spaceId],
   );
 
   return (
@@ -276,6 +298,7 @@ export function Whiteboard({
         options={{ maxPages: 1 }}
       >
         <CanvasToolbar />
+        <SaveIndicator visible={justSaved} />
         <CanvasPanel
           busyMode={busyMode}
           error={error}
