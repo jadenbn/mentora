@@ -1,0 +1,41 @@
+{
+  "request": {
+    "schema_version": "1.0",
+    "user_id": "live_test_user",
+    "course_id": "calculus_1",
+    "session_id": "live_test_session",
+    "problem_id": "power_rule_1",
+    "mode": "hint",
+    "problem": {
+      "prompt_text": "Differentiate f(x) = x^2.",
+      "topic": "derivatives",
+      "difficulty": "easy",
+      "expected_skills": ["power rule"]
+    },
+    "canvas": {
+      "image_width": 1200,
+      "image_height": 800,
+      "shapes": [
+        {
+          "id": "student_step",
+          "owner": "student",
+          "shape_type": "text",
+          "text": "f'(x) = x",
+          "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1}
+        }
+      ]
+    },
+    "selection": {
+      "shape_ids": ["student_step"],
+      "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1}
+    }
+  },
+  "retrieved_course_context": [
+    {
+      "text": "For x^n, the course uses d/dx x^n = n x^(n-1).",
+      "filename": "calculus-demo-notes.pdf",
+      "page": 1,
+      "document_type": "lecture"
+    }
+  ]
+}
