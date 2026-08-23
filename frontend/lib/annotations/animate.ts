@@ -253,6 +253,11 @@ export function animateText(
   return schedule(frames, charMs);
 }
 
+/** A cancellable pause, so a script can breathe between beats. */
+export function wait(ms: number): AnimationHandle {
+  return schedule([{ run: () => {} }], ms);
+}
+
 /** Run animations one after another, cancellable as a unit. */
 export function sequence(steps: (() => AnimationHandle)[]): AnimationHandle {
   let cancelled = false;
