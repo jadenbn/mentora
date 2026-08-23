@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from openai import OpenAI
 from pinecone import Pinecone
+from pinecone.exceptions import NotFoundException
 
 from app.schemas.documents import ChunkMetadata
 
@@ -13,6 +14,10 @@ EMBEDDING_DIMENSION = 1536
 
 _openai_client: OpenAI | None = None
 _pinecone_index = None
+
+
+class CourseIndexNotFound(RuntimeError):
+    """The configured Pinecone index does not exist for this environment."""
 
 
 def _get_openai() -> OpenAI:
@@ -26,7 +31,10 @@ def _get_index():
     global _pinecone_index
     if _pinecone_index is None:
         pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-        _pinecone_index = pc.Index(os.environ["PINECONE_INDEX_NAME"])
+        try:
+            _pinecone_index = pc.Index(os.environ["PINECONE_INDEX_NAME"])
+        except NotFoundException as exc:
+            raise CourseIndexNotFound("configured Pinecone index was not found") from exc
     return _pinecone_index
 
 
@@ -80,12 +88,15 @@ def query_similar(
     index = _get_index()
     query_embedding = embed_texts([query])[0]
 
-    results = index.query(
-        vector=query_embedding,
-        top_k=top_k,
-        filter={"course_id": {"$eq": course_id}},
-        include_metadata=True,
-    )
+    try:
+        results = index.query(
+            vector=query_embedding,
+            top_k=top_k,
+            filter={"course_id": {"$eq": course_id}},
+            include_metadata=True,
+        )
+    except NotFoundException as exc:
+        raise CourseIndexNotFound("configured Pinecone index was not found") from exc
 
     return [
         {

@@ -265,7 +265,11 @@ Pinecone excerpts remain authoritative. If Pinecone succeeds but returns no
 matches for a course with a validated seed taxonomy, the backend grounds the
 request in only the problem's expected skills and their direct prerequisites.
 The response identifies that fallback in both `warnings` and
-`grounding_references`. Retrieval/provider failures never silently fall back.
+`grounding_references`. A missing configured Pinecone index is treated as an
+empty source only when this validated fallback exists, allowing the built-in
+course demo to reach the tutor workflow before uploads are indexed. Network,
+authentication, rate-limit, and other provider failures never silently fall
+back.
 
 The exact versioned contract and examples live in `TUTOR_AGENT.md`.
 
@@ -596,7 +600,8 @@ The `calc1` seed taxonomy is also the bounded retrieval fallback for tutor
 requests whose Pinecone lookup succeeds with no excerpts. It is not a generic
 replacement for Course Context: only taxonomy-compatible expected skills and
 their direct prerequisites are included, and no fallback occurs during a
-provider outage.
+provider outage. A missing Pinecone index may use this same fallback and is
+reported explicitly in the response warning; other provider failures do not.
 
 ## 35. AI Provider Boundary
 Avoid scattering provider SDK calls.

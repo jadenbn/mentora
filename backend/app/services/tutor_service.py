@@ -99,10 +99,17 @@ class TutorService:
         )
         workflow_result = self._apply_safety_policy(request, workflow_result)
         if course_context.used_seeded_taxonomy_fallback:
-            workflow_result.plan.warnings.append(
-                "No uploaded course excerpts were found; feedback is grounded in "
-                "the built-in seeded course taxonomy."
-            )
+            if course_context.fallback_reason == "pinecone_index_missing":
+                warning = (
+                    "The configured course index was not found; feedback is grounded "
+                    "in the built-in seeded course taxonomy."
+                )
+            else:
+                warning = (
+                    "No uploaded course excerpts were found; feedback is grounded in "
+                    "the built-in seeded course taxonomy."
+                )
+            workflow_result.plan.warnings.append(warning)
 
         events = [
             LearningEvent(

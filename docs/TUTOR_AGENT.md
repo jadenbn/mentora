@@ -285,8 +285,10 @@ successfully with no matches for a validated seeded course (currently
 `calc1`), the backend may use only the problem's taxonomy-compatible expected
 skills and their direct prerequisites. The response includes a
 `<course>-seeded-taxonomy` grounding reference and a warning so the fallback is
-visible. Pinecone exceptions still return `502`; taxonomy data does not hide a
-provider outage.
+visible. A missing configured Pinecone index uses the same fallback for a
+validated seeded course and is identified explicitly in the warning. Pinecone
+authentication, network, rate-limit, and other exceptions still return `502`;
+taxonomy data does not hide a provider outage.
 
 ## Tutor behavior and safety
 

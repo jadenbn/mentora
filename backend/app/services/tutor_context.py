@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from app.schemas.tutor import GroundingReference, TutorRequest
-from app.services.embeddings import query_similar
+from app.services.embeddings import CourseIndexNotFound, query_similar
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -23,6 +23,7 @@ class RetrievedCourseContext:
     excerpts: list[dict]
     references: list[GroundingReference]
     used_seeded_taxonomy_fallback: bool = False
+    fallback_reason: str | None = None
 
 
 def build_retrieval_query(request: TutorRequest) -> str:
@@ -55,6 +56,7 @@ async def retrieve_course_context(
     seeded_taxonomy_fallback: list[dict] | None = None,
 ) -> RetrievedCourseContext:
     query = build_retrieval_query(request)
+    fallback_reason: str | None = None
     logger.info(
         "tutor.trace stage=retrieval_started request_id=%s course_id=%s top_k=%s",
         request.request_id,
@@ -68,6 +70,23 @@ async def retrieve_course_context(
             course_id=request.course_id,
             top_k=top_k,
         )
+    except CourseIndexNotFound as exc:
+        if not seeded_taxonomy_fallback:
+            logger.exception(
+                "tutor.trace stage=retrieval_index_missing request_id=%s "
+                "course_id=%s seed_fallback_available=false",
+                request.request_id,
+                request.course_id,
+            )
+            raise CourseContextUnavailable("course context retrieval failed") from exc
+        logger.warning(
+            "tutor.trace stage=retrieval_index_missing request_id=%s "
+            "course_id=%s seed_fallback_available=true",
+            request.request_id,
+            request.course_id,
+        )
+        results = []
+        fallback_reason = "pinecone_index_missing"
     except Exception as exc:  # provider errors are translated at the API boundary
         logger.exception(
             "tutor.trace stage=retrieval_provider_error request_id=%s "
@@ -89,6 +108,7 @@ async def retrieve_course_context(
     if not results and seeded_taxonomy_fallback:
         results = seeded_taxonomy_fallback
         used_seeded_taxonomy_fallback = True
+        fallback_reason = fallback_reason or "empty_results"
         logger.warning(
             "tutor.trace stage=retrieval_seed_fallback request_id=%s "
             "course_id=%s result_count=%s",
@@ -128,4 +148,5 @@ async def retrieve_course_context(
         excerpts=excerpts,
         references=references,
         used_seeded_taxonomy_fallback=used_seeded_taxonomy_fallback,
+        fallback_reason=fallback_reason,
     )

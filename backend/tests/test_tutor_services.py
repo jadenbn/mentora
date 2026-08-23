@@ -22,6 +22,7 @@ from app.schemas.tutor import (
     WorkStatus,
 )
 from app.services.learning_events import publish_learning_events, webhook_signature
+from app.services.embeddings import CourseIndexNotFound
 from app.services.tutor_context import (
     CourseContextUnavailable,
     build_retrieval_query,
@@ -147,6 +148,48 @@ def test_pinecone_failure_is_not_hidden_by_seeded_taxonomy(caplog) -> None:
     assert "provider_exception=RuntimeError" in caplog.text
 
 
+def test_missing_pinecone_index_uses_validated_seeded_taxonomy(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    def missing_index(**_kwargs):
+        raise CourseIndexNotFound("configured Pinecone index was not found")
+
+    result = asyncio.run(
+        retrieve_course_context(
+            tutor_request(),
+            top_k=5,
+            retriever=missing_index,
+            seeded_taxonomy_fallback=[
+                {
+                    "text": "Skill: Power rule",
+                    "filename": "calc1-seeded-taxonomy",
+                    "page": 1,
+                    "score": 1.0,
+                }
+            ],
+        )
+    )
+
+    assert result.used_seeded_taxonomy_fallback is True
+    assert result.fallback_reason == "pinecone_index_missing"
+    assert result.references[0].filename == "calc1-seeded-taxonomy"
+    assert "stage=retrieval_index_missing" in caplog.text
+
+
+def test_missing_pinecone_index_without_seeded_course_still_fails() -> None:
+    def missing_index(**_kwargs):
+        raise CourseIndexNotFound("configured Pinecone index was not found")
+
+    with pytest.raises(CourseContextUnavailable, match="retrieval failed"):
+        asyncio.run(
+            retrieve_course_context(
+                tutor_request(),
+                top_k=5,
+                retriever=missing_index,
+            )
+        )
+
+
 def test_service_enriches_learning_events_and_queues_webhook() -> None:
     observation = LearningObservation(
         type=LearningObservationType.mistake,
@@ -218,6 +261,34 @@ def test_student_model_snapshot_reaches_agent_context() -> None:
     assert student_model["attempted_topics"] == ["Chain rule"]
     assert student_model["strengths"] == ["Power rule"]
     assert student_model["total_hints_used"] == 3
+
+
+def test_whiteboard_image_and_owned_shapes_reach_agent_context() -> None:
+    fake = FakeWorkflow(workflow_result())
+    service = TutorService(
+        settings=settings(),
+        workflow=fake,
+        retriever=retriever,
+    )
+
+    asyncio.run(
+        service.analyze(
+            request=tutor_request(mode="stuck"),
+            canvas_image=PNG_BYTES,
+            canvas_mime_type="image/png",
+            selection_image=None,
+            selection_mime_type=None,
+        )
+    )
+
+    call = fake.calls[0]
+    assert call["mode"].value == "stuck"
+    assert call["canvas_image"] == PNG_BYTES
+    assert call["canvas_mime_type"] == "image/png"
+    assert [
+        shape["owner"]
+        for shape in call["context"]["request"]["canvas"]["shapes"]
+    ] == ["student", "ai"]
 
 
 def test_course_boundary_replaces_plan_with_confirmation_only() -> None:
