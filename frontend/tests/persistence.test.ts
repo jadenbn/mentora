@@ -256,6 +256,26 @@ describe("startAutosave", () => {
     expect(getSnapshotMock).toHaveBeenCalledTimes(1);
   });
 
+  it("notifies onSave only after a write actually succeeds", () => {
+    const { editor, emitChange } = makeStoreEditor();
+    const onSave = vi.fn();
+    startAutosave(editor, "session_1", { debounceMs: 100, onSave });
+
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementationOnce(() => {
+        throw new DOMException("QuotaExceededError");
+      });
+    emitChange();
+    vi.advanceTimersByTime(100);
+    expect(onSave).not.toHaveBeenCalled();
+
+    setItem.mockRestore();
+    emitChange();
+    vi.advanceTimersByTime(100);
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
   it("stops writing once disposed", () => {
     const { editor, emitChange } = makeStoreEditor();
     const dispose = startAutosave(editor, "session_1", { debounceMs: 500 });

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { ChevronLeft } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowToolbarItem,
   DefaultStylePanel,
@@ -25,6 +25,8 @@ import {
 } from "tldraw";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
+import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
+import { touchSpace } from "@/lib/spaces/store";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import type { TutorMode, TutorResponse } from "@/types/tutor";
 
@@ -32,10 +34,10 @@ const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
 
-// TODO: these arrive from course/problem plumbing once those workstreams land.
-// The backend requires all of them, and prompt_text must be non-empty.
+// TODO: user and problem still come from nowhere. The backend requires both,
+// and prompt_text must be non-empty. The course id is real now: it comes from
+// the space this canvas belongs to.
 const PLACEHOLDER_USER_ID = "user_local";
-const PLACEHOLDER_COURSE_ID = "course_demo";
 const PLACEHOLDER_PROBLEM_ID = "problem_demo";
 const PLACEHOLDER_PROBLEM_TEXT = "Work shown on the whiteboard.";
 
@@ -187,8 +189,15 @@ function CanvasPanel({
   );
 }
 
-export function Whiteboard({ sessionId }: { sessionId: string }) {
+export function Whiteboard({
+  spaceId,
+  courseId,
+}: {
+  spaceId: string;
+  courseId: string;
+}) {
   const editor = useRef<Editor | null>(null);
+  const disposeAutosave = useRef<(() => void) | null>(null);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -208,8 +217,9 @@ export function Whiteboard({ sessionId }: { sessionId: string }) {
           editor: current,
           mode,
           userId: PLACEHOLDER_USER_ID,
-          courseId: PLACEHOLDER_COURSE_ID,
-          sessionId,
+          courseId,
+          // The wire contract still calls a space's id the session id.
+          sessionId: spaceId,
           problemId: PLACEHOLDER_PROBLEM_ID,
           problemText: PLACEHOLDER_PROBLEM_TEXT,
         });
@@ -225,7 +235,7 @@ export function Whiteboard({ sessionId }: { sessionId: string }) {
         setBusyMode(null);
       }
     },
-    [busyMode, sessionId],
+    [busyMode, courseId, spaceId],
   );
 
   const handleClear = useCallback(() => {
@@ -236,13 +246,33 @@ export function Whiteboard({ sessionId }: { sessionId: string }) {
     setError(null);
   }, []);
 
+  // Autosave outlives any single render, so tear it down when the space closes.
+  useEffect(() => {
+    return () => {
+      disposeAutosave.current?.();
+      disposeAutosave.current = null;
+    };
+  }, [spaceId]);
+
+  const handleMount = useCallback(
+    (mountedEditor: Editor) => {
+      editor.current = mountedEditor;
+      // Restore before the student can draw, so their work is never briefly
+      // absent and then overwritten by an autosave of an empty canvas.
+      loadCanvas(mountedEditor, spaceId);
+      disposeAutosave.current?.();
+      disposeAutosave.current = startAutosave(mountedEditor, spaceId, {
+        onSave: () => touchSpace(spaceId),
+      });
+    },
+    [spaceId],
+  );
+
   return (
     <div className="relative h-full">
       <Tldraw
         hideUi
-        onMount={(mountedEditor) => {
-          editor.current = mountedEditor;
-        }}
+        onMount={handleMount}
         options={{ maxPages: 1 }}
       >
         <CanvasToolbar />

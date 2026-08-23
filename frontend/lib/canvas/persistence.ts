@@ -114,7 +114,7 @@ export function clearCanvas(sessionId: string): void {
 export function startAutosave(
   editor: Editor,
   sessionId: string,
-  options: { debounceMs?: number } = {},
+  options: { debounceMs?: number; onSave?: () => void } = {},
 ): () => void {
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
@@ -133,7 +133,9 @@ export function startAutosave(
     }
     timer = setTimeout(() => {
       timer = null;
-      saveCanvas(editor, sessionId);
+      if (saveCanvas(editor, sessionId)) {
+        options.onSave?.();
+      }
     }, debounceMs);
   });
 
