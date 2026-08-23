@@ -23,6 +23,8 @@ function validationField(detail: unknown): string | null {
 /** Maps the backend's documented failure codes onto something a user can read. */
 export function messageForStatus(status: number, detail: unknown): string {
   switch (status) {
+    case 429:
+      return "The tutor usage limit was reached. Please try again shortly.";
     case 413:
       return "The canvas image is too large to analyze.";
     case 415:

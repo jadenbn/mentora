@@ -258,6 +258,10 @@ viewport, shapes with `system|student|ai` ownership, normalized selection,
 recent tutor interactions, student-model snapshot, optional transcript or
 instruction, locale, timezone, and renderer capabilities.
 
+`ProblemContext.solution_reference` is an optional grading aid for generated or
+otherwise answer-keyed problems. It may list equivalent accepted forms, but it
+does not authorize the tutor to reveal unfinished solution steps.
+
 The browser sends identifiers and compact structured context. The backend
 retrieves the relevant course excerpts through the existing course-context
 service; large document context is never sent repeatedly by the browser.
@@ -349,6 +353,13 @@ Where useful, send image plus structured metadata.
 The capture boundary returns both the PNG's header-derived integer pixel
 dimensions and the exact world-space bounds used for export. Client validation
 rejects malformed dimensions before starting a multipart request.
+
+The analysis image and its structured shape companion contain only
+system/problem and student shapes. AI-owned shapes remain visible and
+persistent on the whiteboard but are excluded from analysis pixels and export
+bounds so the model cannot reinforce annotations that obscure student work.
+Prior tutor context travels separately through `recent_interactions` and is
+treated as untrusted history that must be independently reassessed.
 
 ## 21. Select for AI
 Conceptual representation:
@@ -628,11 +639,18 @@ TutorResponse
 ```
 
 ADK performs up to three bounded transient HTTP attempts. The application makes
-one additional full workflow attempt only when structured output is malformed.
+no additional provider request for malformed structured output. It removes
+irrelevant provider union fields, validates actions independently, and uses a
+minimal local canvas fallback when the analysis is valid but its plan is not.
 The model defaults to low-latency, high-throughput
 `gemini-3.5-flash-lite`, uses minimal thinking and a 1,024-token output ceiling,
 and is replaceable through `GEMINI_MODEL`. Canvas exports are capped at 1,280
 pixels on their longest edge. The default application timeout is eight seconds.
+
+Mathematically equivalent forms are graded as correct unless the problem or
+solution reference explicitly requires a particular simplified form. Once the
+analysis is correct, the deterministic service policy prevents corrective
+actions, contradictory plan status, and mistake learning events.
 
 ## 36. Prompt Organization
 Possible layout:

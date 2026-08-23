@@ -10,7 +10,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from pydantic import ValidationError
 from sqlmodel import Session
 
-from app.agents.tutor_workflow import AdkTutorWorkflow, TutorWorkflowError
+from app.agents.tutor_workflow import (
+    AdkTutorWorkflow,
+    TutorRateLimitError,
+    TutorWorkflowError,
+)
 from app.config import TutorSettings, missing_tutor_settings
 from app.db import get_session
 from app.schemas.tutor import TutorRequest, TutorResponse
@@ -179,6 +183,18 @@ async def analyze_tutor_request(
         raise HTTPException(
             status_code=502,
             detail="Required course context is temporarily unavailable",
+        ) from exc
+    except TutorRateLimitError as exc:
+        logger.warning(
+            "tutor.trace stage=workflow_rate_limit_failed request_id=%s "
+            "course_id=%s mode=%s",
+            request.request_id,
+            request.course_id,
+            request.mode.value,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Tutor usage limit reached; try again shortly",
         ) from exc
     except TutorWorkflowError as exc:
         logger.exception(

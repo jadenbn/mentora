@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.agents.tutor_workflow import TutorWorkflowError
+from app.agents.tutor_workflow import TutorRateLimitError, TutorWorkflowError
 from app.api.tutor import get_tutor_service
 from app.config import TutorSettings
 from app.db import get_session
@@ -234,6 +234,11 @@ def test_tutor_translates_retrieval_and_agent_failures() -> None:
             raise self.error
 
     for error, expected_status, expected_detail in (
+        (
+            TutorRateLimitError("raw provider quota details"),
+            429,
+            "Tutor usage limit reached; try again shortly",
+        ),
         (CourseContextUnavailable("raw pinecone error"), 502, "Required course context is temporarily unavailable"),
         (TutorWorkflowError("tutor workflow timed out"), 504, "Tutor analysis is temporarily unavailable"),
     ):

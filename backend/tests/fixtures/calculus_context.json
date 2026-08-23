@@ -2,15 +2,16 @@
   "request": {
     "schema_version": "1.0",
     "user_id": "live_test_user",
-    "course_id": "calculus_1",
+    "course_id": "calc1",
     "session_id": "live_test_session",
-    "problem_id": "power_rule_1",
+    "problem_id": "chain_rule_complete_1",
     "mode": "hint",
     "problem": {
-      "prompt_text": "Differentiate f(x) = x^2.",
+      "prompt_text": "Differentiate y = (3x² + 1)⁴. Show each step.",
+      "solution_reference": "Accept 4(3x² + 1)³(6x) and 24x(3x² + 1)³ as complete, equivalent derivatives. Multiplying 4 and 6x is optional simplification.",
       "topic": "derivatives",
-      "difficulty": "easy",
-      "expected_skills": ["power rule"]
+      "difficulty": "medium",
+      "expected_skills": ["calc1.derivatives.chain-rule"]
     },
     "canvas": {
       "image_width": 1200,
@@ -20,19 +21,19 @@
           "id": "student_step",
           "owner": "student",
           "shape_type": "text",
-          "text": "f'(x) = x",
-          "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1}
+          "text": "y' = 4(3x² + 1)³(6x)",
+          "bounds": {"x": 0.2, "y": 0.35, "width": 0.45, "height": 0.1}
         }
       ]
     },
     "selection": {
       "shape_ids": ["student_step"],
-      "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1}
+      "bounds": {"x": 0.2, "y": 0.35, "width": 0.45, "height": 0.1}
     }
   },
   "retrieved_course_context": [
     {
-      "text": "For x^n, the course uses d/dx x^n = n x^(n-1).",
+      "text": "For a composite function, the course applies the outer derivative and multiplies by the inner derivative. Equivalent factored and simplified forms are accepted.",
       "filename": "calculus-demo-notes.pdf",
       "page": 1,
       "document_type": "lecture"

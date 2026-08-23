@@ -14,10 +14,17 @@ from google.adk.models import Gemini
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.prompts.tutor import CANVAS_ANALYST_INSTRUCTION, tutor_planner_instruction
-from app.schemas.tutor import CanvasAnalysis, TutorMode, TutorPlan
+from app.schemas.tutor import (
+    CanvasAction,
+    CanvasAnalysis,
+    TextAction,
+    TutorMode,
+    TutorPlan,
+    WorkStatus,
+)
 
 
 APP_NAME = "mentora_tutor"
@@ -194,8 +201,142 @@ def _drop_nulls(value: Any) -> Any:
     return value
 
 
+_ACTION_FIELDS = {
+    "text": {"type", "purpose", "position", "text"},
+    "math": {"type", "purpose", "position", "latex"},
+    "arrow": {"type", "purpose", "start", "end", "label"},
+    "circle": {"type", "purpose", "target", "label"},
+    "underline": {"type", "purpose", "target", "label"},
+    "highlight": {"type", "purpose", "target", "label"},
+    "check": {"type", "purpose", "target", "label"},
+    "cross": {"type", "purpose", "target", "label"},
+}
+_CANVAS_ACTION_ADAPTER = TypeAdapter(CanvasAction)
+
+
+def _normalize_provider_output(value: Any) -> Any:
+    """Remove nullable union placeholders and irrelevant per-action fields."""
+    normalized = _drop_nulls(value)
+    if not isinstance(normalized, dict):
+        return normalized
+    plan = normalized.get("plan")
+    if not isinstance(plan, dict) or not isinstance(plan.get("canvas_actions"), list):
+        return normalized
+    actions = []
+    for action in plan["canvas_actions"]:
+        if not isinstance(action, dict):
+            actions.append(action)
+            continue
+        allowed = _ACTION_FIELDS.get(action.get("type"))
+        actions.append(
+            {key: item for key, item in action.items() if key in allowed}
+            if allowed
+            else action
+        )
+    plan["canvas_actions"] = actions
+    return normalized
+
+
+def _validation_locations(exc: ValidationError, *, prefix: str = "") -> list[str]:
+    """Return safe schema locations and error categories, never rejected values."""
+    locations: list[str] = []
+    for error in exc.errors(include_input=False)[:8]:
+        location = ".".join(str(item) for item in error.get("loc", ()))
+        field = f"{prefix}{location}" if location else prefix.rstrip(".")
+        locations.append(f"{field}:{error.get('type', 'validation_error')}")
+    return locations
+
+
+def _fallback_plan(analysis: CanvasAnalysis) -> TutorPlan:
+    if analysis.status == WorkStatus.correct:
+        text = "This work is correct—no additional step is required."
+    elif analysis.status == WorkStatus.uncertain:
+        text = "I can’t read this clearly—could you rewrite or select the step?"
+    else:
+        text = next(
+            (issue.strip() for issue in analysis.issues if issue.strip()),
+            analysis.current_work_summary.strip() or "Please review the current step.",
+        )
+    return TutorPlan(
+        status=analysis.status,
+        confidence=analysis.confidence,
+        canvas_actions=[
+            TextAction(
+                type="text",
+                position={"x": 0.5, "y": 0.5},
+                text=text[:240],
+                purpose="safe_local_recovery",
+            )
+        ],
+        summary=(analysis.current_work_summary[:1_000] or None),
+        warnings=["Tutor feedback was simplified after an invalid model action."],
+        course_boundary=analysis.course_boundary,
+    )
+
+
+def _validate_or_recover_plan(
+    raw_plan: Any,
+    analysis: CanvasAnalysis,
+) -> tuple[TutorPlan, int, list[str]]:
+    """Keep valid actions and recover locally without another provider request."""
+    if not isinstance(raw_plan, dict):
+        return _fallback_plan(analysis), 0, ["plan:object_type"]
+
+    raw_actions = raw_plan.get("canvas_actions")
+    valid_actions: list[CanvasAction] = []
+    dropped_actions = 0
+    locations: list[str] = []
+    if isinstance(raw_actions, list):
+        for index, action in enumerate(raw_actions):
+            try:
+                valid_actions.append(_CANVAS_ACTION_ADAPTER.validate_python(action))
+            except ValidationError as exc:
+                dropped_actions += 1
+                locations.extend(
+                    _validation_locations(exc, prefix=f"plan.canvas_actions.{index}.")
+                )
+    else:
+        locations.append("plan.canvas_actions:list_type")
+
+    candidate = dict(raw_plan)
+    candidate["canvas_actions"] = valid_actions
+    try:
+        plan = TutorPlan.model_validate(candidate)
+    except ValidationError as exc:
+        locations.extend(_validation_locations(exc, prefix="plan."))
+        return _fallback_plan(analysis), dropped_actions, locations
+
+    if isinstance(raw_actions, list) and raw_actions and not valid_actions:
+        return _fallback_plan(analysis), dropped_actions, locations
+    if dropped_actions:
+        plan.warnings = [
+            *plan.warnings[:19],
+            "Some invalid tutor actions were omitted.",
+        ]
+    return plan, dropped_actions, locations
+
+
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if getattr(current, "code", None) == 429:
+            return True
+        status = str(getattr(current, "status", "")).upper()
+        name = type(current).__name__.replace("_", "").lower()
+        if status == "RESOURCE_EXHAUSTED" or "resourceexhausted" in name:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 class TutorWorkflowError(RuntimeError):
     """Safe boundary for provider, timeout, and malformed-output errors."""
+
+
+class TutorRateLimitError(TutorWorkflowError):
+    """The configured tutor provider has exhausted its current request quota."""
 
 
 @dataclass(frozen=True)
@@ -283,74 +424,75 @@ class AdkTutorWorkflow:
         selection_image: bytes | None,
         selection_mime_type: str | None,
     ) -> TutorWorkflowResult:
-        last_error: Exception | None = None
-        deadline = asyncio.get_running_loop().time() + self.timeout_seconds
-        # ADK/Gemini performs transient HTTP retries. This second attempt is
-        # specifically the bounded repair path for malformed structured output.
-        for attempt in range(2):
-            attempt_started = time.perf_counter()
+        attempt_started = time.perf_counter()
+        logger.info(
+            "tutor.trace stage=workflow_attempt interaction_id=%s mode=%s attempt=1",
+            interaction_id,
+            mode.value,
+        )
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                result = await self._run_once(
+                    interaction_id=interaction_id,
+                    user_id=user_id,
+                    mode=mode,
+                    context=context,
+                    canvas_image=canvas_image,
+                    canvas_mime_type=canvas_mime_type,
+                    selection_image=selection_image,
+                    selection_mime_type=selection_mime_type,
+                )
             logger.info(
-                "tutor.trace stage=workflow_attempt interaction_id=%s mode=%s "
-                "attempt=%s repair=%s",
+                "tutor.trace stage=workflow_attempt_complete interaction_id=%s "
+                "mode=%s attempt=1 elapsed_ms=%s",
                 interaction_id,
                 mode.value,
-                attempt + 1,
-                attempt == 1,
+                round((time.perf_counter() - attempt_started) * 1_000),
             )
-            try:
-                remaining_seconds = max(
-                    0,
-                    deadline - asyncio.get_running_loop().time(),
-                )
-                async with asyncio.timeout(remaining_seconds):
-                    result = await self._run_once(
-                        interaction_id=f"{interaction_id}_{attempt}",
-                        user_id=user_id,
-                        mode=mode,
-                        context=context,
-                        canvas_image=canvas_image,
-                        canvas_mime_type=canvas_mime_type,
-                        selection_image=selection_image,
-                        selection_mime_type=selection_mime_type,
-                        repair_attempt=attempt == 1,
-                    )
-                logger.info(
-                    "tutor.trace stage=workflow_attempt_complete interaction_id=%s "
-                    "mode=%s attempt=%s elapsed_ms=%s",
-                    interaction_id,
-                    mode.value,
-                    attempt + 1,
-                    round((time.perf_counter() - attempt_started) * 1_000),
-                )
-                return result
-            except (ValidationError, ValueError, KeyError, json.JSONDecodeError) as exc:
-                last_error = exc
+            return result
+        except ValidationError as exc:
+            logger.warning(
+                "tutor.trace stage=workflow_output_invalid interaction_id=%s "
+                "mode=%s fields=%s",
+                interaction_id,
+                mode.value,
+                ",".join(_validation_locations(exc, prefix="analysis.")),
+            )
+            raise TutorWorkflowError("tutor returned malformed analysis output") from exc
+        except (ValueError, KeyError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "tutor.trace stage=workflow_output_invalid interaction_id=%s "
+                "mode=%s exception=%s",
+                interaction_id,
+                mode.value,
+                type(exc).__name__,
+            )
+            raise TutorWorkflowError("tutor returned malformed structured output") from exc
+        except TimeoutError as exc:
+            logger.error(
+                "tutor.trace stage=workflow_timeout interaction_id=%s mode=%s",
+                interaction_id,
+                mode.value,
+            )
+            raise TutorWorkflowError("tutor workflow timed out") from exc
+        except Exception as exc:
+            if _is_rate_limit_error(exc):
                 logger.warning(
-                    "tutor.trace stage=workflow_output_invalid interaction_id=%s "
-                    "mode=%s attempt=%s exception=%s",
-                    interaction_id,
-                    mode.value,
-                    attempt + 1,
-                    type(exc).__name__,
-                )
-                continue
-            except TimeoutError as exc:
-                logger.exception(
-                    "tutor.trace stage=workflow_timeout interaction_id=%s mode=%s",
-                    interaction_id,
-                    mode.value,
-                )
-                raise TutorWorkflowError("tutor workflow timed out") from exc
-            except Exception as exc:
-                logger.exception(
-                    "tutor.trace stage=workflow_provider_error interaction_id=%s "
+                    "tutor.trace stage=workflow_rate_limited interaction_id=%s "
                     "mode=%s provider_exception=%s",
                     interaction_id,
                     mode.value,
                     type(exc).__name__,
                 )
-                raise TutorWorkflowError("tutor provider request failed") from exc
-        raise TutorWorkflowError("tutor returned malformed structured output") from last_error
+                raise TutorRateLimitError("tutor provider quota exhausted") from exc
+            logger.error(
+                "tutor.trace stage=workflow_provider_error interaction_id=%s "
+                "mode=%s provider_exception=%s",
+                interaction_id,
+                mode.value,
+                type(exc).__name__,
+            )
+            raise TutorWorkflowError("tutor provider request failed") from exc
 
     async def _run_once(
         self,
@@ -363,7 +505,6 @@ class AdkTutorWorkflow:
         canvas_mime_type: str,
         selection_image: bytes | None,
         selection_mime_type: str | None,
-        repair_attempt: bool,
     ) -> TutorWorkflowResult:
         session_service = InMemorySessionService()
         runner = Runner(
@@ -385,12 +526,7 @@ class AdkTutorWorkflow:
                     mime_type=selection_mime_type,
                 )
             )
-        request_text = (
-            "This is a repair attempt. Return only data matching the supplied schema.\n"
-            if repair_attempt
-            else ""
-        )
-        request_text += "Structured tutor request and retrieved course context:\n"
+        request_text = "Structured tutor request and retrieved course context:\n"
         request_text += json.dumps(context, separators=(",", ":"), default=str)
         parts.append(types.Part.from_text(text=request_text))
 
@@ -409,9 +545,20 @@ class AdkTutorWorkflow:
         )
         if session is None:
             raise ValueError("ADK session was not available after workflow completion")
-        output = _drop_nulls(session.state.get("tutor_result"))
+        output = _normalize_provider_output(session.state.get("tutor_result"))
         if not isinstance(output, dict):
             raise ValueError("ADK tutor result was not a structured object")
         analysis = CanvasAnalysis.model_validate(output.get("analysis"))
-        plan = TutorPlan.model_validate(output.get("plan"))
+        plan, dropped_actions, locations = _validate_or_recover_plan(
+            output.get("plan"), analysis
+        )
+        if locations:
+            logger.warning(
+                "tutor.trace stage=workflow_plan_recovered interaction_id=%s "
+                "mode=%s dropped_actions=%s fields=%s",
+                interaction_id,
+                mode.value,
+                dropped_actions,
+                ",".join(locations),
+            )
         return TutorWorkflowResult(analysis=analysis, plan=plan)

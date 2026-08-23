@@ -45,3 +45,12 @@ test("422 errors expose only a safe field path", () => {
   );
   assert.doesNotMatch(messageForStatus(422, detail), /private content/);
 });
+
+test("provider quota errors are distinct from generic availability failures", () => {
+  assert.equal(
+    messageForStatus(429, "raw provider quota details"),
+    "The tutor usage limit was reached. Please try again shortly.",
+  );
+  assert.equal(messageForStatus(502, null), "The tutor is temporarily unavailable.");
+  assert.equal(messageForStatus(504, null), "The tutor took too long to respond.");
+});

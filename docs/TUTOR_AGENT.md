@@ -28,7 +28,7 @@ Google ADK Workflow
     ├── Canvas Analyst result → CanvasAnalysis
     └── mode-specific Tutor Planner result → TutorPlan
         ↓
-Pydantic validation + deterministic safety policy
+Local action recovery + Pydantic validation + deterministic safety policy
         ↓
 TutorResponse with normalized canvas_actions
         ├── returned to whiteboard
@@ -108,6 +108,7 @@ be mapped back onto the exact exported canvas region.
   "trigger": "manual",
   "problem": {
     "prompt_text": "Differentiate f(x) = x^2.",
+    "solution_reference": "Accept f'(x)=2x as the complete derivative.",
     "latex_blocks": ["f(x)=x^2"],
     "topic": "derivatives",
     "difficulty": "easy",
@@ -144,13 +145,6 @@ be mapped back onto the exact exported canvas region.
         "owner": "student",
         "shape_type": "draw",
         "bounds": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1}
-      },
-      {
-        "id": "shape_ai_old",
-        "owner": "ai",
-        "shape_type": "text",
-        "text": "Recall the power rule.",
-        "bounds": {"x": 0.5, "y": 0.35, "width": 0.2, "height": 0.1}
       }
     ]
   },
@@ -256,9 +250,12 @@ and height and remain inside the image. The backend returns at most 12 actions.
 
 ## Whiteboard integration notes for Jaden
 
-1. Export the full analysis image, read its integer pixel dimensions from the
-   PNG IHDR header, and retain the separate exact image-to-world transform.
-2. Mark every structured shape with `system`, `student`, or `ai` ownership.
+1. Export only system/problem and student shapes for the analysis image, read
+   its integer pixel dimensions from the PNG IHDR header, and retain the exact
+   image-to-world transform calculated from those same shapes. Keep AI-owned
+   shapes visible and persistent, but out of the analysis pixels and bounds.
+2. Mark every persistent whiteboard shape with `system`, `student`, or `ai`
+   ownership; send only the system and student subset in the analysis companion.
 3. Convert tldraw shape bounds to normalized image bounds once when building the
    request.
 4. If Select for AI is active, send both normalized selection bounds and the
@@ -303,6 +300,13 @@ taxonomy data does not hide a provider outage.
 The Canvas Analyst may return `uncertain`. In that case the service removes
 checks/crosses, records no strength or mistake claims, and may return one short
 clarification action.
+
+The analyst evaluates mathematical equivalence before presentation. Optional
+factor or coefficient simplification does not make an otherwise complete answer
+partial or incorrect unless the prompt or `solution_reference` explicitly
+requires that form. Prior tutor summaries are untrusted historical suggestions.
+For correct analysis, the service enforces a correct plan, permits only a check
+and mode-appropriate completion text, and removes contradictory mistake events.
 
 If a proposed technique is outside the retrieved course boundary, all proposed
 actions are replaced with a single confirmation message. The frontend should
@@ -423,6 +427,7 @@ synchronous status or durable delivery API. Consumers should deduplicate by
 | `413` | An image exceeds 10 MB. |
 | `415` | Image format or signature is invalid. |
 | `422` | `payload` violates the versioned request schema; the client shows a safe field path when available. |
+| `429` | The configured tutor provider has reached its current usage limit. |
 | `502` | Required course retrieval or Gemini analysis failed. |
 | `503` | One or more required integration settings are absent. |
 | `504` | The configured tutor workflow timeout was reached. |
@@ -453,7 +458,11 @@ RUN_LIVE_GEMINI_TEST=1 .venv/bin/python -m pytest -q -s -m live
 
 The latency-critical workflow performs the Canvas Analyst and mode-specific
 Tutor Planner roles in one Gemini request while preserving separate validated
-`CanvasAnalysis` and `TutorPlan` objects. The default
+`CanvasAnalysis` and `TutorPlan` objects. Nullable or irrelevant provider union
+fields are removed locally, valid actions survive independently, and a valid
+analysis can produce a minimal local canvas fallback when its plan is malformed.
+An invalid analysis fails safely and is never retried as a second model request.
+The default
 `gemini-3.5-flash-lite` model uses minimal thinking, medium image resolution,
 and a 1,024-token output ceiling. Full-canvas exports are capped at 1,280 pixels
 on their longest edge. Provider `429` responses are not retried because quota
@@ -461,15 +470,15 @@ exhaustion cannot be repaired inside an interactive request; transient timeouts
 and `5xx` responses still receive bounded SDK retries.
 
 If the live test reports `RESOURCE_EXHAUSTED`, check the active model limits in
-Google AI Studio or use a Gemini project with available quota. A successful
-interaction normally consumes one model request; a malformed structured result
-may consume one additional bounded repair request.
+Google AI Studio or use a Gemini project with available quota. The API returns
+`429` for this condition. A tutor interaction consumes one application-level
+model request; only the SDK's bounded transient HTTP retries can add attempts.
 
 Main extension boundaries:
 
 - `app/schemas/tutor.py`: versioned API and model-output contracts.
 - `app/prompts/tutor.py`: analyst rules and mode-specific tutor behavior.
-- `app/agents/tutor_workflow.py`: single-pass ADK agent, Gemini retries, and repair attempt.
+- `app/agents/tutor_workflow.py`: single-pass ADK agent, Gemini retries, and local output recovery.
 - `app/services/tutor_context.py`: query construction and Korey retrieval.
 - `app/services/tutor_service.py`: safety policy and response assembly.
 - `app/services/learning_events.py`: webhook signing and delivery.

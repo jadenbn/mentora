@@ -68,6 +68,9 @@ def test_live_gemini_returns_validated_analysis_and_actions() -> None:
     assert 0 <= result.analysis.confidence <= 1
     assert 0 <= result.plan.confidence <= 1
     assert len(result.plan.canvas_actions) <= 12
+    assert result.analysis.status.value == "correct"
+    assert result.plan.status.value == "correct"
+    assert all(action.type != "cross" for action in result.plan.canvas_actions)
 
     validation_summary = {
         "validation": "passed",
