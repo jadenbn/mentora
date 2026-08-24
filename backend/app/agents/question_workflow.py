@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from uuid import uuid4
 
@@ -38,12 +39,18 @@ class GeminiQuestionWorkflow:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
-    async def run(self, *, chunks: list[GroundingChunk]) -> QuestionPlan:
+    async def run(
+        self, *, chunks: list[GroundingChunk], question_request: str
+    ) -> QuestionPlan:
         allowed = {chunk.chunk_id for chunk in chunks}
         malformed: Exception | None = None
         for attempt in range(2):
             try:
-                raw = await self._request(chunks=chunks, repair=attempt == 1)
+                raw = await self._request(
+                    chunks=chunks,
+                    question_request=question_request,
+                    repair=attempt == 1,
+                )
                 plan = QuestionPlan.model_validate(raw)
                 if len(set(plan.grounding_chunk_ids)) != len(plan.grounding_chunk_ids):
                     raise ValueError("grounding chunk IDs must be unique")
@@ -87,7 +94,13 @@ class GeminiQuestionWorkflow:
             disallow_transfer_to_peers=True,
         )
 
-    async def _request(self, *, chunks: list[GroundingChunk], repair: bool) -> dict:
+    async def _request(
+        self,
+        *,
+        chunks: list[GroundingChunk],
+        question_request: str,
+        repair: bool,
+    ) -> dict:
         session_service = InMemorySessionService()
         session_id = uuid4().hex
         runner = Runner(
@@ -106,7 +119,15 @@ class GeminiQuestionWorkflow:
         )
         message = types.Content(
             role="user",
-            parts=[types.Part.from_text(text=f"{prefix}{excerpts}")],
+            parts=[
+                types.Part.from_text(
+                    text=(
+                        f"{prefix}<question-request-json>\n"
+                        f"{json.dumps(question_request)}\n"
+                        f"</question-request-json>\n\n{excerpts}"
+                    )
+                )
+            ],
         )
         async with asyncio.timeout(self.timeout_seconds):
             async for _event in runner.run_async(

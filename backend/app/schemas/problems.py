@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class StrictModel(BaseModel):
@@ -14,6 +14,10 @@ class StrictModel(BaseModel):
 
 class GenerateQuestionRequest(StrictModel):
     document_id: str = Field(min_length=1)
+    question_request: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000),
+    ]
 
 
 class ProblemContext(StrictModel):

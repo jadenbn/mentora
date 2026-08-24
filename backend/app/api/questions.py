@@ -6,10 +6,20 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
 from app.api.dependencies import get_course_repository
-from app.config import TutorSettings, missing_settings
+from app.config import (
+    TutorSettings,
+    missing_indexing_settings,
+    missing_settings,
+    question_full_context_max_chars,
+)
 from app.database import CourseRepository
 from app.schemas.problems import GenerateQuestionRequest, ProblemContext
-from app.services.question_service import DocumentNotFoundError, QuestionService
+from app.services.question_service import (
+    ContextRetrievalError,
+    ContextRetrievalNotConfigured,
+    DocumentNotFoundError,
+    QuestionService,
+)
 
 router = APIRouter(prefix="/api/courses/{course_id}/questions", tags=["questions"])
 
@@ -27,6 +37,14 @@ def get_question_service(
             },
         )
     from app.agents.question_workflow import GeminiQuestionWorkflow
+    from app.services.retrieval import search_document
+
+    class Retriever:
+        def search(self, **kwargs):
+            missing_indexing = missing_indexing_settings()
+            if missing_indexing:
+                raise ContextRetrievalNotConfigured(missing_indexing)
+            return search_document(repository=repository, **kwargs)
 
     settings = TutorSettings.from_environment()
     return QuestionService(
@@ -35,6 +53,8 @@ def get_question_service(
             model=settings.gemini_model,
             timeout_seconds=settings.request_timeout_seconds,
         ),
+        retriever=Retriever(),
+        full_context_max_chars=question_full_context_max_chars(),
     )
 
 
@@ -45,9 +65,26 @@ async def generate_question(
     service: QuestionService = Depends(get_question_service),
 ) -> ProblemContext:
     try:
-        return await service.generate(course_id=course_id, document_id=request.document_id)
+        return await service.generate(
+            course_id=course_id,
+            document_id=request.document_id,
+            question_request=request.question_request,
+        )
     except DocumentNotFoundError as exc:
         raise HTTPException(404, "Document was not found in this course") from exc
+    except ContextRetrievalNotConfigured as exc:
+        raise HTTPException(
+            503,
+            detail={
+                "message": "Large-document retrieval is not configured",
+                "missing_settings": exc.missing_settings,
+            },
+        ) from exc
+    except ContextRetrievalError as exc:
+        raise HTTPException(
+            502,
+            "Relevant textbook context could not be retrieved; retry after indexing",
+        ) from exc
     except QuestionWorkflowTimeout as exc:
         raise HTTPException(504, "Question generation took too long") from exc
     except QuestionWorkflowError as exc:

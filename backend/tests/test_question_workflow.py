@@ -31,7 +31,7 @@ def test_an_invented_chunk_id_gets_one_repair_attempt():
         {"prompt": "Question", "grounding_chunk_ids": ["invented"]},
         {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"]},
     ])
-    result = asyncio.run(workflow.run(chunks=CHUNKS))
+    result = asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
     assert result.grounding_chunk_ids == ["chunk_1"]
     assert workflow.attempts == 2
 
@@ -42,5 +42,5 @@ def test_persistently_invalid_source_ids_fail_closed():
         {"prompt": "Question", "grounding_chunk_ids": ["still_invented"]},
     ])
     with pytest.raises(QuestionWorkflowError):
-        asyncio.run(workflow.run(chunks=CHUNKS))
+        asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
     assert workflow.attempts == 2

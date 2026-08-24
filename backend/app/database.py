@@ -10,6 +10,7 @@ from typing import Iterable
 from app.schemas.documents import ChunkMetadata, CourseDocument, DocumentType
 from app.schemas.problems import GeneratedProblem, GroundedProblem, GroundingChunk, ProblemContext
 
+_QUERY_PARAM_LIMIT = 900
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS course_documents (
@@ -184,6 +185,38 @@ class CourseRepository:
             ).fetchall()
         return [GroundingChunk.model_validate(dict(row)) for row in rows]
 
+    def get_chunks_by_ids(self, chunk_ids: list[str]) -> dict[str, ChunkMetadata]:
+        """Hydrate exact chunks while leaving relevance ordering to the caller."""
+        if not chunk_ids:
+            return {}
+        found: dict[str, ChunkMetadata] = {}
+        with self.connect() as connection:
+            for start in range(0, len(chunk_ids), _QUERY_PARAM_LIMIT):
+                batch = chunk_ids[start : start + _QUERY_PARAM_LIMIT]
+                placeholders = ",".join("?" for _ in batch)
+                rows = connection.execute(
+                    f"""
+                    SELECT c.chunk_id, c.course_id, c.document_id, c.chunk_index,
+                           c.page, c.text, d.filename, d.document_type
+                    FROM document_chunks AS c
+                    JOIN course_documents AS d ON d.document_id = c.document_id
+                    WHERE c.chunk_id IN ({placeholders})
+                    """,
+                    batch,
+                ).fetchall()
+                for row in rows:
+                    found[row["chunk_id"]] = ChunkMetadata(
+                        chunk_id=row["chunk_id"],
+                        course_id=row["course_id"],
+                        document_id=row["document_id"],
+                        chunk_index=row["chunk_index"],
+                        filename=row["filename"],
+                        page=row["page"],
+                        document_type=DocumentType(row["document_type"]),
+                        text=row["text"],
+                    )
+        return found
+
     def create_problem(
         self,
         *,
@@ -251,6 +284,29 @@ class CourseRepository:
             problem=problem,
             chunks=[GroundingChunk.model_validate(dict(row)) for row in chunk_rows],
         )
+
+    def delete_course(self, course_id: str) -> int:
+        """Delete one course's generated problems, documents, and chunks."""
+        with self.connect() as connection:
+            connection.execute(
+                """
+                DELETE FROM problem_grounding_chunks
+                WHERE problem_id IN (
+                    SELECT problem_id FROM generated_problems WHERE course_id = ?
+                )
+                """,
+                (course_id,),
+            )
+            connection.execute(
+                "DELETE FROM generated_problems WHERE course_id = ?", (course_id,)
+            )
+            deleted = connection.execute(
+                "DELETE FROM document_chunks WHERE course_id = ?", (course_id,)
+            ).rowcount
+            connection.execute(
+                "DELETE FROM course_documents WHERE course_id = ?", (course_id,)
+            )
+        return deleted
 
     @staticmethod
     def _document(row: sqlite3.Row) -> CourseDocument:

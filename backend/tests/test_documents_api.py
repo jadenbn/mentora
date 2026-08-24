@@ -11,7 +11,12 @@ from app.main import app
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    monkeypatch.setenv("PINECONE_API_KEY", "test")
+    monkeypatch.setenv("PINECONE_INDEX_NAME", "test")
+    monkeypatch.setattr("app.services.ingestion.delete_document_vectors", lambda _id: 0)
+    monkeypatch.setattr("app.services.ingestion.upsert_chunks", lambda chunks: len(chunks))
     repository = CourseRepository(tmp_path / "db.sqlite")
     app.dependency_overrides[get_course_repository] = lambda: repository
     yield TestClient(app)
@@ -79,3 +84,23 @@ def test_an_oversized_document_is_rejected_before_persistence(client, monkeypatc
     monkeypatch.setattr(documents_api, "MAX_DOCUMENT_BYTES", 4)
     assert upload(client, data=b"five!").status_code == 413
     assert client.get("/api/courses/course_1/documents").json() == []
+
+
+def test_missing_indexing_configuration_names_only_missing_settings(client, monkeypatch):
+    monkeypatch.delenv("PINECONE_API_KEY")
+    response = upload(client)
+    assert response.status_code == 503
+    assert response.json()["detail"]["missing_settings"] == ["PINECONE_API_KEY"]
+
+
+def test_indexing_failure_is_sanitized_and_can_be_retried(client, monkeypatch):
+    def fail(_chunks):
+        raise RuntimeError("provider secret")
+
+    monkeypatch.setattr("app.services.ingestion.upsert_chunks", fail)
+    response = upload(client)
+    assert response.status_code == 502
+    assert "provider secret" not in response.text
+    # SQLite is canonical; the same content can be re-uploaded to repair only
+    # the missing vector index without duplicating document rows.
+    assert len(client.get("/api/courses/course_1/documents").json()) == 1

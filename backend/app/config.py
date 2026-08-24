@@ -7,11 +7,26 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REQUIRED_SETTINGS = ("GEMINI_API_KEY",)
+INDEXING_SETTINGS = ("OPENAI_API_KEY", "PINECONE_API_KEY", "PINECONE_INDEX_NAME")
 
 
 def missing_settings() -> list[str]:
     """Names of unset variables. Never their values."""
     return [name for name in REQUIRED_SETTINGS if not os.getenv(name)]
+
+
+def missing_indexing_settings() -> list[str]:
+    """Names required to embed and retrieve course chunks."""
+    return [name for name in INDEXING_SETTINGS if not os.getenv(name)]
+
+
+def question_full_context_max_chars() -> int:
+    """Serialized context size below which retrieval is unnecessary."""
+    raw = os.getenv("QUESTION_FULL_CONTEXT_MAX_CHARS") or "40000"
+    value = int(raw)
+    if value <= 0:
+        raise ValueError("QUESTION_FULL_CONTEXT_MAX_CHARS must be positive")
+    return value
 
 
 def cors_allow_origins() -> list[str]:

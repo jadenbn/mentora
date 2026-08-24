@@ -7,16 +7,24 @@ runs on a laptop with a single credential.
 from __future__ import annotations
 
 from app.config import (
+    INDEXING_SETTINGS,
     REQUIRED_SETTINGS,
     TutorSettings,
     cors_allow_origins,
     database_path,
+    missing_indexing_settings,
     missing_settings,
+    question_full_context_max_chars,
 )
 
 
 def test_only_a_gemini_key_is_required(monkeypatch):
     assert REQUIRED_SETTINGS == ("GEMINI_API_KEY",)
+    assert INDEXING_SETTINGS == (
+        "OPENAI_API_KEY",
+        "PINECONE_API_KEY",
+        "PINECONE_INDEX_NAME",
+    )
 
 
 def test_missing_settings_names_the_gap(monkeypatch):
@@ -40,6 +48,16 @@ def test_settings_come_from_the_environment_with_usable_defaults(monkeypatch):
     settings = TutorSettings.from_environment()
     assert settings.gemini_model
     assert settings.request_timeout_seconds > 0
+
+
+def test_indexing_readiness_and_context_threshold_are_separate(monkeypatch):
+    for name in INDEXING_SETTINGS:
+        monkeypatch.delenv(name, raising=False)
+    assert missing_indexing_settings() == list(INDEXING_SETTINGS)
+    monkeypatch.delenv("QUESTION_FULL_CONTEXT_MAX_CHARS", raising=False)
+    assert question_full_context_max_chars() == 40_000
+    monkeypatch.setenv("QUESTION_FULL_CONTEXT_MAX_CHARS", "1234")
+    assert question_full_context_max_chars() == 1234
 
 
 def test_an_empty_override_falls_back_rather_than_sending_a_blank_model(monkeypatch):

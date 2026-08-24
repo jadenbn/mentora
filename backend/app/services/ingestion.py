@@ -9,8 +9,13 @@ from app.database import CourseRepository
 from app.schemas.documents import DocumentType, IngestionResult
 from app.services.extraction import extract_document
 from app.services.chunking import chunk_pages
+from app.services.embeddings import delete_document_vectors, upsert_chunks
 
 _HASH_BLOCK = 1024 * 1024
+
+
+class DocumentIndexingError(RuntimeError):
+    """SQLite succeeded but vector indexing needs an idempotent retry."""
 
 
 def compute_document_id(file_path: str | Path, course_id: str) -> str:
@@ -38,7 +43,7 @@ def ingest_document(
 ) -> IngestionResult:
     """Run the full pipeline for a single document.
 
-    upload -> extract text -> chunk -> one SQLite transaction
+    upload -> extract text -> chunk -> SQLite transaction -> vector index
 
     Idempotent: ingesting the same file into the same course replaces the
     existing chunks rather than adding duplicates. Nothing is written until
@@ -71,4 +76,13 @@ def ingest_document(
         total_pages=len(pages),
         chunks=chunks,
     )
+    try:
+        # Remove first because a changed chunker may produce fewer chunks than
+        # an earlier ingest, leaving a stale deterministic tail otherwise.
+        delete_document_vectors(document_id)
+        upsert_chunks(chunks)
+    except Exception as exc:
+        # SQLite is canonical and remains usable. Re-uploading the same content
+        # retries this step without duplicating rows or vectors.
+        raise DocumentIndexingError(document_id) from exc
     return IngestionResult(**document.model_dump(), replaced_existing=replaced)
