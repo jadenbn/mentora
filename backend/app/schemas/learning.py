@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import MisconceptionTag
 
 
-class ErrorReport(BaseModel):
+class StrictModel(BaseModel):
+    """Reject fields that are not part of the contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ErrorReport(StrictModel):
     skill_id: str
     misconception: MisconceptionTag
     step_index: int | None = None
 
 
-class AttemptCreate(BaseModel):
+class AttemptCreate(StrictModel):
     student_id: str
     session_id: str
     problem_id: str
@@ -26,13 +32,13 @@ class AttemptCreate(BaseModel):
     errors: list[ErrorReport] = []
 
 
-class AttemptResult(BaseModel):
+class AttemptResult(StrictModel):
     attempt_id: str
     updated_skills: dict[str, float]
     dropped_errors: int
 
 
-class SkillStateOut(BaseModel):
+class SkillStateOut(StrictModel):
     skill_id: str
     skill_name: str
     mastery: float
@@ -41,13 +47,13 @@ class SkillStateOut(BaseModel):
     top_misconceptions: list[str]
 
 
-class StudentModelResponse(BaseModel):
+class StudentModelResponse(StrictModel):
     student_id: str
     course_id: str
     skills: list[SkillStateOut]
 
 
-class GenerationSpec(BaseModel):
+class GenerationSpec(StrictModel):
     skill_id: str
     skill_name: str
     skill_description: str
