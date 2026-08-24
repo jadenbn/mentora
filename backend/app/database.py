@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS problem_grounding_chunks (
     PRIMARY KEY(problem_id, chunk_id),
     UNIQUE(problem_id, ordinal)
 );
+
+-- Which skill(s) a generated problem targets. Deliberately no foreign key to
+-- the skill table: that table belongs to the SQLModel layer, and a cross-layer
+-- FK would couple two independent schemas. skill_id is validated in the service.
+CREATE TABLE IF NOT EXISTS problem_skills (
+    problem_id TEXT NOT NULL REFERENCES generated_problems(problem_id) ON DELETE CASCADE,
+    skill_id   TEXT NOT NULL,
+    ordinal    INTEGER NOT NULL,
+    PRIMARY KEY(problem_id, skill_id)
+);
+CREATE INDEX IF NOT EXISTS ix_problem_skills_skill ON problem_skills(skill_id);
 """
 
 
@@ -288,6 +299,37 @@ class CourseRepository:
             problem=problem,
             chunks=[GroundingChunk.model_validate(dict(row)) for row in chunk_rows],
         )
+
+    def set_problem_skills(self, *, problem_id: str, skill_ids: list[str]) -> None:
+        """Record which skills a generated problem targets, preserving order.
+
+        Replaces any existing rows for the problem. skill_id validity is the
+        caller's responsibility — this layer does not know the skill table.
+        """
+        ordered = list(dict.fromkeys(skill_ids))
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM problem_skills WHERE problem_id = ?", (problem_id,)
+            )
+            connection.executemany(
+                """
+                INSERT INTO problem_skills (problem_id, skill_id, ordinal)
+                VALUES (?, ?, ?)
+                """,
+                [(problem_id, skill_id, ordinal) for ordinal, skill_id in enumerate(ordered)],
+            )
+
+    def get_problem_skills(self, problem_id: str) -> list[str]:
+        """Skills a generated problem targets, in declared order. Empty if none."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT skill_id FROM problem_skills
+                WHERE problem_id = ? ORDER BY ordinal
+                """,
+                (problem_id,),
+            ).fetchall()
+        return [row["skill_id"] for row in rows]
 
     def delete_course(self, course_id: str) -> int:
         """Delete one course's generated problems, documents, and chunks."""

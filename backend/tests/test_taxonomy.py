@@ -6,6 +6,7 @@ import pytest
 
 from app.models.skill import Skill
 from app.services.taxonomy import (
+    DATA_DIR,
     TaxonomyError,
     load_taxonomy,
     normalize_slug,
@@ -18,6 +19,44 @@ def test_load_taxonomy_returns_fifteen_validated_skills() -> None:
     assert len(skills) == 15
     assert all(isinstance(s, Skill) for s in skills)
     assert all(s.id.startswith("calc1.") for s in skills)
+
+
+def test_every_course_json_still_loads() -> None:
+    """All shipped courses load; the new fields are optional and default empty."""
+    for path in sorted(DATA_DIR.glob("*.json")):
+        skills = load_taxonomy(path.stem)
+        assert skills
+        for skill in skills:
+            assert isinstance(skill.keywords, list)
+            assert isinstance(skill.question_forms, list)
+
+
+def test_load_taxonomy_reads_optional_keyword_and_form_fields() -> None:
+    by_id = {s.id: s for s in load_taxonomy("calc1")}
+    chain = by_id["calc1.derivatives.chain-rule"]
+    assert "composite function" in chain.keywords
+    assert chain.question_forms  # calc1 populates these
+
+
+def test_validate_taxonomy_rejects_overlong_keyword_list() -> None:
+    skills = [
+        Skill(id="calc1.a", course_id="calc1", name="A", description="d",
+              difficulty_band=0.5, prereqs=[], keywords=[f"k{i}" for i in range(13)]),
+    ]
+    with pytest.raises(TaxonomyError, match="keywords"):
+        validate_taxonomy(skills)
+
+
+def test_validate_taxonomy_rejects_empty_and_overlong_entries() -> None:
+    blank = [Skill(id="calc1.a", course_id="calc1", name="A", description="d",
+                   difficulty_band=0.5, prereqs=[], question_forms=["  "])]
+    with pytest.raises(TaxonomyError, match="non-empty"):
+        validate_taxonomy(blank)
+
+    huge = [Skill(id="calc1.b", course_id="calc1", name="B", description="d",
+                  difficulty_band=0.5, prereqs=[], keywords=["x" * 81])]
+    with pytest.raises(TaxonomyError, match="chars"):
+        validate_taxonomy(huge)
 
 
 def test_normalize_slug_is_idempotent() -> None:

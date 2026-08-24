@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import re
 from pathlib import Path
 
 from sqlmodel import Session, select
 
+from app.models.course_taxonomy_version import CourseTaxonomyVersion
 from app.models.skill import Skill
+from app.models.skill_state import SkillState
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "courses"
 
 _SLUG_INVALID = re.compile(r"[^a-z0-9.]+")
 _SLUG_REPEAT = re.compile(r"-{2,}")
+
+_MAX_LIST_ENTRIES = 12
+_MAX_ENTRY_CHARS = 80
 
 
 class TaxonomyError(ValueError):
@@ -54,6 +63,23 @@ def _validate_acyclic(skills: dict[str, Skill]) -> None:
             visit(skill_id, [skill_id])
 
 
+def _validate_string_list(skill_id: str, field: str, values: list[str]) -> None:
+    """Guard the free-form keyword / question_form lists before they reach an
+    embedding call: non-empty strings, at most 12 entries, each <= 80 chars."""
+    if len(values) > _MAX_LIST_ENTRIES:
+        raise TaxonomyError(
+            f"{skill_id}: {field} has {len(values)} entries "
+            f"(max {_MAX_LIST_ENTRIES})"
+        )
+    for entry in values:
+        if not isinstance(entry, str) or not entry.strip():
+            raise TaxonomyError(f"{skill_id}: {field} entries must be non-empty strings")
+        if len(entry) > _MAX_ENTRY_CHARS:
+            raise TaxonomyError(
+                f"{skill_id}: {field} entry exceeds {_MAX_ENTRY_CHARS} chars: {entry!r}"
+            )
+
+
 def validate_taxonomy(skills: list[Skill]) -> None:
     """Raise TaxonomyError on any structural problem in a skill list."""
     by_id: dict[str, Skill] = {}
@@ -67,6 +93,8 @@ def validate_taxonomy(skills: list[Skill]) -> None:
             raise TaxonomyError(
                 f"{skill.id}: difficulty_band {skill.difficulty_band} out of [0, 1]"
             )
+        _validate_string_list(skill.id, "keywords", skill.keywords)
+        _validate_string_list(skill.id, "question_forms", skill.question_forms)
         for prereq_id in skill.prereqs:
             if prereq_id not in by_id:
                 raise TaxonomyError(
@@ -104,6 +132,8 @@ def load_taxonomy(course_id: str, data_dir: Path | None = None) -> list[Skill]:
                 description=entry["description"],
                 difficulty_band=entry["difficulty_band"],
                 prereqs=prereqs,
+                keywords=list(entry.get("keywords", [])),
+                question_forms=list(entry.get("question_forms", [])),
                 origin="seed",
             )
         )
@@ -112,20 +142,70 @@ def load_taxonomy(course_id: str, data_dir: Path | None = None) -> list[Skill]:
     return skills
 
 
-def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
-    """Load every data/courses/*.json into the DB, skipping courses already seeded.
+def _course_content_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    Called once on startup. Safe to call repeatedly: a course with any Skill
-    rows already present is left untouched.
+
+def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
+    """Load every data/courses/*.json into the DB, re-seeding on file change.
+
+    Called once on startup. Safe to call repeatedly: a course is re-seeded
+    only when its JSON file's content hash differs from what was last seeded.
+    Editing a course file and restarting therefore takes effect, instead of
+    being silently ignored because rows already exist.
+
+    Re-seeding deletes and reinserts that course's Skill rows. SkillState is
+    keyed by skill_id and is left untouched, so per-student progress survives;
+    but a skill renamed or removed in the edit orphans its SkillState, which
+    is logged rather than dropped quietly.
     """
     directory = data_dir or DATA_DIR
     for path in sorted(directory.glob("*.json")):
         course_id = path.stem
-        already_seeded = session.exec(
+        content_hash = _course_content_hash(path)
+
+        version = session.get(CourseTaxonomyVersion, course_id)
+        existing = session.exec(
             select(Skill).where(Skill.course_id == course_id)
-        ).first()
-        if already_seeded:
+        ).all()
+        if version is not None and version.content_hash == content_hash and existing:
             continue
-        for skill in load_taxonomy(course_id, data_dir=directory):
+
+        loaded = load_taxonomy(course_id, data_dir=directory)
+
+        if existing:
+            old_ids = {s.id for s in existing}
+            new_ids = {s.id for s in loaded}
+            orphaned = sorted(old_ids - new_ids)
+            if orphaned:
+                stranded = [
+                    skill_id
+                    for skill_id in orphaned
+                    if session.exec(
+                        select(SkillState).where(SkillState.skill_id == skill_id)
+                    ).first()
+                    is not None
+                ]
+                if stranded:
+                    logger.warning(
+                        "re-seeding %s orphaned SkillState for removed/renamed "
+                        "skills (progress preserved but unreachable): %s",
+                        course_id,
+                        stranded,
+                    )
+            for skill in existing:
+                session.delete(skill)
+            session.flush()
+
+        for skill in loaded:
             session.add(skill)
+
+        if version is None:
+            session.add(
+                CourseTaxonomyVersion(course_id=course_id, content_hash=content_hash)
+            )
+        else:
+            version.content_hash = content_hash
+            session.add(version)
+
     session.commit()

@@ -31,6 +31,15 @@ RECENT_WINDOW = 2  # how many recently-seen skills incur the recency penalty
 REVIEW_LOOKBACK = 3  # consecutive weak picks before the review floor forces a break
 
 
+def retrieval_query(skill: Skill) -> str:
+    """Assemble a course-retrieval query from a skill.
+
+    Name first — highest-signal term; description supplies context; keywords
+    supply the textbook's own vocabulary that the name may not use.
+    """
+    return " ".join([skill.name, skill.description, *skill.keywords])
+
+
 def _clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
@@ -125,7 +134,8 @@ def select_next(session: Session, course_id: str, student_id: str) -> Generation
         skill_description=chosen.description,
         target_difficulty=target_difficulty,
         target_misconception=view.top_misconception,
-        avoid_forms=[],  # populated once generation persists prompt text
+        avoid_forms=list(chosen.question_forms),
+        retrieval_query=retrieval_query(chosen),
         prereq_mastery=prereq_mastery,
         is_review=is_review,
     )

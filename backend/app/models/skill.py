@@ -14,4 +14,8 @@ class Skill(SQLModel, table=True):
     description: str
     difficulty_band: float = Field(ge=0.0, le=1.0)
     prereqs: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    # Retrieval vocabulary (words a textbook uses that the name does not) and
+    # the question shapes this skill can take. Both optional in course JSON.
+    keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    question_forms: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     origin: SkillOrigin = Field(default=SkillOrigin.SEED)

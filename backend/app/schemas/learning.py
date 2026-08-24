@@ -60,5 +60,6 @@ class GenerationSpec(StrictModel):
     target_difficulty: float
     target_misconception: MisconceptionTag | None = None
     avoid_forms: list[str] = []
+    retrieval_query: str = ""
     prereq_mastery: dict[str, float] = {}
     is_review: bool = False
