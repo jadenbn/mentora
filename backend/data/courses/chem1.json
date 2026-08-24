@@ -1,0 +1,103 @@
+{
+  "course_id": "chem1",
+  "skills": [
+    {
+      "id": "chem1.atomic-structure.electron-configuration",
+      "name": "Electron configuration",
+      "description": "Writing the ground-state electron configuration of an atom or ion using the aufbau principle.",
+      "difficulty_band": 0.25,
+      "prereqs": []
+    },
+    {
+      "id": "chem1.atomic-structure.periodic-trends",
+      "name": "Periodic trends",
+      "description": "Predicting relative atomic radius, ionization energy, and electronegativity from position on the periodic table.",
+      "difficulty_band": 0.3,
+      "prereqs": ["chem1.atomic-structure.electron-configuration"]
+    },
+    {
+      "id": "chem1.bonding.lewis-structures",
+      "name": "Lewis structures",
+      "description": "Drawing a valid Lewis structure, including formal charge and resonance where applicable.",
+      "difficulty_band": 0.3,
+      "prereqs": ["chem1.atomic-structure.electron-configuration"]
+    },
+    {
+      "id": "chem1.bonding.molecular-geometry",
+      "name": "Molecular geometry",
+      "description": "Applying VSEPR theory to predict molecular shape from a Lewis structure.",
+      "difficulty_band": 0.4,
+      "prereqs": ["chem1.bonding.lewis-structures"]
+    },
+    {
+      "id": "chem1.bonding.polarity",
+      "name": "Molecular polarity",
+      "description": "Determining whether a molecule is polar from its bond dipoles (via electronegativity differences) and its overall geometry.",
+      "difficulty_band": 0.45,
+      "prereqs": ["chem1.bonding.molecular-geometry", "chem1.atomic-structure.periodic-trends"]
+    },
+    {
+      "id": "chem1.stoichiometry.mole-conversions",
+      "name": "Mole conversions",
+      "description": "Converting between mass, moles, and number of particles using molar mass and Avogadro's number.",
+      "difficulty_band": 0.25,
+      "prereqs": []
+    },
+    {
+      "id": "chem1.stoichiometry.balancing-equations",
+      "name": "Balancing equations",
+      "description": "Balancing a chemical equation so atom counts match on both sides.",
+      "difficulty_band": 0.3,
+      "prereqs": ["chem1.stoichiometry.mole-conversions"]
+    },
+    {
+      "id": "chem1.stoichiometry.limiting-reagent",
+      "name": "Limiting reagent",
+      "description": "Identifying the limiting reagent in a reaction and computing theoretical yield from it.",
+      "difficulty_band": 0.5,
+      "prereqs": ["chem1.stoichiometry.balancing-equations"]
+    },
+    {
+      "id": "chem1.gases.ideal-gas-law",
+      "name": "Ideal gas law",
+      "description": "Applying PV = nRT to relate pressure, volume, temperature, and moles of a gas, including finding moles of a gas produced by a balanced reaction.",
+      "difficulty_band": 0.4,
+      "prereqs": ["chem1.stoichiometry.mole-conversions", "chem1.stoichiometry.balancing-equations"]
+    },
+    {
+      "id": "chem1.thermochemistry.enthalpy",
+      "name": "Enthalpy of reaction",
+      "description": "Computing the enthalpy change of a reaction from bond energies or formation enthalpies.",
+      "difficulty_band": 0.45,
+      "prereqs": ["chem1.stoichiometry.balancing-equations"]
+    },
+    {
+      "id": "chem1.thermochemistry.hess-law",
+      "name": "Hess's law",
+      "description": "Combining known reaction enthalpies to find the enthalpy of a target reaction.",
+      "difficulty_band": 0.55,
+      "prereqs": ["chem1.thermochemistry.enthalpy"]
+    },
+    {
+      "id": "chem1.equilibrium.reaction-quotient",
+      "name": "Reaction quotient",
+      "description": "Writing the equilibrium expression and using Q versus K to predict reaction direction.",
+      "difficulty_band": 0.55,
+      "prereqs": ["chem1.stoichiometry.balancing-equations"]
+    },
+    {
+      "id": "chem1.equilibrium.le-chateliers-principle",
+      "name": "Le Chatelier's principle",
+      "description": "Predicting how a stressed equilibrium shifts in response to a change in concentration, temperature, or (for gaseous equilibria) volume and pressure.",
+      "difficulty_band": 0.65,
+      "prereqs": ["chem1.equilibrium.reaction-quotient", "chem1.gases.ideal-gas-law"]
+    },
+    {
+      "id": "chem1.acid-base.ph-calculations",
+      "name": "pH calculations",
+      "description": "Computing pH or pOH from concentration, including for weak acids and bases at equilibrium.",
+      "difficulty_band": 0.6,
+      "prereqs": ["chem1.equilibrium.reaction-quotient", "chem1.stoichiometry.mole-conversions"]
+    }
+  ]
+}

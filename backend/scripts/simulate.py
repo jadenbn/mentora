@@ -23,8 +23,44 @@ exercised the way it would be for a student who doesn't practice daily.
 Timestamps are corrected after each real write rather than by monkeypatching
 the services' clocks, so the services under test run unmodified.
 
-Run: python scripts/simulate.py --seed 42
-     python scripts/simulate.py --archetype weak --attempts 800 --verbose
+Flags:
+  --seed N          RNG seed (default: 42). Seeds ability draws, outcome
+                    sampling, and session timing, so a run is reproducible.
+  --attempts N      Attempts per trial (default: 600; 1200 under --journey).
+  --trials N        Trials per archetype, averaged into one report
+                    (default: 3). Unused by --journey, which runs a single
+                    student.
+  --archetype NAME  Run one archetype instead of all five. Choices:
+                    average, strong, weak, uneven_advanced_gap, hint_farmer.
+  --verbose         Additionally print a per-skill table (depth, attempts,
+                    final mastery, hidden true ability) for each archetype's
+                    last trial.
+  --journey         Narrate one novice-to-master run -- true ability RISES
+                    with practice on each skill -- instead of running the
+                    multi-archetype eval suite. The suite's pass/fail
+                    thresholds don't apply; it passes only if every skill
+                    ends above the mastery bar.
+
+Exit status: 0 if every check passed, 1 on any failure, 2 on an unknown
+--archetype.
+
+Examples:
+  python scripts/simulate.py
+      Full eval suite: 5 archetypes x 3 trials x 600 attempts, gated on
+      mastery MAE, rank correlation, starvation, selection stalls, and
+      whether forced review ever fires.
+
+  python scripts/simulate.py --seed 7 --trials 5
+      Same suite on a different seed with more trials -- what to run when a
+      threshold fails, to separate a real regression from sampling noise.
+
+  python scripts/simulate.py --archetype weak --attempts 800 --verbose
+      Drill into one archetype with the per-skill breakdown.
+
+  python scripts/simulate.py --journey
+      Watch a single student climb from novice to mastering all 15 skills,
+      with unlock events and periodic mastery snapshots printed as they
+      happen.
 """
 
 from __future__ import annotations

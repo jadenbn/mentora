@@ -1,0 +1,103 @@
+{
+  "course_id": "cs1",
+  "skills": [
+    {
+      "id": "cs1.fundamentals.variables-and-types",
+      "name": "Variables and types",
+      "description": "Declaring variables and reasoning about primitive types like integers, floats, booleans, and strings.",
+      "difficulty_band": 0.15,
+      "prereqs": []
+    },
+    {
+      "id": "cs1.fundamentals.expressions",
+      "name": "Expressions and operators",
+      "description": "Evaluating arithmetic, comparison, and boolean expressions, including operator precedence.",
+      "difficulty_band": 0.2,
+      "prereqs": ["cs1.fundamentals.variables-and-types"]
+    },
+    {
+      "id": "cs1.control-flow.conditionals",
+      "name": "Conditionals",
+      "description": "Using if/elif/else branches to select which statements execute.",
+      "difficulty_band": 0.25,
+      "prereqs": ["cs1.fundamentals.expressions"]
+    },
+    {
+      "id": "cs1.control-flow.loops",
+      "name": "Loops",
+      "description": "Using for and while loops to repeat statements, including tracking loop state across iterations.",
+      "difficulty_band": 0.35,
+      "prereqs": ["cs1.control-flow.conditionals"]
+    },
+    {
+      "id": "cs1.functions.definition-and-call",
+      "name": "Function definition and call",
+      "description": "Defining a function and calling it, distinguishing the function body from the call site, typically writing bodies that branch internally.",
+      "difficulty_band": 0.3,
+      "prereqs": ["cs1.fundamentals.expressions", "cs1.control-flow.conditionals"]
+    },
+    {
+      "id": "cs1.functions.parameters-and-return",
+      "name": "Parameters and return values",
+      "description": "Passing arguments into a function and using its return value, including multiple return paths.",
+      "difficulty_band": 0.4,
+      "prereqs": ["cs1.functions.definition-and-call"]
+    },
+    {
+      "id": "cs1.functions.recursion",
+      "name": "Recursion",
+      "description": "Writing a recursive function with a correct base case and reasoning about the call stack.",
+      "difficulty_band": 0.6,
+      "prereqs": ["cs1.functions.parameters-and-return", "cs1.control-flow.loops"]
+    },
+    {
+      "id": "cs1.data-structures.arrays",
+      "name": "Arrays and lists",
+      "description": "Indexing, slicing, and mutating list-like sequences, including off-by-one boundaries.",
+      "difficulty_band": 0.4,
+      "prereqs": ["cs1.control-flow.loops"]
+    },
+    {
+      "id": "cs1.data-structures.strings",
+      "name": "String manipulation",
+      "description": "Slicing, searching, and building strings, treating them as immutable sequences.",
+      "difficulty_band": 0.45,
+      "prereqs": ["cs1.data-structures.arrays"]
+    },
+    {
+      "id": "cs1.data-structures.hash-maps",
+      "name": "Hash maps",
+      "description": "Using key-value maps for lookup, counting, and grouping, including handling missing keys and using strings as keys.",
+      "difficulty_band": 0.5,
+      "prereqs": ["cs1.data-structures.arrays", "cs1.data-structures.strings"]
+    },
+    {
+      "id": "cs1.data-structures.linked-lists",
+      "name": "Linked lists",
+      "description": "Traversing and mutating a singly linked list by following and rewriting node references, contrasted against array-based storage.",
+      "difficulty_band": 0.65,
+      "prereqs": ["cs1.functions.recursion", "cs1.data-structures.arrays"]
+    },
+    {
+      "id": "cs1.algorithms.searching",
+      "name": "Searching",
+      "description": "Implementing linear and binary search and reasoning about when each applies.",
+      "difficulty_band": 0.45,
+      "prereqs": ["cs1.data-structures.arrays"]
+    },
+    {
+      "id": "cs1.algorithms.sorting",
+      "name": "Sorting",
+      "description": "Implementing a comparison-based sort, including a recursive divide-and-conquer sort, and tracing its behavior over a partially ordered list.",
+      "difficulty_band": 0.65,
+      "prereqs": ["cs1.algorithms.searching", "cs1.control-flow.loops", "cs1.functions.recursion"]
+    },
+    {
+      "id": "cs1.debugging.tracing-execution",
+      "name": "Tracing execution",
+      "description": "Mentally executing code line by line, including across function calls, to predict program state and output.",
+      "difficulty_band": 0.45,
+      "prereqs": ["cs1.control-flow.loops", "cs1.functions.parameters-and-return"]
+    }
+  ]
+}
