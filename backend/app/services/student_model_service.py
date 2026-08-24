@@ -13,7 +13,14 @@ from app.models.attempt import Attempt
 from app.models.skill import Skill
 from app.models.skill_state import SkillState
 from app.models.student_profile import StudentProfile
-from app.schemas.learning import AttemptCreate, AttemptResult, SkillStateOut, StudentModelResponse
+from app.schemas.learning import (
+    AttemptCreate,
+    AttemptResult,
+    SkillOverviewOut,
+    SkillsOverviewResponse,
+    SkillStateOut,
+    StudentModelResponse,
+)
 from app.services.mastery import apply_decay, confidence, prereq_delta, score_attempt, update_mastery
 
 logger = logging.getLogger(__name__)
@@ -213,3 +220,78 @@ def get_student_model(session: Session, course_id: str, student_id: str) -> Stud
         )
 
     return StudentModelResponse(student_id=student_id, course_id=course_id, skills=out)
+
+
+def get_skills_overview(
+    session: Session, course_id: str, student_id: str
+) -> SkillsOverviewResponse:
+    """Every skill with this student's decayed progress and unlock state.
+
+    Read-only dev/analytics view. Untouched skills appear at their seed mastery
+    (the student's global ability, or 0.5 cold) rather than being omitted.
+    """
+    # Imported here to avoid a module-level cycle (selection imports this module).
+    from app.services.selection import UNLOCK_THRESHOLD
+
+    skills = session.exec(select(Skill).where(Skill.course_id == course_id)).all()
+    now = _utcnow()
+    profile = session.get(StudentProfile, (student_id, course_id))
+    default_mastery = profile.global_ability if profile else 0.5
+
+    mastery_by_id: dict[str, float] = {}
+    rows: dict[str, SkillOverviewOut] = {}
+    for skill in skills:
+        state = session.get(SkillState, (student_id, skill.id))
+        if state is None:
+            mastery = default_mastery
+            attempts = 0
+            top_misconceptions: list[str] = []
+            has_state = False
+        else:
+            last_seen = state.last_seen
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            days_since = (now - last_seen).total_seconds() / 86400
+            mastery = apply_decay(state.mastery, days_since)
+            attempts = state.attempts
+            top = sorted(state.misconception_counts.items(), key=lambda kv: -kv[1])
+            top_misconceptions = [tag for tag, _ in top[:TOP_MISCONCEPTIONS_LIMIT]]
+            has_state = True
+
+        mastery_by_id[skill.id] = mastery
+        rows[skill.id] = SkillOverviewOut(
+            skill_id=skill.id,
+            skill_name=skill.name,
+            description=skill.description,
+            difficulty_band=skill.difficulty_band,
+            prereqs=list(skill.prereqs),
+            mastery=mastery,
+            confidence=confidence(attempts),
+            attempts=attempts,
+            unlocked=False,  # filled below once every skill's mastery is known
+            has_state=has_state,
+            top_misconceptions=top_misconceptions,
+        )
+
+    out: list[SkillOverviewOut] = []
+    for skill in skills:
+        row = rows[skill.id]
+        row.unlocked = all(
+            mastery_by_id.get(p, 0.0) >= UNLOCK_THRESHOLD for p in skill.prereqs
+        )
+        out.append(row)
+
+    spec = None
+    try:
+        from app.services import selection
+
+        spec = selection.select_next(session, course_id, student_id)
+    except Exception:  # a read-only view must never fail because selection did
+        logger.exception("select_next failed while building skills overview")
+
+    return SkillsOverviewResponse(
+        student_id=student_id,
+        course_id=course_id,
+        skills=out,
+        next_skill_id=spec.skill_id if spec is not None else None,
+    )

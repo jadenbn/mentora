@@ -1,0 +1,251 @@
+"""A self-contained dev/analytics dashboard for the learning engine.
+
+Not part of the product surface: a single static page served at /dev/dashboard
+that lists every skill in a course with the current student's mastery, unlock
+state, and attempt history, and lets you drive the loop with synthetic
+attempts (mark the selected skill correct / partial / incorrect and watch
+mastery move). It hits the same JSON APIs the real client would.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
+
+router = APIRouter(prefix="/dev", tags=["dev"])
+
+
+_DASHBOARD_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learning Engine · Dev Dashboard</title>
+<style>
+  :root {
+    --bg:#0f1319; --panel:#171d26; --panel2:#1e2733; --ink:#e6ebf1;
+    --muted:#8fa0b3; --line:#28313d; --accent:#4cb6bc; --good:#3fb27f;
+    --warn:#d5a749; --bad:#e0715b; --lock:#5b6775;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  header { padding:18px 22px; border-bottom:1px solid var(--line);
+    display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.02em; }
+  header .sub { color:var(--muted); font-size:12px; }
+  .controls { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  input, select, button { font:inherit; }
+  input, select { background:var(--panel2); color:var(--ink);
+    border:1px solid var(--line); border-radius:6px; padding:6px 9px; }
+  button { background:var(--accent); color:#04191b; border:0;
+    border-radius:6px; padding:7px 12px; cursor:pointer; font-weight:600; }
+  button.ghost { background:var(--panel2); color:var(--ink); border:1px solid var(--line); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  main { padding:22px; max-width:1100px; margin:0 auto; }
+  .bar { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:12px 16px; min-width:120px; }
+  .stat .n { font-size:22px; font-weight:700; }
+  .stat .l { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  table { width:100%; border-collapse:collapse; background:var(--panel);
+    border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; }
+  tr:last-child td { border-bottom:0; }
+  tr.skill { cursor:pointer; }
+  tr.skill:hover { background:var(--panel2); }
+  tr.sel { background:#12303199; box-shadow:inset 3px 0 0 var(--accent); }
+  tr.locked td { color:var(--muted); }
+  .name { font-weight:600; }
+  .id { color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
+  .track { position:relative; height:8px; width:130px; background:var(--panel2);
+    border-radius:5px; overflow:hidden; }
+  .fill { position:absolute; inset:0 auto 0 0; border-radius:5px; }
+  .pct { font-variant-numeric:tabular-nums; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:20px; font-weight:600; }
+  .pill.unlocked { background:#123a2c; color:var(--good); }
+  .pill.locked { background:#31261a; color:var(--warn); }
+  .pill.next { background:#0d3134; color:var(--accent); border:1px solid var(--accent); }
+  .misc { color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
+  .drive { margin-top:18px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:16px; }
+  .drive h2 { font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+  .drive .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button.good { background:var(--good); color:#05130d; }
+  button.warn { background:var(--warn); color:#1a1305; }
+  button.bad { background:var(--bad); color:#1c0a06; }
+  #log { margin-top:12px; font-family:ui-monospace,monospace; font-size:12px;
+    color:var(--muted); white-space:pre-wrap; max-height:180px; overflow:auto; }
+  .err { color:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Learning Engine · Dev Dashboard</h1>
+    <div class="sub">synthetic-attempt harness — drives selection, mastery, and server-side attribution</div>
+  </div>
+  <div class="controls">
+    <label class="sub">course <input id="course" value="calc1" size="8"></label>
+    <label class="sub">student <input id="student" value="dev-student" size="12"></label>
+    <button id="reload" class="ghost">Reload</button>
+  </div>
+</header>
+<main>
+  <div class="bar" id="stats"></div>
+  <table>
+    <thead><tr>
+      <th>Skill</th><th>Mastery</th><th>State</th><th>Attempts</th>
+      <th>Conf.</th><th>Diff.</th><th>Misconceptions</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="drive">
+    <h2>Drive the loop — synthetic attempt</h2>
+    <div class="row">
+      <span id="selName" class="sub">Selected: <b>none</b> (click a skill, or use the selection pick)</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="good" id="bCorrect" disabled>✓ Correct</button>
+      <button class="warn" id="bPartial" disabled>◑ Partial</button>
+      <button class="bad" id="bIncorrect" disabled>✗ Incorrect</button>
+      <label class="sub">misconception
+        <select id="misc">
+          <option value="conceptual-error">conceptual-error</option>
+          <option value="procedural-error">procedural-error</option>
+          <option value="careless-error">careless-error</option>
+          <option value="incomplete">incomplete</option>
+        </select>
+      </label>
+      <button class="ghost" id="bPickNext">Select engine's pick →</button>
+    </div>
+    <div id="log"></div>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let data = null, selected = null;
+
+function api(path) {
+  const c = encodeURIComponent($('#course').value.trim());
+  const s = encodeURIComponent($('#student').value.trim());
+  return `/api/courses/${c}/${path}${path.includes('?') ? '&' : '?'}student_id=${s}`;
+}
+function log(msg, isErr) {
+  const el = $('#log');
+  const line = document.createElement('div');
+  if (isErr) line.className = 'err';
+  line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  el.prepend(line);
+}
+function masteryColor(m) {
+  if (m >= 0.85) return 'var(--good)';
+  if (m >= 0.6) return 'var(--accent)';
+  if (m >= 0.4) return 'var(--warn)';
+  return 'var(--bad)';
+}
+
+async function load() {
+  selected = null; renderSelected();
+  try {
+    const r = await fetch(api('skills-overview'));
+    if (!r.ok) throw new Error(await r.text());
+    data = await r.json();
+  } catch (e) { log('load failed: ' + e.message, true); return; }
+  render();
+}
+
+function render() {
+  const skills = data.skills;
+  const mastered = skills.filter(s => s.mastery >= 0.85).length;
+  const unlocked = skills.filter(s => s.unlocked).length;
+  const touched = skills.filter(s => s.has_state).length;
+  const avg = skills.length ? skills.reduce((a,s)=>a+s.mastery,0)/skills.length : 0;
+  $('#stats').innerHTML = [
+    ['Skills', skills.length], ['Mastered ≥.85', mastered],
+    ['Unlocked', unlocked], ['Touched', touched],
+    ['Avg mastery', avg.toFixed(2)],
+    ['Engine pick', data.next_skill_id ? '✓' : '—'],
+  ].map(([l,n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+  $('#rows').innerHTML = skills.map(s => {
+    const isNext = s.skill_id === data.next_skill_id;
+    const cls = ['skill']; if (!s.unlocked) cls.push('locked');
+    if (selected === s.skill_id) cls.push('sel');
+    const state = s.unlocked
+      ? `<span class="pill unlocked">unlocked</span>`
+      : `<span class="pill locked">locked</span>`;
+    const next = isNext ? ` <span class="pill next">next</span>` : '';
+    const misc = s.top_misconceptions.length ? s.top_misconceptions.join(', ') : '·';
+    return `<tr class="${cls.join(' ')}" data-id="${s.skill_id}">
+      <td><div class="name">${s.skill_name}${next}</div><div class="id">${s.skill_id}</div></td>
+      <td><div style="display:flex;gap:8px;align-items:center">
+        <div class="track"><div class="fill" style="width:${(s.mastery*100).toFixed(0)}%;background:${masteryColor(s.mastery)}"></div></div>
+        <span class="pct">${s.mastery.toFixed(2)}</span></div></td>
+      <td>${state}</td>
+      <td class="pct">${s.attempts}</td>
+      <td class="pct">${s.confidence.toFixed(2)}</td>
+      <td class="pct">${s.difficulty_band.toFixed(2)}</td>
+      <td class="misc">${misc}</td>
+    </tr>`;
+  }).join('');
+
+  document.querySelectorAll('tr.skill').forEach(tr => {
+    tr.onclick = () => { selected = tr.dataset.id; render(); renderSelected(); };
+  });
+}
+
+function renderSelected() {
+  const s = data && selected ? data.skills.find(x => x.skill_id === selected) : null;
+  $('#selName').innerHTML = 'Selected: <b>' + (s ? s.skill_name + ' <span class="id">'+s.skill_id+'</span>' : 'none') + '</b>';
+  for (const id of ['#bCorrect','#bPartial','#bIncorrect']) $(id).disabled = !s;
+}
+
+async function attempt(kind) {
+  const s = data.skills.find(x => x.skill_id === selected);
+  if (!s) return;
+  const body = {
+    student_id: $('#student').value.trim(),
+    session_id: 'dev-dashboard',
+    problem_id: `dev_${s.skill_id}_${Date.now()}`,
+    expected_skills: [s.skill_id],
+    difficulty: s.difficulty_band,
+    correct: kind === 'correct',
+    partial: kind === 'partial',
+    errors: kind === 'correct' ? [] : [{
+      skill_id: s.skill_id,
+      misconception: kind === 'partial' ? 'incomplete' : $('#misc').value,
+    }],
+  };
+  try {
+    const r = await fetch(api('attempts'), {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    const deltas = Object.entries(res.updated_skills).map(([k,v]) => `${k.split('.').pop()}→${v.toFixed(2)}`).join('  ');
+    log(`${kind} on ${s.skill_id}: ${deltas}${res.dropped_errors?`  (dropped ${res.dropped_errors})`:''}`);
+  } catch (e) { log('attempt failed: ' + e.message, true); return; }
+  await load();
+  selected = s.skill_id; render(); renderSelected();
+}
+
+$('#reload').onclick = load;
+$('#course').onchange = load;
+$('#student').onchange = load;
+$('#bCorrect').onclick = () => attempt('correct');
+$('#bPartial').onclick = () => attempt('partial');
+$('#bIncorrect').onclick = () => attempt('incorrect');
+$('#bPickNext').onclick = () => { if (data && data.next_skill_id) { selected = data.next_skill_id; render(); renderSelected(); } };
+load();
+</script>
+</body>
+</html>
+"""
+
+
+@router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+def dashboard() -> str:
+    return _DASHBOARD_HTML

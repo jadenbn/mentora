@@ -14,6 +14,7 @@ from app.schemas.learning import (
     AttemptResult,
     GenerationSpec,
     NextProblemResponse,
+    SkillsOverviewResponse,
     StudentModelResponse,
 )
 from app.services import selection, student_model_service
@@ -61,6 +62,20 @@ def get_student_model(
 ):
     """Return this student's current mastery per skill, decayed for time elapsed."""
     return student_model_service.get_student_model(session, course_id, student_id)
+
+
+@router.get("/skills-overview", response_model=SkillsOverviewResponse)
+def get_skills_overview(
+    course_id: str,
+    student_id: str,
+    session: Session = Depends(get_session),
+):
+    """Every skill in the course with this student's progress and unlock state.
+
+    Read-only view for the dev/analytics dashboard: unlike /student-model this
+    includes untouched skills at their seed mastery.
+    """
+    return student_model_service.get_skills_overview(session, course_id, student_id)
 
 
 @router.get("/next-problem-spec", response_model=GenerationSpec)

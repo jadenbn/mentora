@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from sqlmodel import Session
 
 from app.api.dependencies import get_course_repository
+from app.api.dev import router as dev_router
 from app.api.learning import router as learning_router
 from app.db import engine, init_db
 from app.services.taxonomy import seed_all_courses
@@ -21,6 +22,7 @@ from app.services.taxonomy import seed_all_courses
 
 def register_learning_engine(app: FastAPI) -> None:
     app.include_router(learning_router)
+    app.include_router(dev_router)  # /dev/dashboard — dev-only, not in the API schema
 
 
 @asynccontextmanager

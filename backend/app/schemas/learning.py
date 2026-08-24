@@ -54,6 +54,34 @@ class StudentModelResponse(StrictModel):
     skills: list[SkillStateOut]
 
 
+class SkillOverviewOut(StrictModel):
+    skill_id: str
+    skill_name: str
+    description: str
+    difficulty_band: float
+    prereqs: list[str]
+    mastery: float
+    confidence: float
+    attempts: int
+    unlocked: bool
+    has_state: bool
+    top_misconceptions: list[str]
+
+
+class SkillsOverviewResponse(StrictModel):
+    """Every skill in a course with this student's progress and unlock state.
+
+    Unlike StudentModelResponse, untouched skills are included at their seed
+    mastery so a dashboard can render the whole taxonomy, not just what was
+    attempted. next_skill_id is what selection would pick right now.
+    """
+
+    student_id: str
+    course_id: str
+    skills: list[SkillOverviewOut]
+    next_skill_id: str | None = None
+
+
 class GenerationSpec(StrictModel):
     skill_id: str
     skill_name: str
