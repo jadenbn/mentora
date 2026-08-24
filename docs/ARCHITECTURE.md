@@ -384,6 +384,8 @@ chunk / structure
 attach metadata
   ↓
 transactional SQLite document/chunk storage
+  ↓
+synchronous OpenAI embedding + Pinecone upsert
 ```
 Useful metadata:
 ```text
@@ -408,14 +410,18 @@ other
 
 ## 24. Recorded Context
 
-There is no embedding index in the current implementation. Question generation
-receives labelled chunks from one selected document and records the one to eight
-chunk ids that support its output. Tutor interactions reuse those exact chunks,
-which avoids an extra retrieval/model round trip and prevents semantic search
-from omitting context required by a problem Mentora generated itself.
+SQLite is the source of truth for document metadata and exact chunk text.
+Pinecone stores `text-embedding-3-small` vectors with `course_id`, `document_id`,
+and `chunk_id` metadata, but never chunk text. Retrieval filters by both course
+and selected document, ranks chunk ids in Pinecone, and hydrates their exact
+text from SQLite. Generated problems still record the one to eight chunks the
+model actually used, so later tutor interactions reuse exact grounding without
+another semantic search.
 
-Arbitrary cross-document queries may later use embeddings or managed File
-Search, but that is a separate capability rather than a prerequisite here.
+The Pinecone index is provisioned outside the application with 1,536 dimensions
+and cosine similarity. Upload indexing is synchronous and runs off the FastAPI
+event loop; re-uploading a content-addressed document is the repair path after a
+provider failure.
 
 ## 25. Course Style Model
 Style may include:
@@ -432,10 +438,20 @@ For the hackathon, style can be inferred on demand, summarized during ingestion,
 Choose the simplest approach that produces convincing results.
 
 ## 26. Question Generation
-Implemented input is a course id plus one document id. Gemini receives up to a
-160,000-character, source-labelled context; oversized documents use distributed
-beginning/middle/end windows. Structured provider output supplies the visible
-prompt plus validated source chunk ids. Public response:
+Implemented input is a course id, one document id, and a required 1–1,000
+character question request describing topic, style, format, or difficulty.
+Documents whose serialized context is at most 40,000 characters (configurable
+with `QUESTION_FULL_CONTEXT_MAX_CHARS`) send every SQLite chunk to Gemini.
+Larger documents use the request to retrieve 12 Pinecone-ranked chunk ids and
+hydrate their text from SQLite. Structured provider output supplies the visible
+prompt plus validated source chunk ids. Request:
+```json
+{
+  "document_id": "doc_123",
+  "question_request": "Create a difficult conceptual chain-rule question"
+}
+```
+Public response:
 ```json
 {
   "id": "problem_123",
@@ -672,9 +688,12 @@ Treat model output as untrusted.
 Do not execute arbitrary model instructions.
 Avoid logging sensitive course content unnecessarily.
 
-Tutor and question-generation readiness require `GEMINI_API_KEY` and nothing else. `/health` and
-configuration errors report missing variable names only. Image type is verified
-from file signatures rather than trusting multipart headers.
+Tutor and question-generation readiness require `GEMINI_API_KEY`. Course
+indexing and large-document retrieval additionally require `OPENAI_API_KEY`,
+`PINECONE_API_KEY`, and `PINECONE_INDEX_NAME`. `/health` reports these readiness
+groups separately and configuration errors expose missing variable names only.
+Image type is verified from file signatures rather than trusting multipart
+headers.
 
 ## 42. Testing
 Prioritize deterministic tests for:

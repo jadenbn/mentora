@@ -26,18 +26,23 @@ Needs Python 3.11 or newer (`asyncio.timeout`).
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp .env.example .env      # then paste a real GEMINI_API_KEY into it
+cp .env.example .env      # then add Gemini, OpenAI, and Pinecone credentials
 .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-Only `GEMINI_API_KEY` is required. Course documents, extracted chunks, and
-generated-problem grounding are stored in `backend/mentora.db` by default;
-override that location with `MENTORA_DB_PATH`.
+`GEMINI_API_KEY` powers tutoring and question generation. Course uploads also
+require `OPENAI_API_KEY`, `PINECONE_API_KEY`, and `PINECONE_INDEX_NAME`. Create
+that Pinecone index with 1,536 dimensions and cosine similarity for
+`text-embedding-3-small`.
+Canonical document chunks and generated-problem grounding stay in
+`backend/mentora.db`; Pinecone stores only embeddings and chunk identifiers.
+Override SQLite with `MENTORA_DB_PATH` and the default 40,000-character
+full-context cutoff with `QUESTION_FULL_CONTEXT_MAX_CHARS`.
 
 Check it came up configured:
 
 ```bash
-curl -s localhost:8000/health     # {"status":"ok","tutor":"ready","missing_settings":[]}
+curl -s localhost:8000/health     # reports tutor and course_indexing readiness
 ```
 
 ### Frontend
@@ -50,7 +55,15 @@ bun dev
 ```
 
 Then open `localhost:3000` → My courses → a course → upload a material →
-Generate question → draw beside the problem → tap a tutor button.
+describe the question you want → Generate question → draw beside the problem →
+tap a tutor button.
+
+The optional live seed check uploads the checked-in chain-rule lecture, writes
+its text to SQLite and embeddings to Pinecone, and verifies retrieval:
+
+```bash
+cd backend && PYTHONPATH=. .venv/bin/python scripts/seed_course.py --reset
+```
 
 ### From a phone or tablet on the same network
 
