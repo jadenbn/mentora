@@ -43,9 +43,11 @@ def test_missing_settings_reports_names_never_values(monkeypatch):
 
 
 def test_settings_come_from_the_environment_with_usable_defaults(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "secret-test-key")
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     monkeypatch.delenv("TUTOR_REQUEST_TIMEOUT_SECONDS", raising=False)
     settings = TutorSettings.from_environment()
+    assert settings.gemini_api_key == "secret-test-key"
     assert settings.gemini_model
     assert settings.request_timeout_seconds > 0
 
@@ -68,6 +70,11 @@ def test_an_empty_override_falls_back_rather_than_sending_a_blank_model(monkeypa
     settings = TutorSettings.from_environment()
     assert settings.gemini_model
     assert settings.request_timeout_seconds > 0
+
+
+def test_settings_repr_never_discloses_the_key(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "super-secret-value")
+    assert "super-secret-value" not in repr(TutorSettings.from_environment())
 
 
 def test_the_model_is_overridable_without_a_code_change(monkeypatch):

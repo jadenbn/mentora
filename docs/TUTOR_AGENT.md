@@ -1,4 +1,4 @@
-# Tutor Agent
+# Tutor Workflow
 
 The implementation contract for Mentora's whiteboard tutor.
 
@@ -18,7 +18,7 @@ problem + its recorded source chunks are loaded separately
         |
 POST /api/tutor/analyze   (multipart)
         |
-one Gemini call: read the canvas, plan the annotations
+one direct Gemini SDK call: read the canvas, plan the annotations
         |
 Pydantic validation + deterministic safety policy
         |
@@ -27,6 +27,11 @@ TutorResponse -> renderCanvasActions draws it
 
 Gemini never touches tldraw. It can only produce the actions in
 `backend/app/schemas/tutor.py`.
+
+The workspace renders the structured problem in a pinned KaTeX-enabled card
+above the infinite canvas. The card is presentation, not student ink and not
+part of the analysis image. Plain text is safe by default; dollar-delimited
+LaTeX is the only interpreted problem format.
 
 ## Configuration
 
@@ -65,15 +70,16 @@ that contradicts the bytes is refused.
 The tutor's own marks live on the same canvas as the student's work. Two rules
 keep the model from grading its own handwriting:
 
-1. Tutor-authored and system/problem shapes are **excluded from the exported
-   image**. The picture contains only student work, by construction.
+1. Tutor-authored and system shapes are **excluded from the exported image**.
+   The pinned problem is outside tldraw entirely. The picture contains only
+   student work, by construction.
 2. Their **positions are sent separately**, so follow-up feedback still knows
    where it has already written.
 
 ### problem_context
 
-The browser sends the visible generated problem as structured JSON, separate
-from the canvas image. The backend uses its id to load the exact document
+The browser sends the problem shown in the pinned card as structured JSON,
+separate from the canvas image. The backend uses its id to load the exact document
 chunks recorded when the question was generated. If that record is missing or
 SQLite retrieval fails, the supplied prompt remains usable without excerpts.
 
@@ -136,6 +142,16 @@ its shapes; a different interaction leaves earlier feedback in place.
 Provider messages are never echoed to the client — they can quote credentials
 and prompt fragments.
 
+## Provider call
+
+`google-genai` receives one user content object containing an explicit mode,
+problem, recorded course excerpts, prior annotation bounds, and the student-only
+image. The mode-specific tutor policy is the system instruction and the
+response schema is `TutorPlan`. The SDK retries only configured transient HTTP
+statuses; independently, the adapter makes one repair call if the returned data
+does not validate. No runner, agent session, tool transfer, or provider state is
+involved.
+
 ## Deferred
 
 Not built:
@@ -153,7 +169,7 @@ Not built:
 - `app/schemas/tutor.py` — the wire contract.
 - `app/prompts/tutor.py` — mode policy and the allowed action set.
 - `app/services/tutor_policy.py` — what is safe to render.
-- `app/agents/tutor_workflow.py` — tutor provider adapter.
+- `app/agents/tutor_workflow.py` — direct tutor provider adapter.
 - `app/agents/question_workflow.py` — grounded-question provider adapter.
 
 Changing an action's fields, coordinate semantics, or the allowed set is a

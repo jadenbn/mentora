@@ -60,19 +60,27 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
   }
 
   return (
-    <main className="flex h-dvh flex-col bg-white">
-      <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 sm:px-5">
-        <div className="min-w-0">
-          <Link
-            className="text-sm font-semibold text-blue-700"
-            href={`/courses/${space.courseId}`}
+    <main className="flex h-dvh flex-col bg-[#f5f2e9] text-[#202620]">
+      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-[#d9d6cc] bg-[#fffdf8] px-3 py-2 sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            aria-hidden="true"
+            className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#607d6c] font-serif text-xl font-bold text-white shadow-sm"
           >
-            ← {course?.name ?? "Course"}
-          </Link>
-          <p className="truncate text-sm text-slate-600">{space.title}</p>
+            M
+          </div>
+          <div className="min-w-0">
+            <Link
+              className="text-xs font-bold uppercase tracking-[0.13em] text-[#607d6c] hover:text-[#405f4d]"
+              href={`/courses/${space.courseId}`}
+            >
+              ← {course?.name ?? "Course"}
+            </Link>
+            <p className="truncate text-sm font-semibold text-[#404940]">{space.title}</p>
+          </div>
         </div>
         <button
-          className="shrink-0 rounded-md border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="shrink-0 rounded-lg border border-[#d9d6cc] bg-white px-3 py-1.5 text-sm font-semibold text-[#536057] hover:bg-[#f5f2e9]"
           onClick={handleRename}
           type="button"
         >

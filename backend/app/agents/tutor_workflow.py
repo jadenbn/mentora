@@ -1,4 +1,4 @@
-"""Gemini adapter.
+"""Direct Gemini adapter.
 
 The only module allowed to import a provider SDK. Everything here is about
 surviving Gemini rather than about tutoring: schema dialect quirks, malformed
@@ -11,14 +11,10 @@ import asyncio
 import json
 import logging
 from typing import Any
-from uuid import uuid4
 
-from google.adk.agents import LlmAgent
-from google.adk.models import Gemini
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google import genai
 from google.genai import types
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
@@ -26,8 +22,6 @@ from app.schemas.problems import GroundingChunk, ProblemContext
 from app.schemas.tutor import NormalizedBounds, TutorMode, TutorPlan
 
 logger = logging.getLogger(__name__)
-
-APP_NAME = "mentora_tutor"
 
 _POINT = {
     "type": "object",
@@ -91,9 +85,33 @@ def drop_nulls(value: Any) -> Any:
 class GeminiTutorWorkflow:
     """Reads the canvas and plans annotations in a single model call."""
 
-    def __init__(self, *, model: str, timeout_seconds: float = 45) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        timeout_seconds: float = 45,
+    ) -> None:
+        self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
+
+    def _client(self) -> genai.Client:
+        return genai.Client(
+            api_key=self.api_key,
+            http_options=types.HttpOptions(
+                retry_options=types.HttpRetryOptions(
+                    attempts=3,
+                    initial_delay=0.5,
+                    max_delay=4,
+                    exp_base=2,
+                    jitter=0.2,
+                    # Quota exhaustion is not transient. Respecting a long
+                    # Retry-After would make an interactive tap appear hung.
+                    http_status_codes=[408, 500, 502, 503, 504],
+                )
+            ),
+        )
 
     async def run(
         self,
@@ -106,68 +124,46 @@ class GeminiTutorWorkflow:
         course_context: list[GroundingChunk] | None = None,
     ) -> TutorPlan:
         malformed: Exception | None = None
-        # One repair attempt. Transient HTTP retries belong to the SDK; this
-        # is specifically the bounded retry for unusable structured output.
-        for attempt in range(2):
-            try:
-                raw = await self._request_plan(
-                    mode=mode,
-                    canvas_image=canvas_image,
-                    canvas_mime_type=canvas_mime_type,
-                    prior_annotations=prior_annotations,
-                    problem=problem,
-                    course_context=course_context or [],
-                    repair=attempt == 1,
-                )
-                return TutorPlan.model_validate(drop_nulls(raw))
-            except (ValidationError, ValueError, KeyError, TypeError) as exc:
-                malformed = exc
-                logger.warning("tutor output failed validation (attempt %d): %s", attempt + 1, exc)
-            except (TimeoutError, asyncio.TimeoutError) as exc:
-                logger.warning("tutor provider timed out after %ss", self.timeout_seconds)
-                raise TutorWorkflowTimeout("the tutor took too long to respond") from exc
-            except Exception:
-                # Logged in full here because the client is told nothing: a
-                # provider message can quote credentials and prompt fragments.
-                logger.exception("tutor provider request failed")
-                raise TutorWorkflowError("the tutor request failed") from None
+        try:
+            # Reuse one direct SDK client across the normal and repair calls.
+            async with self._client().aio as client:
+                # One repair attempt. Transient HTTP retries belong to the SDK;
+                # this is specifically for unusable structured output.
+                for attempt in range(2):
+                    try:
+                        raw = await self._request_plan(
+                            client=client,
+                            mode=mode,
+                            canvas_image=canvas_image,
+                            canvas_mime_type=canvas_mime_type,
+                            prior_annotations=prior_annotations,
+                            problem=problem,
+                            course_context=course_context or [],
+                            repair=attempt == 1,
+                        )
+                        return TutorPlan.model_validate(drop_nulls(raw))
+                    except (ValidationError, ValueError, KeyError, TypeError) as exc:
+                        malformed = exc
+                        logger.warning(
+                            "tutor output failed validation (attempt %d): %s",
+                            attempt + 1,
+                            exc,
+                        )
+        except (TimeoutError, asyncio.TimeoutError) as exc:
+            logger.warning("tutor provider timed out after %ss", self.timeout_seconds)
+            raise TutorWorkflowTimeout("the tutor took too long to respond") from exc
+        except Exception:
+            # Logged in full here because the client is told nothing: a
+            # provider message can quote credentials and prompt fragments.
+            logger.exception("tutor provider request failed")
+            raise TutorWorkflowError("the tutor request failed") from None
         logger.error("tutor returned malformed output twice: %s", malformed)
         raise TutorWorkflowError("the tutor returned malformed output") from malformed
-
-    def _build_agent(self, mode: TutorMode) -> LlmAgent:
-        return LlmAgent(
-            name="whiteboard_tutor",
-            description="Reads student work and plans restrained canvas feedback.",
-            model=Gemini(
-                model=self.model,
-                retry_options=types.HttpRetryOptions(
-                    attempts=3,
-                    initial_delay=0.5,
-                    max_delay=4,
-                    exp_base=2,
-                    jitter=0.2,
-                    # 429 is excluded on purpose: retrying cannot fix an
-                    # exhausted daily quota, and the provider's Retry-After can
-                    # be long enough to make an interactive tap look hung.
-                    http_status_codes=[408, 500, 502, 503, 504],
-                ),
-            ),
-            instruction=tutor_instruction(mode),
-            output_schema=TUTOR_PLAN_RESPONSE_SCHEMA,
-            output_key="tutor_plan",
-            generate_content_config=types.GenerateContentConfig(
-                max_output_tokens=2_048,
-                thinking_config=types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.LOW
-                ),
-            ),
-            disallow_transfer_to_parent=True,
-            disallow_transfer_to_peers=True,
-        )
 
     async def _request_plan(
         self,
         *,
+        client: Any,
         mode: TutorMode,
         canvas_image: bytes,
         canvas_mime_type: str,
@@ -177,18 +173,8 @@ class GeminiTutorWorkflow:
         repair: bool,
     ) -> dict:
         """One provider round trip, returning raw structured output."""
-        session_service = InMemorySessionService()
-        session_id = uuid4().hex
-        runner = Runner(
-            app_name=APP_NAME,
-            agent=self._build_agent(mode),
-            session_service=session_service,
-        )
-        await session_service.create_session(
-            app_name=APP_NAME, user_id=APP_NAME, session_id=session_id
-        )
-
         prompt = "Repair attempt: return only data matching the schema.\n" if repair else ""
+        prompt += f"<tutor-mode>{mode.value}</tutor-mode>\n\n"
         prompt += "Regions you have already annotated (do not grade them):\n"
         prompt += json.dumps([b.model_dump() for b in prior_annotations])
         prompt += "\n\n<current-problem>\n"
@@ -207,19 +193,34 @@ class GeminiTutorWorkflow:
         message = types.Content(
             role="user",
             parts=[
-                types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type),
                 types.Part.from_text(text=prompt),
+                types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type),
             ],
         )
         async with asyncio.timeout(self.timeout_seconds):
-            async for _event in runner.run_async(
-                user_id=APP_NAME, session_id=session_id, new_message=message
-            ):
-                pass
+            response = await client.models.generate_content(
+                model=self.model,
+                contents=message,
+                config=types.GenerateContentConfig(
+                    system_instruction=tutor_instruction(mode),
+                    response_mime_type="application/json",
+                    response_schema=TUTOR_PLAN_RESPONSE_SCHEMA,
+                    max_output_tokens=2_048,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_level=types.ThinkingLevel.LOW
+                    ),
+                ),
+            )
 
-        session = await session_service.get_session(
-            app_name=APP_NAME, user_id=APP_NAME, session_id=session_id
-        )
-        if session is None:
-            raise ValueError("provider session was unavailable after the run")
-        return session.state.get("tutor_plan")
+        parsed = response.parsed
+        if isinstance(parsed, BaseModel):
+            return parsed.model_dump(mode="json")
+        if isinstance(parsed, dict):
+            return parsed
+        text = response.text
+        if not text:
+            raise ValueError("provider returned no structured tutor plan")
+        loaded = json.loads(text)
+        if not isinstance(loaded, dict):
+            raise ValueError("provider tutor plan was not an object")
+        return loaded

@@ -136,8 +136,10 @@ Conceptual representation:
 ## 7. Whiteboard Session
 A session is a persistent working document. Called a **space** in the UI and in
 the frontend code, and currently stored in browser localStorage rather than on
-the server. A generated problem is stored with the local space and rendered as
-a locked system-owned note; its canonical grounding record lives in SQLite.
+the server. A generated problem is stored with the local space and rendered in
+a pinned, typeset card above the infinite canvas; its canonical grounding
+record lives in SQLite. Older locked problem notes are removed on restore only
+when they match that space's current structured problem.
 Conceptual representation:
 ```json
 {
@@ -155,7 +157,9 @@ The canvas must be restorable. Preview images are not canonical state.
 
 ## 8. Canvas State
 Use supported tldraw serialization/persistence mechanisms where practical.
-Preserve student strokes, system/problem shapes, AI shapes, positions, styles, and useful metadata.
+Preserve student strokes, remaining system/imported shapes, AI shapes,
+positions, styles, and useful metadata. The generated problem is canonical on
+the space record rather than duplicated inside the tldraw snapshot.
 Camera/viewport state may also be stored.
 Avoid inventing a parallel graphics document model unless necessary.
 
@@ -170,6 +174,7 @@ Potential metadata:
 ```ts
 type ShapeOwner = "system" | "student" | "ai";
 ```
+The frontend's authoritative constants live in `lib/canvas/ownership.ts`.
 Shapes the tutor draws carry `owner: "ai"` and the `interaction_id` that
 produced them, which is how re-rendering one interaction replaces its own
 shapes without disturbing earlier feedback. Ownership no longer crosses the
@@ -444,7 +449,9 @@ Documents whose serialized context is at most 40,000 characters (configurable
 with `QUESTION_FULL_CONTEXT_MAX_CHARS`) send every SQLite chunk to Gemini.
 Larger documents use the request to retrieve 12 Pinecone-ranked chunk ids and
 hydrate their text from SQLite. Structured provider output supplies the visible
-prompt plus validated source chunk ids. Request:
+prompt plus validated source chunk ids. Generated prompts use plain text with
+`$...$` inline and `$$...$$` display LaTeX so the pinned problem card can render
+readable mathematical notation without accepting arbitrary HTML. Request:
 ```json
 {
   "document_id": "doc_123",
@@ -599,12 +606,13 @@ AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
 
-The tutor is one Gemini call through a single ADK agent:
+The tutor is one direct asynchronous Gemini SDK call:
 
 ```text
-canvas image + mode + prior annotations
+student-only canvas image + mode + problem + recorded excerpts
+                         + prior annotation bounds
         ↓
-LlmAgent (Gemini multimodal, TutorPlan response schema)
+google-genai generate_content (TutorPlan response schema)
         ↓ independent Pydantic validation and safety policy
 TutorResponse
 ```
@@ -613,9 +621,11 @@ Reading the canvas and deciding what to draw are the same judgement, so
 splitting them only bought a second round trip on the path where
 responsiveness is the product.
 
-ADK performs up to three bounded transient HTTP attempts. The application makes
-one additional attempt only when structured output is malformed. The model
-defaults to `gemini-3.7-flash` and is replaceable through `GEMINI_MODEL`.
+The SDK performs up to three bounded attempts for explicitly transient HTTP
+statuses. The application makes one additional call only when structured output
+is malformed. The same direct boundary powers grounded question generation.
+The model defaults to `gemini-3.7-flash` and is replaceable through
+`GEMINI_MODEL`.
 
 ## 36. Prompt Organization
 Possible layout:

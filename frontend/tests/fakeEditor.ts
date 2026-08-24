@@ -19,12 +19,12 @@ export interface FakeShape {
   meta?: Record<string, unknown>;
   props?: Record<string, unknown>;
   pageBounds?: Box | null;
-  shapesBounds?: Box | null;
 }
 
 export interface FakeEditorOptions {
   shapes?: FakeShape[];
   pageBounds?: Box | null;
+  shapesBounds?: Box | null;
   viewport?: Box | null;
   zoom?: number;
   image?: { blob: Blob; width: number; height: number } | null;
