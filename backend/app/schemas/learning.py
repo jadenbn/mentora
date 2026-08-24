@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import MisconceptionTag
+from app.schemas.problems import GeneratedProblem
 
 
 class StrictModel(BaseModel):
@@ -63,3 +64,15 @@ class GenerationSpec(StrictModel):
     retrieval_query: str = ""
     prereq_mastery: dict[str, float] = {}
     is_review: bool = False
+
+
+class NextProblemResponse(StrictModel):
+    """A generated problem plus the spec that produced it.
+
+    The client posts the attempt back with the returned problem_id; the skills
+    it exercised are looked up server-side from problem_skills, so the client
+    never has to (and no longer can) attribute the attempt itself.
+    """
+
+    problem: GeneratedProblem
+    spec: GenerationSpec
