@@ -11,8 +11,9 @@ from app.schemas.documents import ChunkMetadata
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSION = 1536
 
-#: Pinecone caps a fetch at 100 ids and a delete at 1000.
+#: Pinecone caps a fetch at 100 ids, an upsert at 100 vectors, a delete at 1000.
 _FETCH_BATCH = 100
+_UPSERT_BATCH = 100
 _DELETE_BATCH = 1000
 
 _openai_client: OpenAI | None = None
@@ -41,15 +42,20 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     return [item.embedding for item in response.data]
 
 
-def vector_id(document_id: str, chunk_index: int) -> str:
-    """Stable id for a chunk. The `#` separator lets us list/delete by prefix."""
-    return f"{document_id}#{chunk_index}"
+def document_vector_prefix(document_id: str) -> str:
+    """Id prefix shared by a document's chunks.
+
+    Vector ids are the `chunk_id` from `chunk_pages`, which is
+    `chunk_{document_id}_{index:05d}`, so a document's vectors remain
+    listable and deletable by prefix.
+    """
+    return f"chunk_{document_id}_"
 
 
 def delete_document_vectors(document_id: str) -> int:
     """Delete every vector belonging to a document. Returns count deleted."""
     index = _get_index()
-    prefix = f"{document_id}#"
+    prefix = document_vector_prefix(document_id)
 
     ids: list[str] = []
     try:
@@ -103,7 +109,13 @@ def delete_course_vectors(course_id: str) -> int:
 
 
 def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
-    """Embed chunks and upsert into Pinecone. Returns count upserted."""
+    """Embed chunks and upsert into Pinecone. Returns count upserted.
+
+    Metadata carries only what a search has to answer without a second
+    round trip: the `course_id` it filters on, and the ids that address the
+    row in SQLite. Chunk text is deliberately not stored here — SQLite owns it,
+    so there is one copy to keep correct rather than two to keep in step.
+    """
     if not chunks:
         return 0
 
@@ -112,25 +124,19 @@ def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
     embeddings = embed_texts(texts)
 
     vectors = []
-    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+    for chunk, embedding in zip(chunks, embeddings):
         vectors.append({
-            "id": vector_id(chunk.document_id, i),
+            "id": chunk.chunk_id,
             "values": embedding,
             "metadata": {
                 "course_id": chunk.course_id,
                 "document_id": chunk.document_id,
-                "filename": chunk.filename,
-                "page": chunk.page,
-                "document_type": chunk.document_type.value,
-                "text": chunk.text,
+                "chunk_id": chunk.chunk_id,
             },
         })
 
-    # Upsert in batches of 100 (Pinecone limit)
-    batch_size = 100
-    for i in range(0, len(vectors), batch_size):
-        batch = vectors[i : i + batch_size]
-        index.upsert(vectors=batch)
+    for i in range(0, len(vectors), _UPSERT_BATCH):
+        index.upsert(vectors=vectors[i : i + _UPSERT_BATCH])
 
     return len(vectors)
 
@@ -139,8 +145,13 @@ def query_similar(
     query: str,
     course_id: str,
     top_k: int = 5,
-) -> list[dict]:
-    """Embed a query and retrieve the most relevant chunks for a course."""
+) -> list[tuple[str, float]]:
+    """Rank a course's chunks against a query.
+
+    Returns `(chunk_id, score)` most-similar first. Text is not returned
+    because this layer no longer holds any; `app/services/retrieval.py` joins
+    these ids back to SQLite.
+    """
     index = _get_index()
     query_embedding = embed_texts([query])[0]
 
@@ -152,12 +163,6 @@ def query_similar(
     )
 
     return [
-        {
-            "text": match["metadata"]["text"],
-            "filename": match["metadata"]["filename"],
-            "page": match["metadata"]["page"],
-            "document_type": match["metadata"]["document_type"],
-            "score": match["score"],
-        }
+        (match["metadata"]["chunk_id"], match["score"])
         for match in results["matches"]
     ]

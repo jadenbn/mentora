@@ -28,9 +28,12 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
+from app.config import database_path  # noqa: E402
+from app.database import CourseRepository  # noqa: E402
 from app.schemas.documents import DocumentType  # noqa: E402
-from app.services.embeddings import delete_course_vectors, query_similar  # noqa: E402
+from app.services.embeddings import delete_course_vectors  # noqa: E402
 from app.services.ingestion import ingest_document  # noqa: E402
+from app.services.retrieval import search_course  # noqa: E402
 
 #: Ingestion has its own credentials. The tutor's GEMINI_API_KEY is unrelated
 #: and is not needed here.
@@ -54,32 +57,44 @@ def main(reset: bool = False) -> None:
         # Names only, never values — same rule as /health.
         raise SystemExit(f"not configured; set {', '.join(missing)} in backend/.env")
 
+    repository = CourseRepository(database_path())
+    print(f"database {repository.path}")
+
     if reset:
-        removed = delete_course_vectors(COURSE_ID)
-        print(f"reset {COURSE_ID}: removed {removed} vectors")
+        # Both stores, or the survivor becomes an orphan: rows nothing can
+        # find, or vectors pointing at rows that are gone.
+        removed_rows = repository.delete_course(COURSE_ID)
+        removed_vectors = delete_course_vectors(COURSE_ID)
+        print(
+            f"reset {COURSE_ID}: removed {removed_rows} chunks "
+            f"and {removed_vectors} vectors"
+        )
 
     for filename, document_type in DOCUMENTS:
         path = SEED_DIR / filename
         if not path.exists():
             raise SystemExit(f"missing seed document: {path}")
 
-        result = ingest_document(
-            file_path=path,
-            course_id=COURSE_ID,
-            document_type=document_type,
-            filename=filename,
-        )
+        try:
+            result = ingest_document(
+                file_path=path,
+                course_id=COURSE_ID,
+                repository=repository,
+                document_type=document_type,
+                filename=filename,
+            )
+        except ValueError as exc:
+            raise SystemExit(f"{filename}: {exc}") from exc
+
         verb = "replaced" if result.replaced_existing else "indexed"
         print(
             f"{verb} {result.filename}: "
             f"{result.total_chunks} chunks from {result.total_pages} pages"
         )
-        if result.total_chunks == 0:
-            # A PDF of scanned images extracts no text and indexes nothing,
-            # which the pipeline otherwise reports as a successful ingest.
-            raise SystemExit(f"{filename} produced no chunks — no extractable text")
 
-    matches = query_similar(query=PROBE_QUERY, course_id=COURSE_ID, top_k=3)
+    matches = search_course(
+        query=PROBE_QUERY, course_id=COURSE_ID, repository=repository, top_k=3
+    )
     if not matches:
         raise SystemExit(
             f"indexed, but {COURSE_ID} returned no matches for {PROBE_QUERY!r}"
@@ -87,10 +102,8 @@ def main(reset: bool = False) -> None:
 
     print(f"\nretrieval check — {PROBE_QUERY!r} in {COURSE_ID}:")
     for i, match in enumerate(matches, 1):
-        # Pinecone hands numeric metadata back as floats.
-        page = int(match["page"])
-        print(f"  [{i}] {match['filename']} p{page}  score {match['score']:.3f}")
-        print(f"      {match['text'][:80].strip()}...")
+        print(f"  [{i}] {match.filename} p{match.page}  score {match.score:.3f}")
+        print(f"      {match.text[:80].strip()}...")
 
 
 if __name__ == "__main__":
