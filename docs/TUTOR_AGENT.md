@@ -56,7 +56,7 @@ Content-Type: multipart/form-data
 
 | Field | Required | Description |
 | --- | --- | --- |
-| `course_id` | yes | Retrieval scope. Carried but not yet used — see Deferred. |
+| `room_id` | yes | Retrieval scope. Carried but not yet used — see Deferred. |
 | `mode` | yes | `mark`, `hint`, `explain`, or `stuck`. |
 | `canvas_image` | yes | PNG, JPEG, or WebP. Maximum 10 MB. |
 | `prior_annotations` | no | JSON array of normalized bounds. Defaults to `[]`. |
@@ -125,7 +125,7 @@ its shapes; a different interaction leaves earlier feedback in place.
 | 400 | the image was empty |
 | 413 | the image exceeded 10 MB |
 | 415 | not a PNG/JPEG/WebP, or the declared type contradicts the bytes |
-| 422 | bad mode, missing course, or malformed `prior_annotations` |
+| 422 | bad mode, missing room, or malformed `prior_annotations` |
 | 502 | the provider failed |
 | 503 | the server is not configured; the body names the missing variables |
 | 504 | the provider did not answer in time |
@@ -137,7 +137,7 @@ and prompt fragments.
 
 Not built, deliberately, until the canvas loop works end to end:
 
-- **Course retrieval.** `course_id` is carried so it does not have to be
+- **Room retrieval.** `room_id` is carried so it does not have to be
   retrofitted through the UI. Grounding a request needs a *text* query and the
   canvas is a picture, so re-adding retrieval means deciding where that query
   comes from — the student, or a first vision pass.

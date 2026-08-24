@@ -8,7 +8,7 @@ actions for the whiteboard renderer to draw.
 ## Repository
 
 - `frontend/`: Next.js, React, and tldraw whiteboard UI.
-- `backend/`: FastAPI tutor service and course ingestion.
+- `backend/`: FastAPI tutor service and room ingestion.
 - `docs/PRODUCT.md`: authoritative product behavior.
 - `docs/ARCHITECTURE.md`: system boundaries and shared contracts.
 - `docs/TUTOR_AGENT.md`: the tutor API contract.
@@ -31,7 +31,7 @@ cp .env.example .env      # then paste a real GEMINI_API_KEY into it
 ```
 
 Only `GEMINI_API_KEY` is required. The OpenAI and Pinecone keys in
-`.env.example` are for course ingestion, which the tutor does not use — see
+`.env.example` are for room ingestion, which the tutor does not use — see
 "Deferred" in `docs/TUTOR_AGENT.md`.
 
 Check it came up configured:
@@ -49,7 +49,7 @@ cp .env.example .env.local        # already points at localhost:8000
 bun dev
 ```
 
-Then open `localhost:3000` → My courses → a course → New space → draw → tap a
+Then open `localhost:3000` → My rooms → a room → New space → draw → tap a
 tutor button.
 
 ### From a phone or tablet on the same network
@@ -82,7 +82,7 @@ server afterwards.
 `POST /api/tutor/analyze`, multipart form data:
 
 ```text
-course_id          retrieval scope (carried; retrieval is deferred)
+room_id            retrieval scope (carried; retrieval is deferred)
 mode               mark | hint | explain | stuck
 canvas_image       PNG, JPEG, or WebP; maximum 10 MB
 prior_annotations  JSON array of normalized bounds; defaults to []
@@ -113,6 +113,6 @@ cd backend && .venv/bin/python test_pipeline.py
 
 - Jaden: whiteboard and frontend integration.
 - Andre: AI/Vision and backend tutor APIs.
-- Korey: course context ingestion and retrieval.
+- Korey: room context ingestion and retrieval.
 - Ren: question generation and learning engine (`ren/learning-engine`, not yet
   integrated — see "Deferred" in `docs/TUTOR_AGENT.md`).

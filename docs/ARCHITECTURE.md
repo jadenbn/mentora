@@ -18,7 +18,7 @@ Optimize for:
 4. low integration friction
 5. persistent whiteboard sessions
 6. structured AI-to-canvas communication
-7. course-aware behavior
+7. room-aware behavior
 8. web/iPad compatibility
 9. replaceable AI/rendering internals
 Avoid premature complexity and microservices.
@@ -45,7 +45,7 @@ Exact package tooling may follow repository setup.
 ```text
 ┌───────────────────────────────────────┐
 │ React / Next.js / tldraw              │
-│ Course UI                             │
+│ Room UI                               │
 │ Session grid                          │
 │ Infinite whiteboard                   │
 │ Problem rendering                     │
@@ -58,8 +58,8 @@ Exact package tooling may follow repository setup.
 ┌───────────────────────────────────────┐
 │ FastAPI                               │
 │ Tutor / Vision                        │
-│ Course ingestion                      │
-│ Retrieval / Course Context            │
+│ Room ingestion                        │
+│ Retrieval / Room Context              │
 │ Question generation                   │
 │ Persistence                           │
 │ Student model                         │
@@ -101,8 +101,8 @@ Do not reorganize the entire repo for aesthetics.
 Conceptual entities:
 ```text
 User
-Course / Space
-Course Document
+Room / Space
+Room Document
 Whiteboard Session
 Canvas State
 Problem
@@ -112,8 +112,8 @@ Student Model
 Relationship:
 ```text
 User
- └── Course
-      ├── Course Documents
+ └── Room
+      ├── Room Documents
       └── Whiteboard Sessions
            ├── Problem
            ├── Canvas State
@@ -121,12 +121,12 @@ User
 ```
 A session may contain a generated or imported problem.
 
-## 6. Course
-A Course owns documents, style/coverage metadata, whiteboard sessions, and course-level student progress.
+## 6. Room
+A Room owns documents, style/coverage metadata, whiteboard sessions, and room-level student progress.
 Conceptual representation:
 ```json
 {
-  "id": "course_123",
+  "id": "room_123",
   "name": "MATH 101",
   "created_at": "...",
   "settings": {}
@@ -141,7 +141,7 @@ Conceptual representation:
 ```json
 {
   "id": "session_123",
-  "course_id": "course_123",
+  "room_id": "room_123",
   "title": "Integration Practice 4",
   "problem_id": "problem_456",
   "created_at": "...",
@@ -178,7 +178,7 @@ The critical invariant is that the system can distinguish what the problem said,
 
 ## 10. Frontend Responsibilities
 Frontend owns:
-- course navigation
+- room navigation
 - session grid
 - tldraw lifecycle
 - whiteboard interactions
@@ -196,7 +196,7 @@ Backend owns:
 - provider credentials
 - tutor AI calls
 - multimodal analysis
-- course ingestion
+- room ingestion
 - document-processing orchestration
 - retrieval
 - question generation
@@ -210,7 +210,7 @@ Possible services:
 ```text
 tutor_service.py
 question_service.py
-course_service.py
+room_service.py
 document_service.py
 session_service.py
 student_model_service.py
@@ -228,18 +228,18 @@ Possible routes:
 ```text
 GET  /health                                  implemented
 POST /api/tutor/analyze                       implemented
-POST /api/courses/{course_id}/documents       implemented
-GET  /api/courses/{course_id}/search          implemented
-GET  /api/courses
-POST /api/courses
-GET  /api/courses/{course_id}
-GET  /api/courses/{course_id}/sessions
-POST /api/courses/{course_id}/sessions
+POST /api/rooms/{room_id}/documents           implemented
+GET  /api/rooms/{room_id}/search              implemented
+GET  /api/rooms
+POST /api/rooms
+GET  /api/rooms/{room_id}
+GET  /api/rooms/{room_id}/sessions
+POST /api/rooms/{room_id}/sessions
 GET  /api/sessions/{session_id}
 PUT  /api/sessions/{session_id}
 POST /api/questions/generate
 POST /api/problems/import
-GET  /api/courses/{course_id}/student-model
+GET  /api/rooms/{room_id}/student-model
 ```
 
 Only the four marked lines exist. Sessions ("spaces" in the UI) live in
@@ -260,7 +260,7 @@ When changing a shared schema:
 `POST /api/tutor/analyze` is multipart form data:
 
 ```text
-course_id          retrieval scope (carried; retrieval is deferred)
+room_id          retrieval scope (carried; retrieval is deferred)
 mode               mark | hint | explain | stuck
 canvas_image       PNG, JPEG, or WebP; maximum 10 MB
 prior_annotations  JSON array of normalized bounds; defaults to []
@@ -359,7 +359,7 @@ Initial approach:
 canvas snapshot
     + metadata
     + problem text
-    + course context
+    + room context
         ↓
 multimodal model
         ↓
@@ -367,7 +367,7 @@ structured tutor response
 ```
 Dedicated OCR is optional and should be added only if experiments show clear value.
 
-## 23. Course Ingestion
+## 23. Room Ingestion
 Initial pipeline:
 ```text
 upload
@@ -386,7 +386,7 @@ retrieve
 ```
 Useful metadata:
 ```text
-course_id
+room_id
 document_id
 filename
 page
@@ -411,7 +411,7 @@ It must support tutoring, question generation, coverage checks, and style infere
 Semantic retrieval plus metadata filtering may be enough.
 Evaluate by user-facing quality, not architectural sophistication.
 
-## 25. Course Style Model
+## 25. Room Style Model
 Style may include:
 ```text
 notation
@@ -422,18 +422,18 @@ topic distribution
 subquestion patterns
 answer expectations
 ```
-For the hackathon, style can be inferred on demand, summarized during ingestion, stored as a course profile, or a hybrid.
+For the hackathon, style can be inferred on demand, summarized during ingestion, stored as a room profile, or a hybrid.
 Choose the simplest approach that produces convincing results.
 
 ## 26. Question Generation
 Inputs may include:
 ```text
-course_id
+room_id
 topic
 difficulty
 user overrides
 retrieved examples
-course style profile
+room style profile
 covered-topic constraints
 ```
 Conceptual response:
@@ -478,7 +478,7 @@ The key boundary is: recognize first, render cleanly second.
 ## 28. Persistence
 At minimum store:
 ```text
-course
+room
 session metadata
 canvas document state
 problem association
@@ -541,7 +541,7 @@ audio
   ↓
 speech-to-text
   ↓
-transcript + selected canvas + course/problem context
+transcript + selected canvas + room/problem context
   ↓
 tutor service
 ```
@@ -565,9 +565,9 @@ recording, but the learning engine wants closed-vocabulary, slug-identified,
 float-typed facts and the tutor produces prose. That adapter is a design
 decision rather than a merge, and it waits until the canvas loop works.
 
-## 34. Built-In Course
-Support at least one built-in demo course, likely Calculus I.
-Where practical, seed it through the same Course Context mechanisms as uploaded courses to avoid a separate architecture.
+## 34. Built-In Room
+Support at least one built-in demo room, likely Calculus I.
+Where practical, seed it through the same Room Context mechanisms as uploaded rooms to avoid a separate architecture.
 
 ## 35. AI Provider Boundary
 Avoid scattering provider SDK calls.
@@ -605,17 +605,17 @@ Possible layout:
 backend/app/prompts/
     tutor.py
     question_generation.py
-    course_analysis.py
+    room_analysis.py
     problem_import.py
 ```
-Prompts should encode role, tutor mode, course constraints, output schema, selected context, answer-restraint behavior, and uncertainty behavior.
+Prompts should encode role, tutor mode, room constraints, output schema, selected context, answer-restraint behavior, and uncertainty behavior.
 
-## 37. Course Boundary Check
+## 37. Room Boundary Check
 Possible flow:
 ```text
 proposed technique
     ↓
-compare against course coverage
+compare against room coverage
     ↓
 clearly covered → continue
 uncertain/not covered → return warning
@@ -623,7 +623,7 @@ uncertain/not covered → return warning
 Potential response:
 ```json
 {
-  "requires_course_boundary_confirmation": true,
+  "requires_room_boundary_confirmation": true,
   "technique": "integration by parts",
   "synopsis": "...",
   "alternatives_available": true
@@ -631,8 +631,8 @@ Potential response:
 ```
 The algorithm can be approximate for the hackathon.
 
-Not implemented. The check needs to know what the course has covered, which
-means course retrieval, which is deferred — so a boundary decision today would
+Not implemented. The check needs to know what the room has covered, which
+means room retrieval, which is deferred — so a boundary decision today would
 be the model guessing. It returns with retrieval.
 
 ## 38. Error Handling
@@ -670,7 +670,7 @@ Keep secrets server-side.
 Validate uploads.
 Treat model output as untrusted.
 Do not execute arbitrary model instructions.
-Avoid logging sensitive course content unnecessarily.
+Avoid logging sensitive room content unnecessarily.
 
 Tutor readiness requires `GEMINI_API_KEY` and nothing else. `/health` and
 configuration errors report missing variable names only. Image type is verified
@@ -685,12 +685,12 @@ coordinate conversion
 session serialization
 retrieval helpers
 question schemas
-course-boundary helpers
+room-boundary helpers
 student-model updates
 ```
 Manual integration test:
 ```text
-course
+room
  ↓
 session
  ↓
@@ -742,9 +742,9 @@ Prefer implementations that:
 
 ## 46. End-State Mental Model
 ```text
-Course documents
+Room documents
       ↓
-Course model/context
+Room model/context
       ↓
 Question generation / tutor grounding
       ↓

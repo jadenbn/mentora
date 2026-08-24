@@ -16,10 +16,10 @@ If you make any architectural or important changes, ensure that you update docs/
 
 ## Product in 30 Seconds
 
-We are building a **persistent, course-aware AI whiteboard tutor**.
+We are building a **persistent, room-aware AI whiteboard tutor**.
 
 ```text
-Course / Space
+Room / Space
     ↓
 Saved Whiteboard Sessions
     ↓
@@ -27,12 +27,12 @@ Infinite Whiteboard
 ```
 
 The student solves problems directly on the whiteboard.
-The AI understands the course, current problem, handwritten work, and optionally a user-selected region.
+The AI understands the room, current problem, handwritten work, and optionally a user-selected region.
 The AI responds primarily **on the canvas**, not through a traditional chat interface.
 Core loop:
 
 ```text
-course context
+room context
  → generate/import problem
  → clean problem on canvas
  → student works by hand
@@ -46,8 +46,8 @@ Product invariants:
 - Canvas-first; no traditional chat UI in the core product.
 - Saved whiteboards are persistent working sessions.
 - Imported problems should be reconstructed cleanly, not merely pasted as images.
-- Course Context includes instructor style, notation, difficulty, covered topics, and question patterns.
-- The AI should not silently teach techniques outside the student's course material.
+- Room Context includes instructor style, notation, difficulty, covered topics, and question patterns.
+- The AI should not silently teach techniques outside the student's room material.
 - System, student, and AI canvas content should be distinguishable internally.
 - AI canvas actions come from validated structured output.
 - The user controls tutoring intensity.
@@ -84,7 +84,7 @@ Examples:
 
 ```text
 jaden/canvas-persistence
-alex/course-ingestion
+alex/room-ingestion
 sarah/live-tutor
 marco/question-generation
 ```
@@ -113,9 +113,9 @@ Works most closely with AI Tutor / Vision.
 Owns multimodal interpretation of handwriting, tutor reasoning, error localization, structured responses, and model/prompt reliability.
 Works most closely with Frontend / Whiteboard.
 
-### Course Context / RAG
+### Room Context / RAG
 
-Owns uploads, extraction, chunking/indexing, retrieval, course modeling, and instructor-style signals.
+Owns uploads, extraction, chunking/indexing, retrieval, room modeling, and instructor-style signals.
 Works most closely with Learning / Question Generation.
 
 ### Backend / Infrastructure
@@ -138,7 +138,7 @@ Critical boundaries:
 Frontend ↔ Backend
 Whiteboard ↔ Tutor/Vision
 Tutor output ↔ Annotation Renderer
-Course Context ↔ Question Generation
+Room Context ↔ Question Generation
 Persistence ↔ Whiteboard Session
 ```
 
@@ -157,7 +157,7 @@ Programmatic AI output is untrusted data.
 Preferred flow:
 
 ```text
-canvas + course + problem + tutor request
+canvas + room + problem + tutor request
         ↓
 AI model
         ↓
@@ -193,12 +193,12 @@ Do not save only a screenshot.
 Persist enough interactive state to reopen and continue: tldraw state, student content, AI content, system/problem content, problem association, session metadata, and useful viewport state.
 Preview images may exist for session cards but are not the source of truth.
 
-## Course Context
+## Room Context
 
-Course Context is not generic RAG.
+Room Context is not generic RAG.
 It should model covered/not-yet-covered topics, instructor notation and terminology, question wording/formatting, typical difficulty, common question structures, and authentic examples.
 The same context informs tutoring and question generation.
-If the AI wants to use a technique outside course materials, it should pause and tell the user rather than silently introducing it.
+If the AI wants to use a technique outside room materials, it should pause and tell the user rather than silently introducing it.
 See `docs/PRODUCT.md`.
 
 ## Tutor Behavior
@@ -266,7 +266,7 @@ Ask the human before:
 - introducing React Native as the primary frontend
 - adding traditional chat
 - changing persistence semantics
-- redefining Course Context
+- redefining Room Context
 - changing the core tutor interaction
 - introducing microservices
 - replacing a major persistence technology
@@ -274,7 +274,7 @@ Ask the human before:
 - removing a core planned feature
 - adding a major framework
 - replacing another teammate's subsystem
-- changing the Course → Sessions → Whiteboard hierarchy
+- changing the Room → Sessions → Whiteboard hierarchy
 - changing imported-problem reconstruction behavior
   Do not confuse an agent's confidence with authority to redesign the product.
 
@@ -343,13 +343,13 @@ Prioritize deterministic/shared logic:
 - annotation validation
 - coordinate transforms
 - canvas serialization/session persistence
-- course-context utilities
+- room-context utilities
 - question-generation schemas
   Manual validation of the core canvas flow is essential.
   Critical end-to-end path:
 
 ```text
-open course
+open room
  → open/create whiteboard
  → generate/import problem
  → write on canvas
@@ -369,8 +369,8 @@ open course
 3. Persistent session restore
 4. Accurate student-work interpretation
 5. Correct annotation placement
-6. Course-aware question generation
-7. Course ingestion/context
+6. Room-aware question generation
+7. Room ingestion/context
 8. Imported problem reconstruction
 9. Select for AI
 10. Tutor-mode quality
@@ -465,7 +465,7 @@ Fix normalized annotation coordinates
 
 ## Final Heuristics
 Choose a reliable demo over clever abstraction.
-Choose course/canvas-grounded AI behavior over generic AI behavior.
+Choose room/canvas-grounded AI behavior over generic AI behavior.
 Prefer spatial canvas interaction over chat-like responses.
 If a decision changes what the user experiences or what another subsystem must assume, ask the human.
 And always:

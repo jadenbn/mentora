@@ -9,24 +9,24 @@ and behaviour that exist today, read `TUTOR_AGENT.md`. Where this document
 names something unbuilt, it says so.
 
 ## 1. Product Thesis
-We are building a **persistent, course-aware AI whiteboard tutor**.
-The product should feel less like a chatbot and more like a knowledgeable tutor sitting beside the student, looking at the same piece of paper, understanding the student's actual course, and writing directly alongside them.
+We are building a **persistent, room-aware AI whiteboard tutor**.
+The product should feel less like a chatbot and more like a knowledgeable tutor sitting beside the student, looking at the same piece of paper, understanding the student's actual room, and writing directly alongside them.
 The differentiator is not merely "AI can answer homework questions."
 It is:
-> AI understands the student's course, watches how the student is solving, and teaches spatially on the same whiteboard.
+> AI understands the student's room, watches how the student is solving, and teaches spatially on the same whiteboard.
 The canvas is not an attachment to the AI experience. The canvas **is** the AI experience.
 
 ## 2. Product Hierarchy
 ```text
-Courses / Spaces
+Rooms / Spaces
       ↓
 Saved Whiteboard Sessions
       ↓
 Infinite Whiteboard
 ```
-A course/space might be `MATH 101`, `PHYS 101`, `Calculus I`, or `Interview Prep`.
-A course is a persistent learning context containing course materials, course-specific AI context, instructor-style signals, saved whiteboards, and eventually student analytics.
-When the student enters a course, they see a grid of previous whiteboard sessions plus an option to create a new one.
+A room/space might be `MATH 101`, `PHYS 101`, `Calculus I`, or `Interview Prep`.
+A room is a persistent learning context containing room materials, room-specific AI context, instructor-style signals, saved whiteboards, and eventually student analytics.
+When the student enters a room, they see a grid of previous whiteboard sessions plus an option to create a new one.
 
 ## 3. Persistent Sessions
 A whiteboard session is a persistent working document, not a disposable prompt.
@@ -76,19 +76,19 @@ Avoid turning every interaction into a paragraph in a side panel.
 ## 5. Two Core Problem Entry Flows
 ### 5.1 AI-Generated Practice
 ```text
-Open course
+Open room
    ↓
 New whiteboard
    ↓
 Generate practice problem
    ↓
-Course Context shapes generation
+Room Context shapes generation
    ↓
 Problem appears cleanly/typeset
    ↓
 Student solves
 ```
-Generated questions should feel like they belong to the student's actual course whenever possible.
+Generated questions should feel like they belong to the student's actual room whenever possible.
 ### 5.2 Student-Provided Problem
 Potential inputs:
 - photo
@@ -112,8 +112,8 @@ student solves
 The product should not stop at placing a screenshot on the canvas.
 The goal is to normalize outside questions into the whiteboard environment.
 
-## 6. Course Context
-Course Context is more than generic RAG.
+## 6. Room Context
+Room Context is more than generic RAG.
 Possible source materials:
 - lecture slides/notes
 - assignments
@@ -135,7 +135,7 @@ The system should learn:
 - common question structures
 - topic distribution
 - authentic examples
-Course Context informs both tutoring and question generation.
+Room Context informs both tutoring and question generation.
 The target is understanding **what MATH 101 means for this student**, not just knowing calculus.
 
 ## 7. Instructor-Style Matching
@@ -163,21 +163,21 @@ More conceptual
 More computational
 ```
 
-## 8. Course Boundaries
-The tutor should distinguish between what the model knows and what this course appears to have taught.
-If it wants to use a technique not found in course materials, it should not silently introduce it.
+## 8. Room Boundaries
+The tutor should distinguish between what the model knows and what this room appears to have taught.
+If it wants to use a technique not found in room materials, it should not silently introduce it.
 Intended flow:
 ```text
 AI identifies useful technique
         ↓
-technique appears outside course context
+technique appears outside room context
         ↓
 AI pauses and explains:
 "This approach uses integration by parts, which I don't
-see in your course material yet."
+see in your room material yet."
         ↓
 user chooses:
-Stay within course material
+Stay within room material
 Continue with this technique
 ```
 The exact confidence mechanism may evolve. Prefer transparency when uncertain.
@@ -220,7 +220,7 @@ It should generally not provide the full next step.
 ## 12. Explain
 Purpose: **Help me understand this concept, line, or mistake.**
 Explain can be more detailed than Hint.
-It should use selected canvas context when available, annotate relevant pieces, use course notation, and tie the explanation to what the student actually attempted.
+It should use selected canvas context when available, annotate relevant pieces, use room notation, and tie the explanation to what the student actually attempted.
 It should remain grounded in the current whiteboard rather than defaulting to a generic lecture.
 
 ## 13. I'm Stuck
@@ -231,7 +231,7 @@ It is intentionally more interventionist than Hint, but should avoid needlessly 
 ## 14. Select for AI
 Users need a direct way to point the tutor at part of the board.
 They should be able to select an equation, line, diagram, region, or related shapes, then choose a tutor action or use voice.
-The AI should receive the selected region plus the full problem, surrounding canvas, course context, and relevant prior tutor state.
+The AI should receive the selected region plus the full problem, surrounding canvas, room context, and relevant prior tutor state.
 Users should not need to describe visual locations in words.
 
 ## 15. Voice
@@ -244,7 +244,7 @@ press microphone
    ↓
 "Why can't I do this?"
    ↓
-AI receives transcript + selection + problem + canvas + course
+AI receives transcript + selection + problem + canvas + room
    ↓
 AI responds on canvas
 ```
@@ -323,7 +323,7 @@ Treat handwriting as a renderer/presentation improvement so tutor reasoning does
 
 ## 21. Infinite Canvas
 Each whiteboard session is conceptually an infinite canvas.
-A new problem normally begins in a new session within the same course.
+A new problem normally begins in a new session within the same room.
 Do not redesign around fixed notebook pages unless the team intentionally changes this decision.
 
 ## 22. Rich Student Model
@@ -360,10 +360,10 @@ Examples:
 ```
 This is later-stage product work.
 
-## 25. Built-In Course
+## 25. Built-In Room
 The demo should work without requiring judges to upload files.
-At least one built-in course, likely Calculus I, should provide sample context, style, questions, and reliable tutoring scenarios.
-Where practical, built-in courses should use the same underlying mechanisms as uploaded courses.
+At least one built-in room, likely Calculus I, should provide sample context, style, questions, and reliable tutoring scenarios.
+Where practical, built-in rooms should use the same underlying mechanisms as uploaded rooms.
 
 ## 26. Import Reconstruction
 Imported questions should preserve meaning and wording as faithfully as practical.
@@ -383,8 +383,8 @@ Provide structured problem content separately from images when possible.
 ## 28. Tutor Context
 A strong tutor request may include:
 ```text
-course
-course context
+room
+room context
 current problem
 canvas snapshot
 student shapes
@@ -419,7 +419,7 @@ Usually they would:
 - point to the exact relevant part
 - avoid taking over too quickly
 - adjust help based on how stuck the student is
-- use course terminology
+- use room terminology
 - remember recurring problems
 - let the student remain in control
 
@@ -445,7 +445,7 @@ RAG, OCR, generation, and grading are tools in service of the tutoring experienc
 ## 33. 60-Second Demo North Star
 ```text
 1. Open MATH 101.
-2. Show that the course knows uploaded material.
+2. Show that the room knows uploaded material.
 3. Generate a new professor-style practice problem.
 4. Clean unseen problem appears on the whiteboard.
 5. Student solves by hand.
@@ -483,12 +483,12 @@ AI focuses on that exact region
 local visual explanation
 ```
 
-## 36. Secondary Demo: Course Boundary
+## 36. Secondary Demo: Room Boundary
 If reliable:
 ```text
 tutor wants untaught technique
     ↓
-notices it is outside course context
+notices it is outside room context
     ↓
 asks permission before continuing
 ```
@@ -496,15 +496,15 @@ This is distinctive but should not jeopardize the main demo.
 
 ## 37. MVP Priorities
 Prioritize:
-1. course/space organization
+1. room/space organization
 2. saved whiteboard sessions
 3. tldraw infinite canvas
 4. session restore
 5. clean problem rendering
 6. AI-generated practice
 7. imported problem reconstruction
-8. course ingestion
-9. course-aware generation
+8. room ingestion
+9. room-aware generation
 10. canvas capture
 11. handwriting interpretation
 12. structured annotations
@@ -522,7 +522,7 @@ May be implemented minimally:
 - advanced style inference
 - sophisticated retrieval
 - advanced layer UI
-- many built-in courses
+- many built-in rooms
 - complex settings
 
 ## 39. Future / Polish
@@ -543,14 +543,14 @@ Prefer:
 - spatial feedback
 - direct manipulation
 - continuity
-- course grounding
+- room grounding
 - restrained hints
 - student control
 - local context
 - persistent work
 Avoid:
 - walls of prose
-- generic tutoring disconnected from the course
+- generic tutoring disconnected from the room
 - contextless responses
 - excessive interruption
 - AI taking over
@@ -558,9 +558,9 @@ Avoid:
 
 ## 41. Ultimate Product Loop
 ```text
-Student opens their real course
+Student opens their real room
         ↓
-AI understands that course
+AI understands that room
         ↓
 Student opens a persistent whiteboard
         ↓
