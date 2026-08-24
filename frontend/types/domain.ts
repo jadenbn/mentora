@@ -1,6 +1,6 @@
 export type TutorMode = "mark" | "hint" | "explain" | "stuck";
 
-export interface Course {
+export interface Room {
   id: string;
   name: string;
   description: string;
@@ -9,7 +9,7 @@ export interface Course {
 /** A persistent whiteboard document, local to the browser. */
 export interface Space {
   id: string;
-  courseId: string;
+  roomId: string;
   title: string;
   createdAt: string;
   updatedAt: string;

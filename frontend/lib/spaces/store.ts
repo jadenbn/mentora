@@ -1,7 +1,7 @@
 /**
  * The registry of whiteboard spaces, kept in localStorage.
  *
- * This holds only the index — id, course, title, timestamps. The canvas
+ * This holds only the index — id, room, title, timestamps. The canvas
  * document itself lives under its own key, managed by lib/canvas/persistence.
  * Splitting them means listing spaces never has to parse a full tldraw
  * snapshot.
@@ -118,10 +118,10 @@ function newId(): string {
   }
 }
 
-/** Spaces for one course, most recently worked on first. */
-export function listSpaces(courseId: string): Space[] {
+/** Spaces for one room, most recently worked on first. */
+export function listSpaces(roomId: string): Space[] {
   return readAll()
-    .filter((space) => space.courseId === courseId)
+    .filter((space) => space.roomId === roomId)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
@@ -129,14 +129,14 @@ export function getSpace(spaceId: string): Space | null {
   return readAll().find((space) => space.id === spaceId) ?? null;
 }
 
-export function createSpace(courseId: string, title?: string): Space {
+export function createSpace(roomId: string, title?: string): Space {
   const existing = readAll();
   const now = new Date().toISOString();
-  const untitled = existing.filter((s) => s.courseId === courseId).length + 1;
+  const untitled = existing.filter((s) => s.roomId === roomId).length + 1;
 
   const space: Space = {
     id: newId(),
-    courseId,
+    roomId,
     title: title?.trim() || `Space ${untitled}`,
     createdAt: now,
     updatedAt: now,

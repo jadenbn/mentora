@@ -22,7 +22,7 @@ export class EmptyCanvasError extends Error {
 export interface TutorAnalysisOptions {
   editor: Editor;
   mode: TutorMode;
-  courseId: string;
+  roomId: string;
   signal?: AbortSignal;
 }
 
@@ -39,7 +39,7 @@ export async function runTutorAnalysis(
   }
 
   const response = await analyzeCanvas({
-    courseId: options.courseId,
+    roomId: options.roomId,
     mode: options.mode,
     canvasImage: capture.blob,
     priorAnnotations: collectPriorAnnotations(editor, capture.bounds),

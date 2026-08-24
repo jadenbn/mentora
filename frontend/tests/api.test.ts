@@ -29,7 +29,7 @@ const failure = (status: number, detail?: unknown) => ({
 });
 
 const call = (over = {}) =>
-  analyzeCanvas({ courseId: "course_demo", mode: "hint", canvasImage: IMAGE, priorAnnotations: [], ...over });
+  analyzeCanvas({ roomId: "course_demo", mode: "hint", canvasImage: IMAGE, priorAnnotations: [], ...over });
 
 const bodyOf = (spy: ReturnType<typeof mockFetch>) => spy.mock.calls[0][1].body as FormData;
 
@@ -65,7 +65,7 @@ describe("request construction", () => {
     expect(apiBaseUrl()).toMatch(/^https?:\/\/[^/]+$/);
   });
 
-  it("sends the course, the mode, and the image", async () => {
+  it("sends the room, the mode, and the image", async () => {
     const spy = mockFetch(ok());
     await call({ mode: "stuck" });
     const body = bodyOf(spy);

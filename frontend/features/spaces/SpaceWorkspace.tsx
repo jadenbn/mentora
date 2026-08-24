@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { Whiteboard } from "@/features/whiteboard/Whiteboard";
-import { getCourse } from "@/lib/spaces/courses";
+import { getRoom } from "@/lib/spaces/rooms";
 import {
   getServerSpacesSnapshot,
   getSpacesSnapshot,
@@ -41,16 +41,16 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
           </p>
           <Link
             className="mt-6 inline-block rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white"
-            href="/courses"
+            href="/rooms"
           >
-            My courses
+            My rooms
           </Link>
         </div>
       </main>
     );
   }
 
-  const course = getCourse(space.courseId);
+  const room = getRoom(space.roomId);
 
   function handleRename() {
     const next = prompt("Rename space", space!.title);
@@ -65,9 +65,9 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
         <div className="min-w-0">
           <Link
             className="text-sm font-semibold text-blue-700"
-            href={`/courses/${space.courseId}`}
+            href={`/rooms/${space.roomId}`}
           >
-            ← {course?.name ?? "Course"}
+            ← {room?.name ?? "Room"}
           </Link>
           <p className="truncate text-sm text-slate-600">{space.title}</p>
         </div>
@@ -80,7 +80,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
         </button>
       </header>
       <section className="min-h-0 flex-1" aria-label="Whiteboard canvas">
-        <Whiteboard courseId={space.courseId} spaceId={space.id} />
+        <Whiteboard roomId={space.roomId} spaceId={space.id} />
       </section>
     </main>
   );

@@ -44,7 +44,7 @@ function mockFetch(body: unknown = RESPONSE, ok = true, status = 200) {
 }
 
 const run = (editor: ReturnType<typeof makeEditor>["editor"], over = {}) =>
-  runTutorAnalysis({ editor, mode: "hint", courseId: "course_demo", ...over });
+  runTutorAnalysis({ editor, mode: "hint", roomId: "course_demo", ...over });
 
 beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
 afterEach(() => vi.unstubAllGlobals());
@@ -73,10 +73,10 @@ describe("the happy path", () => {
 });
 
 describe("what it sends", () => {
-  it("sends the requested mode and course", async () => {
+  it("sends the requested mode and room", async () => {
     const fake = makeEditor({ shapes: [student("s1")] });
     const spy = mockFetch();
-    await run(fake.editor, { mode: "mark", courseId: "course_linear" });
+    await run(fake.editor, { mode: "mark", roomId: "course_linear" });
     const body = spy.mock.calls[0][1].body as FormData;
     expect(body.get("mode")).toBe("mark");
     expect(body.get("course_id")).toBe("course_linear");

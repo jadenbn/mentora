@@ -193,10 +193,10 @@ function CanvasPanel({
 
 export function Whiteboard({
   spaceId,
-  courseId,
+  roomId,
 }: {
   spaceId: string;
-  courseId: string;
+  roomId: string;
 }) {
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
@@ -222,7 +222,7 @@ export function Whiteboard({
         const result = await runTutorAnalysis({
           editor: current,
           mode,
-          courseId,
+          roomId,
         });
         setResponse(result);
       } catch (caught) {
@@ -236,7 +236,7 @@ export function Whiteboard({
         setBusyMode(null);
       }
     },
-    [busyMode, courseId],
+    [busyMode, roomId],
   );
 
   /** Testing only: draw a random tutor-shaped annotation with animation. */

@@ -26,7 +26,7 @@ function formatUpdated(iso: string): string {
   });
 }
 
-export function SpaceGrid({ courseId }: { courseId: string }) {
+export function SpaceGrid({ roomId }: { roomId: string }) {
   const router = useRouter();
   const hydrated = useIsClient();
   // localStorage is an external store, so it is read through
@@ -40,13 +40,13 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
   const spaces = useMemo(
     () =>
       all
-        .filter((space) => space.courseId === courseId)
+        .filter((space) => space.roomId === roomId)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [all, courseId],
+    [all, roomId],
   );
 
   function handleCreate() {
-    const space = createSpace(courseId);
+    const space = createSpace(roomId);
     router.push(`/spaces/${space.id}`);
   }
 

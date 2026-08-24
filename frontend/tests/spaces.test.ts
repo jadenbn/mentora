@@ -26,9 +26,9 @@ function tick(ms = 1000) {
 }
 
 describe("createSpace", () => {
-  it("returns a space belonging to the course", () => {
-    const space = createSpace("course_demo");
-    expect(space.courseId).toBe("course_demo");
+  it("returns a space belonging to the room", () => {
+    const space = createSpace("room_demo");
+    expect(space.roomId).toBe("room_demo");
   });
 
   it("gives each space a distinct id", () => {
@@ -41,10 +41,10 @@ describe("createSpace", () => {
     expect(space.updatedAt).toBe(space.createdAt);
   });
 
-  it("numbers untitled spaces per course", () => {
-    expect(createSpace("course_a").title).toBe("Space 1");
-    expect(createSpace("course_a").title).toBe("Space 2");
-    expect(createSpace("course_b").title).toBe("Space 1");
+  it("numbers untitled spaces per room", () => {
+    expect(createSpace("room_a").title).toBe("Space 1");
+    expect(createSpace("room_a").title).toBe("Space 2");
+    expect(createSpace("room_b").title).toBe("Space 1");
   });
 
   it("accepts a custom title", () => {
@@ -68,14 +68,14 @@ describe("createSpace", () => {
 });
 
 describe("listSpaces", () => {
-  it("is empty for a course with no spaces", () => {
-    expect(listSpaces("course_demo")).toEqual([]);
+  it("is empty for a room with no spaces", () => {
+    expect(listSpaces("room_demo")).toEqual([]);
   });
 
-  it("returns only that course's spaces", () => {
-    createSpace("course_a", "A1");
-    createSpace("course_b", "B1");
-    expect(listSpaces("course_a").map((s) => s.title)).toEqual(["A1"]);
+  it("returns only that room's spaces", () => {
+    createSpace("room_a", "A1");
+    createSpace("room_b", "B1");
+    expect(listSpaces("room_a").map((s) => s.title)).toEqual(["A1"]);
   });
 
   it("puts the most recently worked on space first", () => {
