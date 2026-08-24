@@ -25,3 +25,11 @@ class QuestionWorkflowError(RuntimeError):
 
 class QuestionWorkflowTimeout(QuestionWorkflowError):
     """The provider did not generate a question in time."""
+
+
+class TaxonomyWorkflowError(RuntimeError):
+    """Skill-taxonomy generation failed without exposing provider details."""
+
+
+class TaxonomyWorkflowTimeout(TaxonomyWorkflowError):
+    """The provider did not generate a taxonomy in time."""
