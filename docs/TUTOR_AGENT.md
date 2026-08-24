@@ -14,6 +14,8 @@ student draws  ->  taps a mode button
         |
 capture: student's shapes only, exported as one PNG
         |
+problem + its recorded source chunks are loaded separately
+        |
 POST /api/tutor/analyze   (multipart)
         |
 one Gemini call: read the canvas, plan the annotations
@@ -35,7 +37,7 @@ GEMINI_API_KEY
 ```
 
 Optional: `GEMINI_MODEL` (default `gemini-3.7-flash`),
-`TUTOR_REQUEST_TIMEOUT_SECONDS` (default 45).
+`TUTOR_REQUEST_TIMEOUT_SECONDS` (default 45), and `MENTORA_DB_PATH`.
 
 `GET /health` is always available and reports missing variable *names*, never
 values.
@@ -49,10 +51,11 @@ Content-Type: multipart/form-data
 
 | Field | Required | Description |
 | --- | --- | --- |
-| `course_id` | yes | Retrieval scope. Carried but not yet used — see Deferred. |
+| `course_id` | yes | Course and grounded-problem scope. |
 | `mode` | yes | `mark`, `hint`, `explain`, or `stuck`. |
 | `canvas_image` | yes | PNG, JPEG, or WebP. Maximum 10 MB. |
 | `prior_annotations` | no | JSON array of normalized bounds. Defaults to `[]`. |
+| `problem_context` | no | JSON generated-problem entity. Defaults to absent. |
 
 Image type is determined from the file signature. A declared `Content-Type`
 that contradicts the bytes is refused.
@@ -62,10 +65,17 @@ that contradicts the bytes is refused.
 The tutor's own marks live on the same canvas as the student's work. Two rules
 keep the model from grading its own handwriting:
 
-1. Tutor-authored shapes are **excluded from the exported image**. The picture
-   contains only student work, by construction.
+1. Tutor-authored and system/problem shapes are **excluded from the exported
+   image**. The picture contains only student work, by construction.
 2. Their **positions are sent separately**, so follow-up feedback still knows
    where it has already written.
+
+### problem_context
+
+The browser sends the visible generated problem as structured JSON, separate
+from the canvas image. The backend uses its id to load the exact document
+chunks recorded when the question was generated. If that record is missing or
+SQLite retrieval fails, the supplied prompt remains usable without excerpts.
 
 ## Response
 
@@ -118,7 +128,7 @@ its shapes; a different interaction leaves earlier feedback in place.
 | 400 | the image was empty |
 | 413 | the image exceeded 10 MB |
 | 415 | not a PNG/JPEG/WebP, or the declared type contradicts the bytes |
-| 422 | bad mode, missing course, or malformed `prior_annotations` |
+| 422 | bad mode, missing course, malformed annotations/problem, or course mismatch |
 | 502 | the provider failed |
 | 503 | the server is not configured; the body names the missing variables |
 | 504 | the provider did not answer in time |
@@ -128,12 +138,11 @@ and prompt fragments.
 
 ## Deferred
 
-Not built, deliberately, until the canvas loop works end to end:
+Not built:
 
-- **Course retrieval.** `course_id` is carried so it does not have to be
-  retrofitted through the UI. Grounding a request needs a *text* query and the
-  canvas is a picture, so re-adding retrieval means deciding where that query
-  comes from — the student, or a first vision pass.
+- **Arbitrary course retrieval.** Generated problems reuse the exact chunks
+  chosen during generation; free-form semantic search across every course
+  material remains deferred.
 - **Learning events.** The tutor observes plenty worth recording; the learning
   engine on `ren/learning-engine` wants closed-vocabulary, slug-identified,
   float-typed facts. That adapter is a design decision, not a merge.
@@ -144,7 +153,8 @@ Not built, deliberately, until the canvas loop works end to end:
 - `app/schemas/tutor.py` — the wire contract.
 - `app/prompts/tutor.py` — mode policy and the allowed action set.
 - `app/services/tutor_policy.py` — what is safe to render.
-- `app/agents/tutor_workflow.py` — the only module that may import a provider.
+- `app/agents/tutor_workflow.py` — tutor provider adapter.
+- `app/agents/question_workflow.py` — grounded-question provider adapter.
 
 Changing an action's fields, coordinate semantics, or the allowed set is a
 breaking change on both sides of the wire. `ALLOWED_ACTIONS` and the renderer

@@ -30,9 +30,9 @@ cp .env.example .env      # then paste a real GEMINI_API_KEY into it
 .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
-Only `GEMINI_API_KEY` is required. The OpenAI and Pinecone keys in
-`.env.example` are for course ingestion, which the tutor does not use — see
-"Deferred" in `docs/TUTOR_AGENT.md`.
+Only `GEMINI_API_KEY` is required. Course documents, extracted chunks, and
+generated-problem grounding are stored in `backend/mentora.db` by default;
+override that location with `MENTORA_DB_PATH`.
 
 Check it came up configured:
 
@@ -49,8 +49,8 @@ cp .env.example .env.local        # already points at localhost:8000
 bun dev
 ```
 
-Then open `localhost:3000` → My courses → a course → New space → draw → tap a
-tutor button.
+Then open `localhost:3000` → My courses → a course → upload a material →
+Generate question → draw beside the problem → tap a tutor button.
 
 ### From a phone or tablet on the same network
 
@@ -77,10 +77,11 @@ server afterwards.
 `POST /api/tutor/analyze`, multipart form data:
 
 ```text
-course_id          retrieval scope (carried; retrieval is deferred)
+course_id          course and grounded-problem scope
 mode               mark | hint | explain | stuck
 canvas_image       PNG, JPEG, or WebP; maximum 10 MB
 prior_annotations  JSON array of normalized bounds; defaults to []
+problem_context     optional generated-problem JSON; sent separately from work
 ```
 
 Full contract in `docs/TUTOR_AGENT.md`.
@@ -88,8 +89,8 @@ Full contract in `docs/TUTOR_AGENT.md`.
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest -q -m "not live"    # 101, no provider calls
-cd frontend && bun run test                                    # 166
+cd backend  && .venv/bin/python -m pytest -q -m "not live"
+cd frontend && npm test
 ```
 
 The opt-in live check spends one real Gemini request:
@@ -98,16 +99,9 @@ The opt-in live check spends one real Gemini request:
 cd backend && RUN_LIVE_GEMINI=1 .venv/bin/python -m pytest -q -m live -s
 ```
 
-Korey's credentialed RAG pipeline check needs the OpenAI and Pinecone keys:
-
-```bash
-cd backend && .venv/bin/python test_pipeline.py
-```
-
 ## Team workstreams
 
 - Jaden: whiteboard and frontend integration.
 - Andre: AI/Vision and backend tutor APIs.
 - Korey: course context ingestion and retrieval.
-- Ren: question generation and learning engine (`ren/learning-engine`, not yet
-  integrated — see "Deferred" in `docs/TUTOR_AGENT.md`).
+- Ren: question generation and learning engine.

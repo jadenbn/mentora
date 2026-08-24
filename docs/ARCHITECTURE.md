@@ -136,7 +136,8 @@ Conceptual representation:
 ## 7. Whiteboard Session
 A session is a persistent working document. Called a **space** in the UI and in
 the frontend code, and currently stored in browser localStorage rather than on
-the server. There is no problem entity yet, so `problem_id` below is aspirational.
+the server. A generated problem is stored with the local space and rendered as
+a locked system-owned note; its canonical grounding record lives in SQLite.
 Conceptual representation:
 ```json
 {
@@ -229,7 +230,8 @@ Possible routes:
 GET  /health                                  implemented
 POST /api/tutor/analyze                       implemented
 POST /api/courses/{course_id}/documents       implemented
-GET  /api/courses/{course_id}/search          implemented
+GET  /api/courses/{course_id}/documents       implemented
+POST /api/courses/{course_id}/questions/generate implemented
 GET  /api/courses
 POST /api/courses
 GET  /api/courses/{course_id}
@@ -242,7 +244,8 @@ POST /api/problems/import
 GET  /api/courses/{course_id}/student-model
 ```
 
-Only the four marked lines exist. Sessions ("spaces" in the UI) live in
+The marked document, question, health, and tutor routes exist. Sessions
+("spaces" in the UI) live in
 browser localStorage, not on the server, so there is no session endpoint.
 Prefer domain operations over one endpoint per prompt.
 
@@ -260,14 +263,16 @@ When changing a shared schema:
 `POST /api/tutor/analyze` is multipart form data:
 
 ```text
-course_id          retrieval scope (carried; retrieval is deferred)
+course_id          course and grounded-problem scope
 mode               mark | hint | explain | stuck
 canvas_image       PNG, JPEG, or WebP; maximum 10 MB
 prior_annotations  JSON array of normalized bounds; defaults to []
+problem_context     optional JSON generated-problem entity
 ```
 
-Four fields, no JSON request body. The browser sends an image and three
-scalars; anything larger belongs server-side.
+The browser sends the student image and small scalar/JSON fields. The backend
+loads recorded document excerpts by problem id; course material never crosses
+the browser tutor boundary.
 
 Tutor-authored shapes are excluded from the exported image and their positions
 are sent as `prior_annotations` instead, so the model cannot read its own
@@ -368,11 +373,9 @@ structured tutor response
 Dedicated OCR is optional and should be added only if experiments show clear value.
 
 ## 23. Course Ingestion
-Initial pipeline:
+Implemented pipeline:
 ```text
 upload
-  ↓
-store document
   ↓
 extract content
   ↓
@@ -380,9 +383,7 @@ chunk / structure
   ↓
 attach metadata
   ↓
-index
-  ↓
-retrieve
+transactional SQLite document/chunk storage
 ```
 Useful metadata:
 ```text
@@ -405,11 +406,16 @@ formula_sheet
 other
 ```
 
-## 24. Retrieval
-Keep retrieval simple initially.
-It must support tutoring, question generation, coverage checks, and style inference.
-Semantic retrieval plus metadata filtering may be enough.
-Evaluate by user-facing quality, not architectural sophistication.
+## 24. Recorded Context
+
+There is no embedding index in the current implementation. Question generation
+receives labelled chunks from one selected document and records the one to eight
+chunk ids that support its output. Tutor interactions reuse those exact chunks,
+which avoids an extra retrieval/model round trip and prevents semantic search
+from omitting context required by a problem Mentora generated itself.
+
+Arbitrary cross-document queries may later use embeddings or managed File
+Search, but that is a separate capability rather than a prerequisite here.
 
 ## 25. Course Style Model
 Style may include:
@@ -426,25 +432,16 @@ For the hackathon, style can be inferred on demand, summarized during ingestion,
 Choose the simplest approach that produces convincing results.
 
 ## 26. Question Generation
-Inputs may include:
-```text
-course_id
-topic
-difficulty
-user overrides
-retrieved examples
-course style profile
-covered-topic constraints
-```
-Conceptual response:
+Implemented input is a course id plus one document id. Gemini receives up to a
+160,000-character, source-labelled context; oversized documents use distributed
+beginning/middle/end windows. Structured provider output supplies the visible
+prompt plus validated source chunk ids. Public response:
 ```json
 {
   "id": "problem_123",
-  "topic": "integration-by-parts",
-  "difficulty": "medium",
   "prompt": "Evaluate ...",
-  "expected_skills": ["integration-by-parts"],
-  "source": "generated"
+  "source": "generated",
+  "document_id": "doc_123"
 }
 ```
 Do not couple generation to one canvas representation.
@@ -471,8 +468,9 @@ Conceptual representation:
   "metadata": {}
 }
 ```
-Problem import is not built. The tutor reads the problem from the canvas image
-rather than from a structured problem record.
+Problem import is not built. Generated problems do use a structured record and
+are excluded from the canvas image; an eventual imported problem must join that
+same boundary rather than making the tutor infer it from student pixels.
 The key boundary is: recognize first, render cleanly second.
 
 ## 28. Persistence
@@ -483,6 +481,8 @@ session metadata
 canvas document state
 problem association
 timestamps
+course documents and ordered extracted chunks
+generated problems and ordered grounding-chunk links
 ```
 Optionally:
 ```text
@@ -631,9 +631,9 @@ Potential response:
 ```
 The algorithm can be approximate for the hackathon.
 
-Not implemented. The check needs to know what the course has covered, which
-means course retrieval, which is deferred — so a boundary decision today would
-be the model guessing. It returns with retrieval.
+Not implemented. Recorded excerpts ground one generated problem, but they are
+not yet a course-wide coverage model, so a boundary decision today would still
+be the model guessing.
 
 ## 38. Error Handling
 Plan for:
@@ -672,7 +672,7 @@ Treat model output as untrusted.
 Do not execute arbitrary model instructions.
 Avoid logging sensitive course content unnecessarily.
 
-Tutor readiness requires `GEMINI_API_KEY` and nothing else. `/health` and
+Tutor and question-generation readiness require `GEMINI_API_KEY` and nothing else. `/health` and
 configuration errors report missing variable names only. Image type is verified
 from file signatures rather than trusting multipart headers.
 
