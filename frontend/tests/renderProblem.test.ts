@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ensureProblemShape, SYSTEM_SHAPE_OWNER } from "@/lib/problems/renderProblem";
+import { SYSTEM_SHAPE_OWNER } from "@/lib/canvas/ownership";
+import { removeLegacyProblemShape } from "@/lib/problems/renderProblem";
 import { makeEditor } from "./fakeEditor";
 
 const problem = {
@@ -10,19 +11,14 @@ const problem = {
   prompt: "Find the derivative of x².",
 };
 
-describe("ensureProblemShape", () => {
-  it("creates one locked system-owned note", () => {
+describe("removeLegacyProblemShape", () => {
+  it("does nothing when a session has no legacy problem note", () => {
     const fake = makeEditor();
-    expect(ensureProblemShape(fake.editor, problem)).toBe(true);
-    expect(fake.created).toHaveLength(1);
-    expect(fake.created[0]).toMatchObject({
-      type: "note",
-      isLocked: true,
-      meta: { owner: SYSTEM_SHAPE_OWNER, problemId: problem.id },
-    });
+    expect(removeLegacyProblemShape(fake.editor, problem.id)).toBe(false);
+    expect(fake.deleted).toHaveLength(0);
   });
 
-  it("does not duplicate a restored problem shape", () => {
+  it("removes the old note for the current problem", () => {
     const fake = makeEditor({
       shapes: [{
         id: "restored",
@@ -30,7 +26,26 @@ describe("ensureProblemShape", () => {
         meta: { owner: SYSTEM_SHAPE_OWNER, problemId: problem.id },
       }],
     });
-    expect(ensureProblemShape(fake.editor, problem)).toBe(false);
-    expect(fake.created).toHaveLength(0);
+    expect(removeLegacyProblemShape(fake.editor, problem.id)).toBe(true);
+    expect(fake.deleted).toEqual(["restored"]);
+  });
+
+  it("leaves other system content and other problems untouched", () => {
+    const fake = makeEditor({
+      shapes: [
+        {
+          id: "other-problem",
+          type: "note",
+          meta: { owner: SYSTEM_SHAPE_OWNER, problemId: "problem_999" },
+        },
+        {
+          id: "diagram",
+          type: "geo",
+          meta: { owner: SYSTEM_SHAPE_OWNER },
+        },
+      ],
+    });
+    expect(removeLegacyProblemShape(fake.editor, problem.id)).toBe(false);
+    expect(fake.deleted).toHaveLength(0);
   });
 });

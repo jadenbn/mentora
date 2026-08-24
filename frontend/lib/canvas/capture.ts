@@ -12,8 +12,10 @@
  */
 
 import type { Box, Editor, TLShapeId } from "tldraw";
-import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
-import { SYSTEM_SHAPE_OWNER } from "@/lib/problems/renderProblem";
+import {
+  AI_SHAPE_OWNER,
+  SYSTEM_SHAPE_OWNER,
+} from "@/lib/canvas/ownership";
 import type { NormalizedBounds } from "@/types/tutor";
 
 /** Keeps the upload well under the backend's 10 MB limit. */

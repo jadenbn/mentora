@@ -1,39 +1,35 @@
-/** Render structured problem data as one durable system-owned canvas shape. */
+/** Migration helpers for the retired system-owned problem note. */
 
-import { createShapeId, toRichText } from "tldraw";
-import type { Editor } from "tldraw";
-import type { Problem } from "@/types/domain";
+import type { Editor, TLShapeId } from "tldraw";
+import { SYSTEM_SHAPE_OWNER } from "@/lib/canvas/ownership";
 
-export const SYSTEM_SHAPE_OWNER = "system";
+/** Kept as a compatibility export; ownership is defined centrally. */
+export { SYSTEM_SHAPE_OWNER } from "@/lib/canvas/ownership";
 
-export function ensureProblemShape(editor: Editor, problem: Problem): boolean {
+/**
+ * Remove only the old locked note for this problem.
+ *
+ * The canonical problem remains on the Space record and is now rendered in a
+ * pinned, typeset card. Other system-owned canvas content is left untouched.
+ */
+export function removeLegacyProblemShape(
+  editor: Editor,
+  problemId: string,
+): boolean {
+  const legacy: TLShapeId[] = [];
   for (const id of editor.getCurrentPageShapeIds()) {
     const shape = editor.getShape(id);
     if (
       shape?.meta?.owner === SYSTEM_SHAPE_OWNER &&
-      shape.meta.problemId === problem.id
+      shape.meta.problemId === problemId
     ) {
-      return false;
+      legacy.push(id);
     }
   }
 
-  const viewport = editor.getViewportPageBounds();
-  editor.createShape({
-    id: createShapeId(`system-${problem.id}`),
-    type: "note",
-    x: viewport.x + 48,
-    y: viewport.y + 48,
-    isLocked: true,
-    meta: { owner: SYSTEM_SHAPE_OWNER, problemId: problem.id },
-    props: {
-      richText: toRichText(`Question\n\n${problem.prompt}`),
-      color: "light-blue",
-      labelColor: "black",
-      font: "sans",
-      size: "m",
-      align: "start",
-      verticalAlign: "start",
-    },
-  });
+  if (legacy.length === 0) {
+    return false;
+  }
+  editor.deleteShapes(legacy);
   return true;
 }
