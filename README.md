@@ -2,7 +2,7 @@
 
 Mentora is a persistent AI whiteboard tutor. A student works by hand on a
 tldraw canvas, then asks for Mark, Hint, Explain, or I'm Stuck. The backend
-sends the canvas to a multimodal Gemini agent and returns validated spatial
+sends the canvas to Gemini through the direct async SDK and returns validated spatial
 actions for the whiteboard renderer to draw.
 
 ## Repository

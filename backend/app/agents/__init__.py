@@ -1,2 +1,1 @@
-"""Google ADK workflows used by backend services."""
-
+"""Direct Gemini provider workflows used by backend services."""
