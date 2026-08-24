@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
-from app.db import get_session
+from app.api.dependencies import get_session
 from app.schemas.learning import AttemptCreate, AttemptResult, GenerationSpec, StudentModelResponse
 from app.services import selection, student_model_service
 from app.services.student_model_service import UnknownSkillError
