@@ -168,14 +168,19 @@ frontend renderer
 tldraw
 ```
 
-Likely actions: `text`, `math`, `arrow`, `circle`, `underline`, `highlight`, `check`, `cross`.
+Implemented actions: `text`, `circle`, `check`, `cross`. `text` says something at a
+normalized point; the other three point at a normalized box. The authoritative
+list lives in `backend/app/schemas/tutor.py` and is pinned to the renderer by
+`backend/tests/test_prompts.py`.
 Do not allow arbitrary model text to execute arbitrary tldraw operations.
-At minimum distinguish canvas ownership:
+At minimum distinguish canvas ownership. On the canvas this is
+`shape.meta.owner`; on the wire the tutor's own marks travel as
+`prior_annotations` and its earlier work is excluded from the captured image
+entirely, so the model cannot read its own handwriting back as student work:
 
 ```text
-system / problem
-student
-AI tutor
+student      what the student drew
+ai           what the tutor drew earlier
 ```
 
 The UX should still feel like one shared notebook.
@@ -315,7 +320,7 @@ Prefer thin route handlers:
 
 ```python
 @router.post("/analyze", response_model=TutorResponse)
-async def analyze(request: TutorRequest) -> TutorResponse:
+async def analyze(mode: TutorMode, canvas_image: bytes) -> TutorResponse:
     return await tutor_service.analyze(request)
 ```
 

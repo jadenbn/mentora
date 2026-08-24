@@ -1,51 +1,120 @@
-ROLES:
-test:
+# Mentora
 
-{jaden} - Whiteboard: build the app and canvas
+Mentora is a persistent AI whiteboard tutor. A student works by hand on a
+tldraw canvas, then asks for Mark, Hint, Explain, or I'm Stuck. The backend
+sends the canvas to a multimodal Gemini agent and returns validated spatial
+actions for the whiteboard renderer to draw.
 
-[TAKEN - andre] - AI/Vision: understand handwritten student work and generate feedback
+## Repository
 
-[TAKEN - korey] - Course Context: process notes/PDFs and give the AI course-specific knowledge
+- `frontend/`: Next.js, React, and tldraw whiteboard UI.
+- `backend/`: FastAPI tutor service and course ingestion.
+- `docs/PRODUCT.md`: authoritative product behavior.
+- `docs/ARCHITECTURE.md`: system boundaries and shared contracts.
+- `docs/TUTOR_AGENT.md`: the tutor API contract.
 
-[TAKEN - andre] - Backend: APIs, storage, and connecting services
+## Setup on a new machine
 
-[TAKEN - ren] - Learning Engine: generate questions and track/adapt to student ability
+Four things are gitignored and must be recreated: `backend/.venv`,
+`backend/.env`, `frontend/.env.local`, and `frontend/node_modules`.
 
-{jaden} - Integration: connect everything, deploy it, and make the demo reliable
+### Backend
 
-# mentora
-yay!
-hackathon project
-Student creates/opens MATH 101
-          ↓
-Course knows their actual course material
-          ↓
-Student opens a persistent whiteboard
-          ↓
-AI generates a new instructor-style problem
-          OR
-student imports their own problem
-          ↓
-Problem is cleanly reconstructed on infinite canvas
-          ↓
-Student works naturally by hand
-          ↓
-Tutor understands:
-    • original problem
-    • course context
-    • student's work
-    • selected canvas region
-    • prior tutoring interactions
-    • eventually student model
-          ↓
-Student asks for Mark / Hint / Explain / I'm Stuck
-          OR
-live tutor decides intervention is warranted
-          ↓
-AI responds spatially on the canvas
-          ↓
-Student continues working
-          ↓
-Everything persists
-          ↓
-Future tutoring gradually becomes personalized
+Needs Python 3.11 or newer (`asyncio.timeout`).
+
+```bash
+cd backend
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env      # then add Gemini, OpenAI, and Pinecone credentials
+.venv/bin/uvicorn app.main:app --reload --port 8000
+```
+
+`GEMINI_API_KEY` powers tutoring and question generation. Course uploads also
+require `OPENAI_API_KEY`, `PINECONE_API_KEY`, and `PINECONE_INDEX_NAME`. Create
+that Pinecone index with 1,536 dimensions and cosine similarity for
+`text-embedding-3-small`.
+Canonical document chunks and generated-problem grounding stay in
+`backend/mentora.db`; Pinecone stores only embeddings and chunk identifiers.
+Override SQLite with `MENTORA_DB_PATH` and the default 40,000-character
+full-context cutoff with `QUESTION_FULL_CONTEXT_MAX_CHARS`.
+
+Check it came up configured:
+
+```bash
+curl -s localhost:8000/health     # reports tutor and course_indexing readiness
+```
+
+### Frontend
+
+```bash
+cd frontend
+bun install
+cp .env.example .env.local        # already points at localhost:8000
+bun dev
+```
+
+Then open `localhost:3000` → My courses → a course → upload a material →
+describe the question you want → Generate question → draw beside the problem →
+tap a tutor button.
+
+The optional live seed check uploads the checked-in chain-rule lecture, writes
+its text to SQLite and embeddings to Pinecone, and verifies retrieval:
+
+```bash
+cd backend && PYTHONPATH=. .venv/bin/python scripts/seed_course.py --reset
+```
+
+### From a phone or tablet on the same network
+
+The frontend targets whatever host served the page, so no frontend config is
+needed. The backend must be told to accept that origin, and to listen beyond
+loopback:
+
+```bash
+# backend, in place of the command above
+CORS_ALLOW_ORIGINS=http://localhost:3000,http://YOUR-IP:3000 \
+  .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# frontend
+bun dev --hostname 0.0.0.0
+```
+
+`--host 0.0.0.0` exposes the API to your whole network, and on a machine with
+a public address, to the internet. There is no authentication and every
+request spends Gemini quota, so only do this on a trusted network and stop the
+server afterwards.
+
+## The tutor endpoint
+
+`POST /api/tutor/analyze`, multipart form data:
+
+```text
+course_id          course and grounded-problem scope
+mode               mark | hint | explain | stuck
+canvas_image       PNG, JPEG, or WebP; maximum 10 MB
+prior_annotations  JSON array of normalized bounds; defaults to []
+problem_context     optional generated-problem JSON; sent separately from work
+```
+
+Full contract in `docs/TUTOR_AGENT.md`.
+
+## Tests
+
+```bash
+cd backend  && .venv/bin/python -m pytest -q -m "not live"
+cd frontend && npm test
+```
+
+The opt-in live check spends one real Gemini request:
+
+```bash
+cd backend && RUN_LIVE_GEMINI=1 .venv/bin/python -m pytest -q -m live -s
+```
+
+## Team workstreams
+
+- Jaden: whiteboard and frontend integration.
+- Andre: AI/Vision and backend tutor APIs.
+- Korey: course context ingestion and retrieval.
+- Ren: question generation and learning engine.

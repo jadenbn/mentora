@@ -5,6 +5,11 @@ It is intentionally less detailed than a final production design.
 For product behavior, read `PRODUCT.md`.
 For agent workflow and branch rules, read `../AGENTS.md`.
 
+**This document describes direction, some of which is not built.** For the
+shapes that actually cross the wire today, `TUTOR_AGENT.md` and
+`backend/app/schemas/tutor.py` are authoritative and win any disagreement with
+this file. Sections that describe unbuilt work say so inline.
+
 ## 1. Architectural Goals
 Optimize for:
 1. reliable end-to-end demo
@@ -129,7 +134,10 @@ Conceptual representation:
 ```
 
 ## 7. Whiteboard Session
-A session is a persistent working document.
+A session is a persistent working document. Called a **space** in the UI and in
+the frontend code, and currently stored in browser localStorage rather than on
+the server. A generated problem is stored with the local space and rendered as
+a locked system-owned note; its canonical grounding record lives in SQLite.
 Conceptual representation:
 ```json
 {
@@ -162,7 +170,11 @@ Potential metadata:
 ```ts
 type ShapeOwner = "system" | "student" | "ai";
 ```
-Optional metadata may include `session_id`, `interaction_id`, `annotation_type`, or `problem_id`.
+Shapes the tutor draws carry `owner: "ai"` and the `interaction_id` that
+produced them, which is how re-rendering one interaction replaces its own
+shapes without disturbing earlier feedback. Ownership no longer crosses the
+wire as a shape list: the capture excludes tutor-authored shapes from the
+image and sends their bounds as `prior_annotations`.
 The critical invariant is that the system can distinguish what the problem said, what the student wrote, and what the AI wrote.
 
 ## 10. Frontend Responsibilities
@@ -215,7 +227,11 @@ Follow existing conventions if the repository already has them.
 ## 13. API Shape
 Possible routes:
 ```text
-GET  /health
+GET  /health                                  implemented
+POST /api/tutor/analyze                       implemented
+POST /api/courses/{course_id}/documents       implemented
+GET  /api/courses/{course_id}/documents       implemented
+POST /api/courses/{course_id}/questions/generate implemented
 GET  /api/courses
 POST /api/courses
 GET  /api/courses/{course_id}
@@ -223,12 +239,14 @@ GET  /api/courses/{course_id}/sessions
 POST /api/courses/{course_id}/sessions
 GET  /api/sessions/{session_id}
 PUT  /api/sessions/{session_id}
-POST /api/courses/{course_id}/documents
 POST /api/questions/generate
 POST /api/problems/import
-POST /api/tutor/analyze
 GET  /api/courses/{course_id}/student-model
 ```
+
+The marked document, question, health, and tutor routes exist. Sessions
+("spaces" in the UI) live in
+browser localStorage, not on the server, so there is no session endpoint.
 Prefer domain operations over one endpoint per prompt.
 
 ## 14. Shared Schemas
@@ -241,23 +259,24 @@ When changing a shared schema:
 - coordinate with affected teammates
 
 ## 15. Tutor Request
-Conceptual request:
-```json
-{
-  "course_id": "course_123",
-  "session_id": "session_456",
-  "problem_id": "problem_789",
-  "mode": "hint",
-  "canvas_image": "...",
-  "selected_region": {
-    "x": 0.2,
-    "y": 0.4,
-    "width": 0.3,
-    "height": 0.2
-  }
-}
+
+`POST /api/tutor/analyze` is multipart form data:
+
+```text
+course_id          course and grounded-problem scope
+mode               mark | hint | explain | stuck
+canvas_image       PNG, JPEG, or WebP; maximum 10 MB
+prior_annotations  JSON array of normalized bounds; defaults to []
+problem_context     optional JSON generated-problem entity
 ```
-Assemble large course context server-side rather than sending it from the browser every time.
+
+The browser sends the student image and small scalar/JSON fields. The backend
+loads recorded document excerpts by problem id; course material never crosses
+the browser tutor boundary.
+
+Tutor-authored shapes are excluded from the exported image and their positions
+are sent as `prior_annotations` instead, so the model cannot read its own
+handwriting back as student work. See `TUTOR_AGENT.md`.
 
 ## 16. Tutor Modes
 Backend-facing enum:
@@ -270,35 +289,24 @@ stuck
 Prompt/service behavior must differ by mode.
 
 ## 17. Structured Tutor Response
-Conceptual Pydantic shape:
-```python
-from typing import Literal
-from pydantic import BaseModel
 
-class Bounds(BaseModel):
-    x: float
-    y: float
-    width: float | None = None
-    height: float | None = None
-
-class TutorAnnotation(BaseModel):
-    type: Literal[
-        "text", "math", "arrow", "circle",
-        "underline", "highlight", "check", "cross"
-    ]
-    target: Bounds | None = None
-    x: float | None = None
-    y: float | None = None
-    text: str | None = None
-    latex: str | None = None
-
-class TutorResponse(BaseModel):
-    status: Literal["correct", "incorrect", "partial", "uncertain"]
-    annotations: list[TutorAnnotation]
-    summary: str | None = None
+```text
+interaction_id   server-minted; the renderer keys shape replacement on it
+status           correct | incorrect | partial | uncertain
+canvas_actions   at most 12
+summary          short plain-language explanation
 ```
-This schema is conceptual, not frozen.
-The invariant is: **validated structured output before tldraw rendering**.
+
+`canvas_actions` is a discriminated union of two shapes: `text` says something
+at a normalized point, and `circle` / `check` / `cross` point at a normalized
+box. There is no third shape, and no action carries a label — text is the one
+way to put words on a canvas.
+
+Gemini output is schema-constrained, then validated independently with
+Pydantic, then passed through a deterministic safety policy. The renderer never
+receives arbitrary tldraw operations.
+
+The invariant remains: **validated structured output before tldraw rendering**.
 
 ## 18. Coordinates
 Prefer normalized image-space coordinates at the AI/API boundary:
@@ -316,13 +324,15 @@ Do not scatter conversion logic.
 ## 19. Annotation Renderer
 Frontend owns:
 ```text
-TutorAnnotation
+CanvasAction
       ↓
 Annotation Renderer
       ↓
 tldraw operations
 ```
-The renderer creates controlled text, math, arrows, highlights, circles, etc.
+The renderer creates controlled text, circles, checks, and crosses — the four
+implemented actions. `TutorAnnotation` was an earlier name for this and no
+longer exists.
 This boundary also enables future handwriting animation without changing tutor reasoning.
 
 ## 20. Canvas Capture
@@ -363,11 +373,9 @@ structured tutor response
 Dedicated OCR is optional and should be added only if experiments show clear value.
 
 ## 23. Course Ingestion
-Initial pipeline:
+Implemented pipeline:
 ```text
 upload
-  ↓
-store document
   ↓
 extract content
   ↓
@@ -375,9 +383,9 @@ chunk / structure
   ↓
 attach metadata
   ↓
-index
+transactional SQLite document/chunk storage
   ↓
-retrieve
+synchronous OpenAI embedding + Pinecone upsert
 ```
 Useful metadata:
 ```text
@@ -400,11 +408,20 @@ formula_sheet
 other
 ```
 
-## 24. Retrieval
-Keep retrieval simple initially.
-It must support tutoring, question generation, coverage checks, and style inference.
-Semantic retrieval plus metadata filtering may be enough.
-Evaluate by user-facing quality, not architectural sophistication.
+## 24. Recorded Context
+
+SQLite is the source of truth for document metadata and exact chunk text.
+Pinecone stores `text-embedding-3-small` vectors with `course_id`, `document_id`,
+and `chunk_id` metadata, but never chunk text. Retrieval filters by both course
+and selected document, ranks chunk ids in Pinecone, and hydrates their exact
+text from SQLite. Generated problems still record the one to eight chunks the
+model actually used, so later tutor interactions reuse exact grounding without
+another semantic search.
+
+The Pinecone index is provisioned outside the application with 1,536 dimensions
+and cosine similarity. Upload indexing is synchronous and runs off the FastAPI
+event loop; re-uploading a content-addressed document is the repair path after a
+provider failure.
 
 ## 25. Course Style Model
 Style may include:
@@ -421,25 +438,26 @@ For the hackathon, style can be inferred on demand, summarized during ingestion,
 Choose the simplest approach that produces convincing results.
 
 ## 26. Question Generation
-Inputs may include:
-```text
-course_id
-topic
-difficulty
-user overrides
-retrieved examples
-course style profile
-covered-topic constraints
+Implemented input is a course id, one document id, and a required 1–1,000
+character question request describing topic, style, format, or difficulty.
+Documents whose serialized context is at most 40,000 characters (configurable
+with `QUESTION_FULL_CONTEXT_MAX_CHARS`) send every SQLite chunk to Gemini.
+Larger documents use the request to retrieve 12 Pinecone-ranked chunk ids and
+hydrate their text from SQLite. Structured provider output supplies the visible
+prompt plus validated source chunk ids. Request:
+```json
+{
+  "document_id": "doc_123",
+  "question_request": "Create a difficult conceptual chain-rule question"
+}
 ```
-Conceptual response:
+Public response:
 ```json
 {
   "id": "problem_123",
-  "topic": "integration-by-parts",
-  "difficulty": "medium",
   "prompt": "Evaluate ...",
-  "expected_skills": ["integration-by-parts"],
-  "source": "generated"
+  "source": "generated",
+  "document_id": "doc_123"
 }
 ```
 Do not couple generation to one canvas representation.
@@ -462,11 +480,13 @@ Conceptual representation:
 {
   "source": "imported",
   "prompt_text": "...",
-  "latex_blocks": [],
   "figures": [],
   "metadata": {}
 }
 ```
+Problem import is not built. Generated problems do use a structured record and
+are excluded from the canvas image; an eventual imported problem must join that
+same boundary rather than making the tutor infer it from student pixels.
 The key boundary is: recognize first, render cleanly second.
 
 ## 28. Persistence
@@ -477,6 +497,8 @@ session metadata
 canvas document state
 problem association
 timestamps
+course documents and ordered extracted chunks
+generated problems and ordered grounding-chunk links
 ```
 Optionally:
 ```text
@@ -554,6 +576,11 @@ timestamp
 ```
 Do not make the core tutor loop depend on a sophisticated model.
 
+Learning events are not emitted yet. The tutor observes plenty worth
+recording, but the learning engine wants closed-vocabulary, slug-identified,
+float-typed facts and the tutor produces prose. That adapter is a design
+decision rather than a merge, and it waits until the canvas loop works.
+
 ## 34. Built-In Course
 Support at least one built-in demo course, likely Calculus I.
 Where practical, seed it through the same Course Context mechanisms as uploaded courses to avoid a separate architecture.
@@ -569,6 +596,24 @@ Provider Adapter
 AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
+
+The tutor is one Gemini call through a single ADK agent:
+
+```text
+canvas image + mode + prior annotations
+        ↓
+LlmAgent (Gemini multimodal, TutorPlan response schema)
+        ↓ independent Pydantic validation and safety policy
+TutorResponse
+```
+
+Reading the canvas and deciding what to draw are the same judgement, so
+splitting them only bought a second round trip on the path where
+responsiveness is the product.
+
+ADK performs up to three bounded transient HTTP attempts. The application makes
+one additional attempt only when structured output is malformed. The model
+defaults to `gemini-3.7-flash` and is replaceable through `GEMINI_MODEL`.
 
 ## 36. Prompt Organization
 Possible layout:
@@ -601,6 +646,10 @@ Potential response:
 }
 ```
 The algorithm can be approximate for the hackathon.
+
+Not implemented. Recorded excerpts ground one generated problem, but they are
+not yet a course-wide coverage model, so a boundary decision today would still
+be the model guessing.
 
 ## 38. Error Handling
 Plan for:
@@ -638,6 +687,13 @@ Validate uploads.
 Treat model output as untrusted.
 Do not execute arbitrary model instructions.
 Avoid logging sensitive course content unnecessarily.
+
+Tutor and question-generation readiness require `GEMINI_API_KEY`. Course
+indexing and large-document retrieval additionally require `OPENAI_API_KEY`,
+`PINECONE_API_KEY`, and `PINECONE_INDEX_NAME`. `/health` reports these readiness
+groups separately and configuration errors expose missing variable names only.
+Image type is verified from file signatures rather than trusting multipart
+headers.
 
 ## 42. Testing
 Prioritize deterministic tests for:

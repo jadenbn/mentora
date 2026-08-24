@@ -4,6 +4,10 @@ This document is the authoritative product north star for the hackathon.
 It answers: **What are we building, and what should it feel like to use?**
 If implementation pressure conflicts with this document, raise the conflict rather than silently redefining the product.
 
+**This is product intent, not a description of what is built.** For the shapes
+and behaviour that exist today, read `TUTOR_AGENT.md`. Where this document
+names something unbuilt, it says so.
+
 ## 1. Product Thesis
 We are building a **persistent, course-aware AI whiteboard tutor**.
 The product should feel less like a chatbot and more like a knowledgeable tutor sitting beside the student, looking at the same piece of paper, understanding the student's actual course, and writing directly alongside them.
@@ -294,18 +298,21 @@ tldraw shapes / text / math
 Do not tightly couple reasoning to one visual style.
 
 ## 19. Structured Canvas Actions
-Likely action types:
+
+Implemented today — the authoritative list is `backend/app/schemas/tutor.py`:
+
 ```text
-text
-math
-arrow
-circle
-underline
-highlight
-check
-cross
+text     say something at a point
+circle   point at a region
+check    mark a region right
+cross    mark a region wrong
 ```
-The exact schema may evolve.
+
+`math`, `arrow`, `underline`, and `highlight` were specified earlier and are
+**not built**. Circling, underlining, and highlighting were three ways to say
+"look here", and a labelled mark duplicated `text`, so one pointing primitive
+carries all of it. Add one back only if the tutor demonstrably cannot express
+something; the renderer and the prompt must change together.
 Model output must be validated before rendering.
 The model should not directly call arbitrary canvas methods.
 

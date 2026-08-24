@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import fitz  # PyMuPDF
+import pymupdf
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,7 +16,7 @@ class ExtractedPage:
 def extract_pdf(file_path: str | Path) -> list[ExtractedPage]:
     """Extract text from each page of a PDF."""
     pages: list[ExtractedPage] = []
-    with fitz.open(str(file_path)) as doc:
+    with pymupdf.open(str(file_path)) as doc:
         for i, page in enumerate(doc):
             text = page.get_text().strip()
             if text:
@@ -26,7 +26,9 @@ def extract_pdf(file_path: str | Path) -> list[ExtractedPage]:
 
 def extract_text_file(file_path: str | Path) -> list[ExtractedPage]:
     """Treat the entire text/markdown file as a single page."""
-    text = Path(file_path).read_text(encoding="utf-8").strip()
+    # Strict UTF-8 is intentional: replacement characters silently corrupt
+    # course notation and make later grounding look valid when it is not.
+    text = Path(file_path).read_text(encoding="utf-8", errors="strict").strip()
     if not text:
         return []
     return [ExtractedPage(page_number=1, text=text)]

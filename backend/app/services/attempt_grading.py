@@ -4,11 +4,6 @@ The tutor grades a canvas; the learning engine records a per-skill attempt.
 Nothing else in this codebase bridges the two, so this module is that
 bridge — a pure function, no DB, no provider call.
 
-This branch forked before app.schemas.tutor existed, so _TutorStatus below
-mirrors WorkStatus's four values under the tutor module's own names instead
-of importing it. Delete _TutorStatus and import app.schemas.tutor.WorkStatus
-once the branches share a history.
-
 Known gap: TutorResponse carries no signal finer than correct / incorrect /
 partial / uncertain — no conceptual/procedural/careless distinction. Every
 incorrect attempt is conservatively tagged CONCEPTUAL_ERROR below. Real
@@ -21,19 +16,10 @@ the tutor path, not something to add from here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
 from app.models.enums import MisconceptionTag
 from app.schemas.learning import ErrorReport
-
-
-class _TutorStatus(str, Enum):
-    """Mirrors app.schemas.tutor.WorkStatus. See module docstring."""
-
-    correct = "correct"
-    incorrect = "incorrect"
-    partial = "partial"
-    uncertain = "uncertain"
+from app.schemas.tutor import WorkStatus
 
 
 @dataclass(frozen=True)
@@ -51,7 +37,7 @@ class AttemptGrading:
 
 
 def to_attempt_grading(
-    status: _TutorStatus, expected_skills: list[str]
+    status: WorkStatus, expected_skills: list[str]
 ) -> AttemptGrading | None:
     """None means: do not record this as an attempt.
 
@@ -59,13 +45,13 @@ def to_attempt_grading(
     canvas there (see app/services/tutor_policy.py on main), so there is
     nothing to feed the student model.
     """
-    if status == _TutorStatus.uncertain:
+    if status == WorkStatus.uncertain:
         return None
 
-    if status == _TutorStatus.correct:
+    if status == WorkStatus.correct:
         return AttemptGrading(correct=True, partial=False, errors=[])
 
-    if status == _TutorStatus.partial:
+    if status == WorkStatus.partial:
         return AttemptGrading(
             correct=False,
             partial=True,

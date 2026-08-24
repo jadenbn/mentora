@@ -2,24 +2,24 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
+from sqlalchemy import event
 from sqlmodel import SQLModel, create_engine
 
+from app.config import database_path
 
-def _db_path() -> Path:
-    # Mirrors the shape app.config.database_path() is expected to take once
-    # config.py exists on this branch — same env var, same repo-relative
-    # default instead of a CWD-relative one.
-    configured = os.getenv("MENTORA_DB_PATH")
-    if configured:
-        return Path(configured).expanduser()
-    return Path(__file__).resolve().parents[1] / "mentora.db"
-
-
-DB_PATH = _db_path()
+DB_PATH = database_path()
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite(dbapi_connection, connection_record) -> None:
+    # This engine shares mentora.db with the raw-sqlite3 CourseRepository.
+    # WAL + a busy timeout let the two independent connection pools write the
+    # same file without tripping "database is locked" under real concurrency.
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
 
 
 def init_db() -> None:
