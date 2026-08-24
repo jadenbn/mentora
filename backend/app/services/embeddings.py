@@ -120,19 +120,22 @@ def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
 
 
 def query_similar(
-    *, query: str, course_id: str, document_id: str, top_k: int = 12
+    *, query: str, course_id: str, document_id: str | None = None, top_k: int = 12
 ) -> list[tuple[str, float]]:
-    """Return ranked chunk ids scoped to one course document."""
+    """Return ranked chunk ids scoped to a course, or one document within it.
+
+    When ``document_id`` is None the query spans the whole course; otherwise
+    it is narrowed to a single document.
+    """
     vector = embed_texts([query])[0]
+    clauses: list[dict[str, Any]] = [{"course_id": {"$eq": course_id}}]
+    if document_id is not None:
+        clauses.append({"document_id": {"$eq": document_id}})
+    metadata_filter = clauses[0] if len(clauses) == 1 else {"$and": clauses}
     results = _get_index().query(
         vector=vector,
         top_k=top_k,
-        filter={
-            "$and": [
-                {"course_id": {"$eq": course_id}},
-                {"document_id": {"$eq": document_id}},
-            ]
-        },
+        filter=metadata_filter,
         include_metadata=True,
     )
     matches = getattr(results, "matches", None)
