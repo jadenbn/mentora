@@ -314,7 +314,7 @@ export function Whiteboard({
           </Tldraw>
         </div>
         <div
-          className="pointer-events-none absolute inset-y-0 right-0 z-50 w-80 min-[1280px]:static min-[1280px]:z-0"
+          className="pointer-events-none absolute inset-y-0 right-0 z-50 w-80 min-[1280px]:relative min-[1280px]:inset-auto min-[1280px]:z-0"
           ref={setDrawerHost}
         />
       </div>

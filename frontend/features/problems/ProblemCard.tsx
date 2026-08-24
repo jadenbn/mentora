@@ -101,7 +101,7 @@ function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "ma
     const Element = segment.display ? "div" : "span";
     return (
       <Element
-        className={segment.display ? "my-3 overflow-x-auto py-1" : "inline-math"}
+        className={segment.display ? "my-2 overflow-x-auto py-1" : "inline-math"}
         dangerouslySetInnerHTML={{ __html: markup }}
       />
     );
@@ -123,7 +123,7 @@ function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "ma
 
 export function ProblemBody({ prompt }: { prompt: string }) {
   return (
-    <div className="whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]">
+    <div className="whitespace-pre-wrap text-[clamp(1rem,1.55vw,1.3rem)] leading-relaxed text-[#202620]">
       {parseProblemPrompt(prompt).map((segment, index) =>
         segment.kind === "math" ? (
           <MathSegment key={`${index}-${segment.source}`} segment={segment} />
@@ -141,7 +141,7 @@ export function ProblemCard({ problem }: { problem: Problem }) {
       aria-labelledby="workspace-problem-heading"
       className="shrink-0 border-b border-[#d9d6cc] bg-[#f5f2e9] px-4 py-3 sm:px-6 sm:py-4"
     >
-      <div className="mx-auto max-h-[28dvh] max-w-5xl overflow-y-auto rounded-2xl border border-[#d8d3c6] border-l-[6px] border-l-[#607d6c] bg-[#fffdf8] px-5 py-4 shadow-[0_10px_30px_rgba(48,58,48,0.08)] sm:px-8 sm:py-5">
+      <div className="mx-auto max-h-[32dvh] max-w-5xl overflow-y-auto rounded-2xl border border-[#d8d3c6] border-l-[6px] border-l-[#607d6c] bg-[#fffdf8] px-5 py-4 shadow-[0_10px_30px_rgba(48,58,48,0.08)] sm:px-8 sm:py-5">
         <p
           className="mb-2 text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[#607d6c]"
           id="workspace-problem-heading"
