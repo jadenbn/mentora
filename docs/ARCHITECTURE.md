@@ -576,10 +576,12 @@ timestamp
 ```
 Do not make the core tutor loop depend on a sophisticated model.
 
-Learning events are not emitted yet. The tutor observes plenty worth
-recording, but the learning engine wants closed-vocabulary, slug-identified,
-float-typed facts and the tutor produces prose. That adapter is a design
-decision rather than a merge, and it waits until the canvas loop works.
+The tutor observes plenty worth recording, but the learning engine wants
+closed-vocabulary, slug-identified, float-typed facts and the tutor produces
+prose. That adapter now exists: `app/services/attempt_grading.py` turns a
+graded `WorkStatus` (correct / incorrect / partial / uncertain) into the
+per-skill `AttemptGrading` that `record_attempt` ingests. See §47 for the
+full closed loop and its remaining granularity gap.
 
 ## 34. Built-In Course
 Support at least one built-in demo course, likely Calculus I.
@@ -786,3 +788,91 @@ Persistent AI feedback on canvas
 Student-model signal
 ```
 If the architecture supports this cleanly, it is serving the product.
+
+## 47. Integrated Learning Engine
+
+The backend is the merge of two halves: the **tutor product** (Gemini
+whiteboard tutor, grounded question generation, Pinecone retrieval, document
+repository — everything above) and the **adaptive learning engine** (a skill
+DAG, per-student mastery estimation, a selection policy, and a closed-loop
+simulator). This section describes how they connect; the halves themselves
+are documented above and in `TUTOR_AGENT.md`.
+
+### 47.1 Two persistence layers, one file — deliberately
+
+Two ORMs open the same `backend/mentora.db`, and they are *not* unified:
+
+```text
+app/db.py        SQLModel engine   -> skill, skill_state, student_profile,
+                                       attempt, course_taxonomy_version
+app/database.py  raw sqlite3       -> course_documents, document_chunks,
+                 CourseRepository     generated_problems,
+                                       problem_grounding_chunks, problem_skills
+```
+
+Their table sets are disjoint and both are well tested; merging them would be
+churn for no user-visible gain. Two rules keep the arrangement safe:
+
+- **One source of truth for the path.** Both resolve `MENTORA_DB_PATH` through
+  `app.config.database_path()`; `app/db.py` no longer has its own copy.
+- **Survive two writers.** Each layer enables `PRAGMA journal_mode=WAL` and
+  `PRAGMA busy_timeout=5000`, so two independent connection pools on one SQLite
+  file do not trip `database is locked`.
+
+There is deliberately **no foreign key across the boundary** — e.g.
+`problem_skills.skill_id` (raw layer) is not an FK to `skill.id` (SQLModel
+layer). `skill_id` is validated in the service instead.
+
+Because `SQLModel.metadata.create_all()` does not migrate an existing table,
+schema changes to the SQLModel tables (such as the `skill` columns in §47.3)
+require deleting and re-seeding the dev `mentora.db`.
+
+### 47.2 The closed loop
+
+`POST /api/courses/{course_id}/next-problem` runs the whole cycle:
+
+```text
+selection.select_next()        -> GenerationSpec (skill, difficulty, forms,
+                                    retrieval_query) or 404 if nothing unlocked
+retrieval.search_course()      -> rank course chunks by the spec's query;
+                                    the top chunk's document is the target
+QuestionService.generate()     -> a grounded problem in that document, from a
+                                    request string rendered from the spec
+repository.set_problem_skills()-> a problem_skills row tying problem -> skill
+return { problem, spec }        -> client posts the attempt back by problem_id
+```
+
+The attempt then flows back through `POST /attempts` ->
+`student_model_service.record_attempt` -> mastery moves. Crucially, when the
+attempt names a problem we generated, **`expected_skills` is derived
+server-side from `problem_skills`**, not taken from the client payload; the
+client's list is only a cross-checked hint (logged on disagreement). This
+closes a trust gap where a client could attribute any attempt to any skill and
+move that mastery.
+
+### 47.3 Skills-to-material bridge
+
+The two halves met with a gap: selection picks a *skill*; generation needs a
+*document* and a sentence of intent. Two additions close it:
+
+- **`keywords` and `question_forms`** — optional JSON columns on `Skill`,
+  authored per skill in `data/courses/*.json`. `keywords` supply the
+  textbook's own vocabulary for `search_course`; `question_forms` populate
+  `GenerationSpec.avoid_forms`. Both default empty, so existing course files
+  stay valid. `seed_all_courses` re-seeds a course when its file's content
+  hash changes (tracked in `course_taxonomy_version`), instead of skipping it
+  once rows exist; a renamed/removed skill orphans its `SkillState`, which is
+  logged rather than dropped.
+- **`problem_skills`** — the raw-layer bridge table recording which skill(s)
+  each generated problem targets, populated by the `next-problem` route and
+  read back by `record_attempt`.
+
+### 47.4 Known granularity gap
+
+`attempt_grading` can only tag a wrong answer `CONCEPTUAL_ERROR`, because
+`TutorResponse` carries nothing finer than correct / incorrect / partial /
+uncertain. This flattens the `MisconceptionTag` vocabulary and limits what
+`selection.target_misconception` can surface. Closing it means having the
+tutor's single model call emit a misconception directly (extending
+`TutorPlan`, its response schema, and the prompt) — a change owned by the
+tutor path, deferred as the most prompt-delicate work in the repo.
