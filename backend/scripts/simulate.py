@@ -64,6 +64,19 @@ CONCENTRATION_WARN = 0.5  # one skill taking this share of all attempts is worth
 MASTERY_BAR = 0.85  # narrative-only "mastered" bar for --journey, well above UNLOCK_THRESHOLD
 JOURNEY_SNAPSHOTS = 10  # how many progress snapshots to print across a --journey run
 
+# --journey models actual learning, not just estimation of a fixed level:
+# true ability per skill RISES with direct practice on that skill, toward a
+# ceiling, rather than being drawn once and held constant. A fixed true
+# ability (what every other archetype in this file uses, deliberately, to
+# test whether the estimator finds a stationary target) can leave mastery
+# oscillating forever near the 0.9 target_difficulty cap if ability isn't
+# comfortably above it. A learner whose actual skill keeps climbing
+# eventually outpaces that cap for good, so mastery converging and holding
+# stops being a coin flip and becomes the expected outcome.
+TRUE_ABILITY_START = 0.30  # a genuine novice, not the "weak" archetype's 0.22 floor
+TRUE_ABILITY_CEILING = 0.97
+TRUE_ABILITY_GROWTH_RATE = 0.04  # per direct attempt on that specific skill
+
 SESSION_SIZE_RANGE = (4, 14)  # attempts per simulated sitting
 TYPICAL_GAP_DAYS = (0.5, 2.0)  # gap before the next sitting, usually
 BREAK_PROBABILITY = 0.12  # chance a gap is a real break instead
@@ -116,6 +129,33 @@ class Archetype:
     name: str
     ability_fn: "callable"
     hint_farmer: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Growing ability, for --journey: true ability as a function of practice
+# rather than a fixed draw. See TRUE_ABILITY_* constants above.
+
+def _growing_ability_params(skills, rng) -> dict:
+    """(start, ceiling, rate) per skill, each lightly jittered -- not every
+    skill is equally natural, and not every skill is learned at the same
+    pace, even for one student."""
+    return {
+        s.id: (
+            _clamp01(rng.gauss(TRUE_ABILITY_START, 0.05)),
+            _clamp01(rng.gauss(TRUE_ABILITY_CEILING, 0.015)),
+            max(0.015, rng.gauss(TRUE_ABILITY_GROWTH_RATE, 0.008)),
+        )
+        for s in skills
+    }
+
+
+def _true_ability_now(params: tuple, n_attempts: int) -> float:
+    """Exponential learning curve: starts at `start`, approaches `ceiling`
+    with diminishing returns per attempt. Monotonically increasing in
+    n_attempts -- this is what makes eventual mastery inevitable rather
+    than a coin flip against a fixed target."""
+    start, ceiling, rate = params
+    return ceiling - (ceiling - start) * math.exp(-rate * n_attempts)
 
 
 ARCHETYPES = [
@@ -319,10 +359,6 @@ def run_journey(seed: int, target_attempts: int) -> int:
     demonstration run, not part of the standing eval suite.
     """
     rng = random.Random(seed)
-    # Deliberately high and tight: this student is capable everywhere, not
-    # just on average -- the point is to watch the whole DAG unlock and
-    # converge, not to model a realistic mixed-ability student.
-    archetype = Archetype("master_journey", lambda sk, d, r: _correlated_abilities(0.93, 0.04, sk, r))
     student_id = "journey-student"
 
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
@@ -331,12 +367,14 @@ def run_journey(seed: int, target_attempts: int) -> int:
     with Session(engine) as session:
         skills = _seed_calc1(session)
         depths = compute_depths(skills)
-        true_ability = archetype.ability_fn(skills, depths, rng)
+        ability_params = _growing_ability_params(skills, rng)
+        attempts_by_skill: Counter = Counter()
 
         print(f"=== NOVICE -> MASTER: {COURSE_ID}, seed={seed}, "
               f"target={target_attempts} attempts ===")
-        print(f"({len(skills)} skills, hidden true ability ~0.93 +/- 0.04 on every one, "
-              f"starting mastery 0.50 on all)\n")
+        print(f"({len(skills)} skills, true ability starts ~{TRUE_ABILITY_START:.2f} on every "
+              f"one and RISES with direct practice toward ~{TRUE_ABILITY_CEILING:.2f} -- this "
+              f"student is actually learning, not just being measured against a fixed level)\n")
 
         clock = {"now": datetime(2026, 1, 1, tzinfo=timezone.utc)}
         original_clock = selection.datetime
@@ -376,10 +414,14 @@ def run_journey(seed: int, target_attempts: int) -> int:
                     if spec.is_review:
                         review_count += 1
 
+                    current_ability = _true_ability_now(
+                        ability_params[spec.skill_id], attempts_by_skill[spec.skill_id]
+                    )
                     correct, hints, partial = simulate_outcome(
-                        true_ability[spec.skill_id], spec.target_difficulty, rng,
+                        current_ability, spec.target_difficulty, rng,
                         hint_farmer=False,
                     )
+                    attempts_by_skill[spec.skill_id] += 1
                     payload = AttemptCreate(
                         student_id=student_id,
                         session_id=f"sitting-{session_index}",
@@ -432,19 +474,20 @@ def run_journey(seed: int, target_attempts: int) -> int:
 
             print(f"\n=== FINAL: {attempts_done} attempts across {total_days} simulated days ===")
             print(f"  forced review: {review_count} picks ({review_count / attempts_done:.1%})")
-            print(f"\n  {'depth':<6}{'skill':<45}{'attempts':>9}{'mastery':>9}{'true':>7}")
+            print(f"\n  {'depth':<6}{'skill':<45}{'attempts':>9}{'mastery':>9}{'true now':>9}")
             mastered_count = 0
             for skill in sorted(skills, key=lambda s: (depths[s.id], s.id)):
                 state = session.get(SkillState, (student_id, skill.id))
                 if state is None:
-                    print(f"  d{depths[skill.id]:<5}{skill.id:<45}{'--':>9}{'--':>9}{'--':>7}"
+                    print(f"  d{depths[skill.id]:<5}{skill.id:<45}{'--':>9}{'--':>9}{'--':>9}"
                           f"  NEVER ENTERED ROTATION")
                     continue
+                current_ability = _true_ability_now(ability_params[skill.id], attempts_by_skill[skill.id])
                 if state.mastery >= MASTERY_BAR:
                     mastered_count += 1
                 flag = "  MASTERED" if state.mastery >= MASTERY_BAR else ""
                 print(f"  d{depths[skill.id]:<5}{skill.id:<45}{state.attempts:>9}"
-                      f"{state.mastery:>9.2f}{true_ability[skill.id]:>7.2f}{flag}")
+                      f"{state.mastery:>9.2f}{current_ability:>9.2f}{flag}")
 
             print(f"\n  {mastered_count}/{len(skills)} skills mastered (mastery >= {MASTERY_BAR})")
             if mastered_count == len(skills):
