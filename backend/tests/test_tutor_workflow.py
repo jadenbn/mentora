@@ -8,10 +8,11 @@ error types the API layer can map to status codes.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("google.adk", reason="provider adapter requires google-adk")
+pytest.importorskip("google.genai", reason="provider adapter requires google-genai")
 
 from app.agents.tutor_workflow import (  # noqa: E402
     TUTOR_PLAN_RESPONSE_SCHEMA,
@@ -20,6 +21,7 @@ from app.agents.tutor_workflow import (  # noqa: E402
 )
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout  # noqa: E402
 from app.schemas.tutor import TutorMode  # noqa: E402
+from app.schemas.problems import GroundingChunk, ProblemContext  # noqa: E402
 from tests import factories as f  # noqa: E402
 
 pytestmark = pytest.mark.provider
@@ -95,6 +97,49 @@ class TestMalformedOutput:
         assert workflow.attempts == 2
 
 
+class TestDirectGeminiRequest:
+    def test_required_tutor_context_and_image_are_sent_together(self):
+        workflow, calls = _recording_workflow()
+        problem = ProblemContext(
+            id="problem_1",
+            course_id="course_demo",
+            document_id="doc_1",
+            prompt="Differentiate $x^2$.",
+        )
+        chunk = GroundingChunk(chunk_id="chunk_1", page=2, text="Use the power rule.")
+
+        asyncio.run(
+            workflow.run(
+                mode=TutorMode.explain,
+                canvas_image=f.PNG,
+                canvas_mime_type="image/png",
+                prior_annotations=[f.normalized_bounds()],
+                problem=problem,
+                course_context=[chunk],
+            )
+        )
+
+        call = calls[0]
+        message = call["contents"]
+        prompt = message.parts[0].text
+        assert "<tutor-mode>explain</tutor-mode>" in prompt
+        assert problem.prompt in prompt
+        assert chunk.text in prompt
+        assert '"width": 0.2' in prompt
+        assert message.parts[1].inline_data.data == f.PNG
+        assert message.parts[1].inline_data.mime_type == "image/png"
+
+    def test_direct_call_uses_mode_instruction_and_structured_output(self):
+        workflow, calls = _recording_workflow()
+        asyncio.run(_run(workflow))
+
+        call = calls[0]
+        assert call["model"] == "test-model"
+        assert "Mode — hint" in call["config"].system_instruction
+        assert call["config"].response_mime_type == "application/json"
+        assert call["config"].response_schema == TUTOR_PLAN_RESPONSE_SCHEMA
+
+
 # --- helpers ---------------------------------------------------------------
 
 
@@ -127,7 +172,7 @@ def _workflow(*, raises: Exception | None = None, malformed_responses: int = 0):
 
     class Harness(GeminiTutorWorkflow):
         def __init__(self):
-            super().__init__(model="test-model", timeout_seconds=1)
+            super().__init__(api_key="test-key", model="test-model", timeout_seconds=1)
             self.attempts = 0
 
         async def _request_plan(self, **kwargs):
@@ -139,6 +184,32 @@ def _workflow(*, raises: Exception | None = None, malformed_responses: int = 0):
             return f.plan().model_dump(mode="json")
 
     return Harness()
+
+
+def _recording_workflow():
+    calls: list[dict] = []
+
+    class Models:
+        async def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(parsed=f.plan().model_dump(mode="json"), text=None)
+
+    class AsyncClient:
+        models = Models()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    workflow = GeminiTutorWorkflow(
+        api_key="test-key",
+        model="test-model",
+        timeout_seconds=1,
+    )
+    workflow._client = lambda: SimpleNamespace(aio=AsyncClient())
+    return workflow, calls
 
 
 async def _run(workflow):

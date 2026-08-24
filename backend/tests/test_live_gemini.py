@@ -35,7 +35,11 @@ def workflow():
     from app.agents.tutor_workflow import GeminiTutorWorkflow
 
     settings = TutorSettings.from_environment()
-    return GeminiTutorWorkflow(model=settings.gemini_model, timeout_seconds=60)
+    return GeminiTutorWorkflow(
+        api_key=settings.gemini_api_key,
+        model=settings.gemini_model,
+        timeout_seconds=60,
+    )
 
 
 def test_a_real_request_returns_a_renderable_plan(workflow, canvas):

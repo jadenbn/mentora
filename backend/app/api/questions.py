@@ -50,6 +50,7 @@ def get_question_service(
     return QuestionService(
         repository=repository,
         workflow=GeminiQuestionWorkflow(
+            api_key=settings.gemini_api_key,
             model=settings.gemini_model,
             timeout_seconds=settings.request_timeout_seconds,
         ),

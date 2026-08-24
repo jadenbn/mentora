@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REQUIRED_SETTINGS = ("GEMINI_API_KEY",)
@@ -51,12 +51,14 @@ def database_path() -> Path:
 
 @dataclass(frozen=True)
 class TutorSettings:
+    gemini_api_key: str = field(repr=False)
     gemini_model: str
     request_timeout_seconds: float
 
     @classmethod
     def from_environment(cls) -> "TutorSettings":
         return cls(
+            gemini_api_key=os.getenv("GEMINI_API_KEY") or "",
             gemini_model=os.getenv("GEMINI_MODEL") or "gemini-3.7-flash",
             request_timeout_seconds=float(os.getenv("TUTOR_REQUEST_TIMEOUT_SECONDS") or "45"),
         )
