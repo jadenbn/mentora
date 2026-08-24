@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlmodel import Session, select
 
 from app.models.course_taxonomy_version import CourseTaxonomyVersion
+from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.models.skill_state import SkillState
 
@@ -23,6 +24,7 @@ _SLUG_REPEAT = re.compile(r"-{2,}")
 
 _MAX_LIST_ENTRIES = 12
 _MAX_ENTRY_CHARS = 80
+_MAX_SKILLS_PER_COURSE = 200
 
 
 class TaxonomyError(ValueError):
@@ -82,6 +84,12 @@ def _validate_string_list(skill_id: str, field: str, values: list[str]) -> None:
 
 def validate_taxonomy(skills: list[Skill]) -> None:
     """Raise TaxonomyError on any structural problem in a skill list."""
+    if len(skills) > _MAX_SKILLS_PER_COURSE:
+        raise TaxonomyError(
+            f"course has {len(skills)} skills (max {_MAX_SKILLS_PER_COURSE}); "
+            "a generator producing this many likely malfunctioned"
+        )
+
     by_id: dict[str, Skill] = {}
     for skill in skills:
         if skill.id in by_id:
@@ -104,6 +112,39 @@ def validate_taxonomy(skills: list[Skill]) -> None:
     _validate_acyclic(by_id)
 
 
+def build_taxonomy(
+    course_id: str, raw_skills: list[dict], origin: SkillOrigin
+) -> list[Skill]:
+    """Turn a list of raw skill dicts into validated Skill objects.
+
+    The single builder for every taxonomy source — hand-authored course JSON
+    and LLM-generated output alike take this same path, so a generated skill
+    is held to exactly the rules a seeded one is: normalized ids, resolved
+    prereqs, no cycles, bounded keyword/question-form lists. Raises
+    TaxonomyError on any structural problem; raises nothing on success.
+    """
+    skills: list[Skill] = []
+    for entry in raw_skills:
+        skill_id = normalize_slug(course_id, entry["id"])
+        prereqs = [normalize_slug(course_id, p) for p in entry.get("prereqs", [])]
+        skills.append(
+            Skill(
+                id=skill_id,
+                course_id=course_id,
+                name=entry["name"],
+                description=entry["description"],
+                difficulty_band=entry["difficulty_band"],
+                prereqs=prereqs,
+                keywords=list(entry.get("keywords", [])),
+                question_forms=list(entry.get("question_forms", [])),
+                origin=origin,
+            )
+        )
+
+    validate_taxonomy(skills)
+    return skills
+
+
 def load_taxonomy(course_id: str, data_dir: Path | None = None) -> list[Skill]:
     """Load a course's seed taxonomy from data/courses/{course_id}.json.
 
@@ -120,26 +161,7 @@ def load_taxonomy(course_id: str, data_dir: Path | None = None) -> list[Skill]:
             f"got {raw.get('course_id')})"
         )
 
-    skills: list[Skill] = []
-    for entry in raw["skills"]:
-        skill_id = normalize_slug(course_id, entry["id"])
-        prereqs = [normalize_slug(course_id, p) for p in entry.get("prereqs", [])]
-        skills.append(
-            Skill(
-                id=skill_id,
-                course_id=course_id,
-                name=entry["name"],
-                description=entry["description"],
-                difficulty_band=entry["difficulty_band"],
-                prereqs=prereqs,
-                keywords=list(entry.get("keywords", [])),
-                question_forms=list(entry.get("question_forms", [])),
-                origin="seed",
-            )
-        )
-
-    validate_taxonomy(skills)
-    return skills
+    return build_taxonomy(course_id, raw["skills"], SkillOrigin.SEED)
 
 
 def _course_content_hash(path: Path) -> str:

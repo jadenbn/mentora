@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.services.taxonomy import (
     DATA_DIR,
     TaxonomyError,
+    build_taxonomy,
     load_taxonomy,
     normalize_slug,
     validate_taxonomy,
@@ -119,6 +121,44 @@ def test_validate_taxonomy_rejects_out_of_bounds_difficulty() -> None:
               difficulty_band=1.5, prereqs=[]),
     ]
     with pytest.raises(TaxonomyError, match="out of \\[0, 1\\]"):
+        validate_taxonomy(skills)
+
+
+def test_build_taxonomy_is_the_shared_path_for_load_taxonomy() -> None:
+    """load_taxonomy is build_taxonomy(..., SEED) over the course file's raw dicts."""
+    raw = [
+        {"id": "root", "name": "Root", "description": "d", "difficulty_band": 0.2},
+        {"id": "child", "name": "Child", "description": "d", "difficulty_band": 0.5,
+         "prereqs": ["root"], "keywords": ["k1"], "question_forms": ["solve for x"]},
+    ]
+    built = build_taxonomy("calc1", raw, SkillOrigin.SEED)
+    assert [s.id for s in built] == ["calc1.root", "calc1.child"]
+    assert built[1].prereqs == ["calc1.root"]
+    assert all(s.origin == SkillOrigin.SEED for s in built)
+
+
+def test_build_taxonomy_tags_generated_origin() -> None:
+    raw = [{"id": "x", "name": "X", "description": "d", "difficulty_band": 0.3}]
+    built = build_taxonomy("calc1", raw, SkillOrigin.GENERATED)
+    assert built[0].origin == SkillOrigin.GENERATED
+
+
+def test_build_taxonomy_enforces_the_same_validation_as_load_taxonomy() -> None:
+    cyclic = [
+        {"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5, "prereqs": ["b"]},
+        {"id": "b", "name": "B", "description": "d", "difficulty_band": 0.5, "prereqs": ["a"]},
+    ]
+    with pytest.raises(TaxonomyError, match="cycle"):
+        build_taxonomy("calc1", cyclic, SkillOrigin.GENERATED)
+
+
+def test_validate_taxonomy_rejects_too_many_skills() -> None:
+    skills = [
+        Skill(id=f"calc1.s{i}", course_id="calc1", name=f"S{i}", description="d",
+              difficulty_band=0.5, prereqs=[])
+        for i in range(201)
+    ]
+    with pytest.raises(TaxonomyError, match="200"):
         validate_taxonomy(skills)
 
 
