@@ -1,6 +1,6 @@
 """Environment-backed configuration.
 
-One required credential. Course retrieval is deferred, so Pinecone and OpenAI
+One required credential. Room retrieval is deferred, so Pinecone and OpenAI
 are no longer needed to run the tutor.
 """
 

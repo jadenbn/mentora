@@ -92,7 +92,7 @@ def _parse_prior_annotations(raw: str) -> list[NormalizedBounds]:
 
 @router.post("/analyze", response_model=TutorResponse)
 async def analyze(
-    course_id: Annotated[str, Form(min_length=1)],
+    room_id: Annotated[str, Form(min_length=1)],
     mode: Annotated[TutorMode, Form()],
     canvas_image: Annotated[UploadFile, File()],
     prior_annotations: Annotated[str, Form()] = "[]",
@@ -101,7 +101,7 @@ async def analyze(
     image, mime_type = await _read_image(canvas_image)
     try:
         return await service.analyze(
-            course_id=course_id,
+            room_id=room_id,
             mode=mode,
             canvas_image=image,
             canvas_mime_type=mime_type,

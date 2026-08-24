@@ -21,7 +21,7 @@ def service(workflow: f.StubWorkflow | None = None) -> tuple[TutorService, f.Stu
 
 async def analyze(svc: TutorService, **over):
     kwargs = {
-        "course_id": "course_demo",
+        "room_id": "room_demo",
         "mode": TutorMode.hint,
         "canvas_image": f.PNG,
         "canvas_mime_type": "image/png",

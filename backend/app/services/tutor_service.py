@@ -39,14 +39,14 @@ class TutorService:
     async def analyze(
         self,
         *,
-        course_id: str,
+        room_id: str,
         mode: TutorMode,
         canvas_image: bytes,
         canvas_mime_type: str,
         prior_annotations: list[NormalizedBounds],
     ) -> TutorResponse:
-        # course_id is carried but not yet used: it is the retrieval scope, and
-        # course grounding lands after the canvas loop works end to end.
+        # room_id is carried but not yet used: it is the retrieval scope, and
+        # room grounding lands after the canvas loop works end to end.
         plan = await self.workflow.run(
             mode=mode,
             canvas_image=canvas_image,

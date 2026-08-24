@@ -13,7 +13,7 @@ class DocumentType(str, Enum):
 
 
 class ChunkMetadata(BaseModel):
-    course_id: str
+    room_id: str
     document_id: str
     filename: str
     page: int

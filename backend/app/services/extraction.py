@@ -1,4 +1,4 @@
-"""Extract text from uploaded course documents (PDF, TXT, MD)."""
+"""Extract text from uploaded room documents (PDF, TXT, MD)."""
 
 from __future__ import annotations
 

@@ -22,7 +22,7 @@ from app.schemas.documents import DocumentType
 
 print("✓ All imports successful")
 
-# Test with a real PDF from your course materials
+# Test with a real PDF from your room materials
 test_pdf = Path("test_data/sample.pdf")
 if not test_pdf.exists():
     print(f"\n⚠️  No test PDF found at {test_pdf}")
@@ -51,7 +51,7 @@ else:
     print("\n2. Chunking with metadata...")
     chunks = chunk_pages(
         pages=pages,
-        course_id="test_course_001",
+        room_id="test_room_001",
         document_id="test_doc_001",
         filename=test_pdf.name,
         document_type=DocumentType.syllabus,
@@ -67,8 +67,8 @@ else:
 
     # 4. Retrieve
     print("\n4. Testing retrieval...")
-    query = "What is the course about?"
-    results = query_similar(query=query, course_id="test_course_001", top_k=3)
+    query = "What is the room about?"
+    results = query_similar(query=query, room_id="test_room_001", top_k=3)
     print(f"   ✓ Found {len(results)} results for '{query}'")
     for i, result in enumerate(results, 1):
         print(f"      [{i}] {result['filename']} (page {result['page']}, score={result['score']:.3f})")

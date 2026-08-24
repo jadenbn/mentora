@@ -77,7 +77,7 @@ def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
             "id": vector_id(chunk.document_id, i),
             "values": embedding,
             "metadata": {
-                "course_id": chunk.course_id,
+                "room_id": chunk.room_id,
                 "document_id": chunk.document_id,
                 "filename": chunk.filename,
                 "page": chunk.page,
@@ -97,17 +97,17 @@ def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
 
 def query_similar(
     query: str,
-    course_id: str,
+    room_id: str,
     top_k: int = 5,
 ) -> list[dict]:
-    """Embed a query and retrieve the most relevant chunks for a course."""
+    """Embed a query and retrieve the most relevant chunks for a room."""
     index = _get_index()
     query_embedding = embed_texts([query])[0]
 
     results = index.query(
         vector=query_embedding,
         top_k=top_k,
-        filter={"course_id": {"$eq": course_id}},
+        filter={"room_id": {"$eq": room_id}},
         include_metadata=True,
     )
 

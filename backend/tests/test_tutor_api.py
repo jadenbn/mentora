@@ -33,7 +33,7 @@ def client(workflow, monkeypatch):
 
 
 def post(client, *, image=f.PNG, mime="image/png", **over):
-    data = {"course_id": "course_demo", "mode": "hint"}
+    data = {"room_id": "room_demo", "mode": "hint"}
     data.update({k: v for k, v in over.items() if v is not None})
     files = {"canvas_image": ("canvas.png", image, mime)} if image is not None else {}
     return client.post("/api/tutor/analyze", data=data, files=files)
@@ -68,7 +68,7 @@ class TestRequestValidation:
     def test_an_unknown_mode_is_rejected(self, client):
         assert post(client, mode="roast").status_code == 422
 
-    def test_a_missing_course_id_is_rejected(self, client):
+    def test_a_missing_room_id_is_rejected(self, client):
         response = client.post(
             "/api/tutor/analyze",
             data={"mode": "hint"},

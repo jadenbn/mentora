@@ -13,15 +13,15 @@ from app.services.embeddings import delete_document_vectors, upsert_chunks
 _HASH_BLOCK = 1024 * 1024
 
 
-def compute_document_id(file_path: str | Path, course_id: str) -> str:
-    """Deterministic id from course + file contents.
+def compute_document_id(file_path: str | Path, room_id: str) -> str:
+    """Deterministic id from room + file contents.
 
     Content-addressed on purpose: re-uploading the same PDF yields the same id,
     so its vector ids are stable and the upsert overwrites the previous copy
     instead of indexing the document a second time.
     """
     digest = hashlib.sha256()
-    digest.update(course_id.encode("utf-8"))
+    digest.update(room_id.encode("utf-8"))
     digest.update(b"\0")
     with Path(file_path).open("rb") as f:
         for block in iter(lambda: f.read(_HASH_BLOCK), b""):
@@ -31,7 +31,7 @@ def compute_document_id(file_path: str | Path, course_id: str) -> str:
 
 def ingest_document(
     file_path: str | Path,
-    course_id: str,
+    room_id: str,
     document_type: DocumentType = DocumentType.other,
     filename: str | None = None,
 ) -> IngestionResult:
@@ -39,13 +39,13 @@ def ingest_document(
 
     upload -> extract text -> chunk -> embed/index
 
-    Idempotent: ingesting the same file into the same course replaces the
+    Idempotent: ingesting the same file into the same room replaces the
     existing chunks rather than adding duplicates.
     """
     path = Path(file_path)
     # `path` may be a temp file, so prefer the caller's original filename.
     display_name = filename or path.name
-    document_id = compute_document_id(path, course_id)
+    document_id = compute_document_id(path, room_id)
 
     # 1. Extract
     pages = extract_document(path)
@@ -53,7 +53,7 @@ def ingest_document(
     # 2. Chunk with metadata
     chunks = chunk_pages(
         pages=pages,
-        course_id=course_id,
+        room_id=room_id,
         document_id=document_id,
         filename=display_name,
         document_type=document_type,

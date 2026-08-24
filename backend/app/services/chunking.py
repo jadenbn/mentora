@@ -21,7 +21,7 @@ splitter = RecursiveCharacterTextSplitter(
 
 def chunk_pages(
     pages: list[ExtractedPage],
-    course_id: str,
+    room_id: str,
     document_id: str,
     filename: str,
     document_type: DocumentType,
@@ -34,7 +34,7 @@ def chunk_pages(
         for split in splits:
             chunks.append(
                 ChunkMetadata(
-                    course_id=course_id,
+                    room_id=room_id,
                     document_id=document_id,
                     filename=filename,
                     page=page.page_number,
