@@ -31,6 +31,7 @@ export function CourseMaterials({ courseId }: { courseId: string }) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [questionRequests, setQuestionRequests] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -78,10 +79,19 @@ export function CourseMaterials({ courseId }: { courseId: string }) {
 
   async function handleGenerate(document: CourseDocument) {
     if (generatingId) return;
+    const questionRequest = questionRequests[document.document_id]?.trim() ?? "";
+    if (!questionRequest) {
+      setError("Describe the kind of question you want generated.");
+      return;
+    }
     setGeneratingId(document.document_id);
     setError(null);
     try {
-      const problem = await generateCourseQuestion(courseId, document.document_id);
+      const problem = await generateCourseQuestion(
+        courseId,
+        document.document_id,
+        questionRequest,
+      );
       const space = createSpace(
         courseId,
         `Practice — ${withoutExtension(document.filename)}`,
@@ -147,7 +157,7 @@ export function CourseMaterials({ courseId }: { courseId: string }) {
         <ul className="mt-5 grid gap-3 sm:grid-cols-2">
           {documents.map((document) => (
             <li
-              className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4"
+              className="rounded-xl border border-slate-200 bg-white p-4"
               key={document.document_id}
             >
               <div className="min-w-0">
@@ -157,14 +167,33 @@ export function CourseMaterials({ courseId }: { courseId: string }) {
                   {document.total_pages === 1 ? "" : "s"}
                 </p>
               </div>
-              <button
-                className="shrink-0 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:text-slate-400"
-                disabled={generatingId !== null}
-                onClick={() => void handleGenerate(document)}
-                type="button"
-              >
-                {generatingId === document.document_id ? "Generating…" : "Generate question"}
-              </button>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  aria-label={`Question request for ${document.filename}`}
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  maxLength={1000}
+                  onChange={(event) =>
+                    setQuestionRequests((current) => ({
+                      ...current,
+                      [document.document_id]: event.target.value,
+                    }))
+                  }
+                  placeholder="e.g. A difficult conceptual chain-rule question"
+                  type="text"
+                  value={questionRequests[document.document_id] ?? ""}
+                />
+                <button
+                  className="shrink-0 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:text-slate-400"
+                  disabled={
+                    generatingId !== null ||
+                    !(questionRequests[document.document_id]?.trim())
+                  }
+                  onClick={() => void handleGenerate(document)}
+                  type="button"
+                >
+                  {generatingId === document.document_id ? "Generating…" : "Generate question"}
+                </button>
+              </div>
             </li>
           ))}
         </ul>

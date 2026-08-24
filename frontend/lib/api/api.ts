@@ -170,13 +170,17 @@ interface ProblemResponse {
 export async function generateCourseQuestion(
   courseId: string,
   documentId: string,
+  questionRequest: string,
 ): Promise<Problem> {
   const response = await fetch(
     `${apiBaseUrl()}/api/courses/${courseId}/questions/generate`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ document_id: documentId }),
+      body: JSON.stringify({
+        document_id: documentId,
+        question_request: questionRequest.trim(),
+      }),
     },
   );
   const problem = await courseResponse<ProblemResponse>(response, "Generating a question");

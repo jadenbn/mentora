@@ -155,7 +155,9 @@ describe("course material APIs", () => {
       source: "generated",
       prompt: "Differentiate x squared.",
     }));
-    await expect(generateCourseQuestion("course_demo", "doc_1")).resolves.toEqual({
+    await expect(
+      generateCourseQuestion("course_demo", "doc_1", "  A conceptual question  "),
+    ).resolves.toEqual({
       id: "problem_1",
       courseId: "course_demo",
       documentId: "doc_1",
@@ -165,6 +167,10 @@ describe("course material APIs", () => {
     expect(spy.mock.calls[0][1]).toMatchObject({
       method: "POST",
       headers: { "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(spy.mock.calls[0][1].body as string)).toEqual({
+      document_id: "doc_1",
+      question_request: "A conceptual question",
     });
   });
 });
