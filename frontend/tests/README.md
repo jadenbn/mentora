@@ -41,7 +41,9 @@ Two rules prevent that, and both are tested:
 1. **AI-authored shapes are excluded from the exported image.** The student's
    work is the only thing in the picture, by construction rather than by asking
    the prompt nicely.
-2. **Their positions are sent separately** as `prior_annotations`, so the model
+2. **System/problem shapes are also excluded** and their structured problem is
+   sent as `problem_context`, so the prompt is never mistaken for student work.
+3. **Tutor positions are sent separately** as `prior_annotations`, so the model
    still knows where it has already written and can build on it.
 
 A canvas holding only prior feedback therefore has nothing to analyze, and

@@ -6,7 +6,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { analyzeCanvas, apiBaseUrl, TutorApiError } from "@/lib/api/api";
+import {
+  analyzeCanvas,
+  apiBaseUrl,
+  generateCourseQuestion,
+  listCourseDocuments,
+  TutorApiError,
+  uploadCourseDocument,
+} from "@/lib/api/api";
 
 const IMAGE = new Blob(["png"], { type: "image/png" });
 
@@ -107,6 +114,58 @@ describe("successful responses", () => {
   it("returns the parsed tutor response", async () => {
     mockFetch(ok({ interaction_id: "i9", status: "correct", canvas_actions: [], summary: "Nice." }));
     await expect(call()).resolves.toMatchObject({ interaction_id: "i9", status: "correct" });
+  });
+});
+
+describe("course material APIs", () => {
+  it("lists documents for one course", async () => {
+    const spy = mockFetch(ok([]));
+    await listCourseDocuments("course_demo");
+    expect(spy.mock.calls[0][0]).toContain("/api/courses/course_demo/documents");
+  });
+
+  it("uploads the selected file and document type", async () => {
+    const body = {
+      document_id: "doc_1",
+      course_id: "course_demo",
+      filename: "notes.txt",
+      document_type: "lecture",
+      total_chunks: 1,
+      total_pages: 1,
+      extracted_characters: 10,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const spy = mockFetch(ok(body));
+    await uploadCourseDocument({
+      courseId: "course_demo",
+      file: new File(["notes"], "notes.txt", { type: "text/plain" }),
+      documentType: "lecture",
+    });
+    const form = spy.mock.calls[0][1].body as FormData;
+    expect(form.get("document_type")).toBe("lecture");
+    expect(form.get("file")).toBeInstanceOf(File);
+  });
+
+  it("maps a generated backend problem into the frontend domain", async () => {
+    const spy = mockFetch(ok({
+      id: "problem_1",
+      course_id: "course_demo",
+      document_id: "doc_1",
+      source: "generated",
+      prompt: "Differentiate x squared.",
+    }));
+    await expect(generateCourseQuestion("course_demo", "doc_1")).resolves.toEqual({
+      id: "problem_1",
+      courseId: "course_demo",
+      documentId: "doc_1",
+      source: "generated",
+      prompt: "Differentiate x squared.",
+    });
+    expect(spy.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
   });
 });
 

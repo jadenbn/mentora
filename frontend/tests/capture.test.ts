@@ -33,6 +33,13 @@ const aiShape = (id: string, bounds = box(300, 600, 100, 200)) => ({
   pageBounds: bounds,
 });
 
+const systemShape = (id: string, bounds = box(100, 200, 200, 150)) => ({
+  id,
+  type: "note",
+  meta: { owner: "system", problemId: "problem_1" },
+  pageBounds: bounds,
+});
+
 describe("toNormalizedBounds", () => {
   it("maps a world box onto the unit square of its frame", () => {
     expect(toNormalizedBounds(box(200, 400, 200, 400), FRAME)).toEqual({
@@ -99,6 +106,19 @@ describe("captureCanvasForAnalysis", () => {
     expect(toImageCalls[0].ids).toEqual(["s1"]);
   });
 
+  it("excludes the structured problem from the student-work image", async () => {
+    const { editor, toImageCalls } = makeEditor({
+      shapes: [systemShape("problem"), studentShape("s1")],
+    });
+    await captureCanvasForAnalysis(editor);
+    expect(toImageCalls[0].ids).toEqual(["s1"]);
+  });
+
+  it("returns nothing when the canvas contains only the problem", async () => {
+    const { editor } = makeEditor({ shapes: [systemShape("problem")] });
+    expect(await captureCanvasForAnalysis(editor)).toBeNull();
+  });
+
   it("returns nothing when only tutor annotations remain", async () => {
     // Nothing of the student's left to analyze, even though the page is not empty.
     const { editor } = makeEditor({ shapes: [aiShape("ai1")] });
@@ -107,6 +127,16 @@ describe("captureCanvasForAnalysis", () => {
 
   it("reports the world rectangle the image covers", async () => {
     const { editor } = makeEditor({ shapes: [studentShape("s1")], pageBounds: FRAME });
+    const capture = await captureCanvasForAnalysis(editor);
+    expect(capture!.bounds).toEqual(FRAME);
+  });
+
+  it("bounds the image to student shapes rather than system and tutor content", async () => {
+    const { editor } = makeEditor({
+      shapes: [studentShape("s1"), systemShape("problem"), aiShape("ai1")],
+      pageBounds: box(-1000, -1000, 5000, 5000),
+      shapesBounds: FRAME,
+    });
     const capture = await captureCanvasForAnalysis(editor);
     expect(capture!.bounds).toEqual(FRAME);
   });

@@ -11,6 +11,7 @@ import {
 } from "@/lib/canvas/capture";
 import { renderCanvasActions } from "@/lib/annotations/renderCanvasActions";
 import type { TutorMode, TutorResponse } from "@/types/tutor";
+import type { Problem } from "@/types/domain";
 
 export class EmptyCanvasError extends Error {
   constructor() {
@@ -23,6 +24,7 @@ export interface TutorAnalysisOptions {
   editor: Editor;
   mode: TutorMode;
   courseId: string;
+  problem?: Problem;
   signal?: AbortSignal;
 }
 
@@ -43,6 +45,7 @@ export async function runTutorAnalysis(
     mode: options.mode,
     canvasImage: capture.blob,
     priorAnnotations: collectPriorAnnotations(editor, capture.bounds),
+    problem: options.problem,
     signal: options.signal,
   });
 

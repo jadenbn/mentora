@@ -57,6 +57,18 @@ describe("createSpace", () => {
     expect(createSpace("c", "  Padded  ").title).toBe("Padded");
   });
 
+  it("persists an optional structured problem with the space", () => {
+    const problem = {
+      id: "problem_1",
+      courseId: "c",
+      documentId: "doc_1",
+      source: "generated" as const,
+      prompt: "Differentiate x².",
+    };
+    const space = createSpace("c", "Practice", problem);
+    expect(getSpace(space.id)?.problem).toEqual(problem);
+  });
+
   it("falls back to a default when the title is only whitespace", () => {
     expect(createSpace("c", "   ").title).toBe("Space 1");
   });

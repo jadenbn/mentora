@@ -12,7 +12,7 @@
  */
 
 import { clearCanvas } from "@/lib/canvas/persistence";
-import type { Space } from "@/types/domain";
+import type { Problem, Space } from "@/types/domain";
 
 const INDEX_KEY = "mentora:spaces";
 
@@ -129,7 +129,7 @@ export function getSpace(spaceId: string): Space | null {
   return readAll().find((space) => space.id === spaceId) ?? null;
 }
 
-export function createSpace(courseId: string, title?: string): Space {
+export function createSpace(courseId: string, title?: string, problem?: Problem): Space {
   const existing = readAll();
   const now = new Date().toISOString();
   const untitled = existing.filter((s) => s.courseId === courseId).length + 1;
@@ -140,6 +140,7 @@ export function createSpace(courseId: string, title?: string): Space {
     title: title?.trim() || `Space ${untitled}`,
     createdAt: now,
     updatedAt: now,
+    ...(problem ? { problem } : {}),
   };
 
   writeAll([space, ...existing]);

@@ -31,9 +31,12 @@ import { clearDemoShapes, runDemoScript } from "@/lib/annotations/demoScript";
 import type { AnimationHandle } from "@/lib/annotations/animate";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
+import { saveCanvas } from "@/lib/canvas/persistence";
+import { ensureProblemShape } from "@/lib/problems/renderProblem";
 import { touchSpace } from "@/lib/spaces/store";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import type { TutorMode, TutorResponse } from "@/types/tutor";
+import type { Problem } from "@/types/domain";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
@@ -194,9 +197,11 @@ function CanvasPanel({
 export function Whiteboard({
   spaceId,
   courseId,
+  problem,
 }: {
   spaceId: string;
   courseId: string;
+  problem?: Problem;
 }) {
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
@@ -223,6 +228,7 @@ export function Whiteboard({
           editor: current,
           mode,
           courseId,
+          problem,
         });
         setResponse(result);
       } catch (caught) {
@@ -236,7 +242,7 @@ export function Whiteboard({
         setBusyMode(null);
       }
     },
-    [busyMode, courseId],
+    [busyMode, courseId, problem],
   );
 
   /** Testing only: draw a random tutor-shaped annotation with animation. */
@@ -319,6 +325,9 @@ export function Whiteboard({
       // Restore before the student can draw, so their work is never briefly
       // absent and then overwritten by an autosave of an empty canvas.
       loadCanvas(mountedEditor, spaceId);
+      if (problem && ensureProblemShape(mountedEditor, problem)) {
+        saveCanvas(mountedEditor, spaceId);
+      }
       disposeAutosave.current?.();
       disposeAutosave.current = startAutosave(mountedEditor, spaceId, {
         onSave: () => {
@@ -327,7 +336,7 @@ export function Whiteboard({
         },
       });
     },
-    [flashSaved, spaceId],
+    [flashSaved, problem, spaceId],
   );
 
   return (

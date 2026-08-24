@@ -19,6 +19,7 @@ export interface FakeShape {
   meta?: Record<string, unknown>;
   props?: Record<string, unknown>;
   pageBounds?: Box | null;
+  shapesBounds?: Box | null;
 }
 
 export interface FakeEditorOptions {
@@ -41,6 +42,7 @@ export function makeEditor(options: FakeEditorOptions = {}): FakeEditor {
   const {
     shapes = [],
     pageBounds = box(0, 0, 1000, 800),
+    shapesBounds = pageBounds,
     viewport = box(-50, -25, 500, 400),
     zoom = 1.5,
     image = { blob: new Blob(["png"], { type: "image/png" }), width: 800, height: 640 },
@@ -54,6 +56,7 @@ export function makeEditor(options: FakeEditorOptions = {}): FakeEditor {
   const editor = {
     getCurrentPageShapeIds: () => new Set(store.keys()) as Set<TLShapeId>,
     getCurrentPageBounds: () => pageBounds,
+    getShapesPageBounds: () => shapesBounds,
     getViewportPageBounds: () => viewport,
     getZoomLevel: () => zoom,
     getShape: (id: TLShapeId) => store.get(id as string) as unknown as TLShape | undefined,
@@ -72,6 +75,14 @@ export function makeEditor(options: FakeEditorOptions = {}): FakeEditor {
           meta: p.meta as Record<string, unknown>,
         });
       }
+    },
+    createShape: (partial: TLShapePartial) => {
+      created.push(partial);
+      store.set(partial.id as string, {
+        id: partial.id as string,
+        type: partial.type as string,
+        meta: partial.meta as Record<string, unknown>,
+      });
     },
     deleteShapes: (ids: TLShapeId[]) => {
       deleted.push(...ids);

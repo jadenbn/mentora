@@ -89,6 +89,25 @@ describe("what it sends", () => {
     const body = spy.mock.calls[0][1].body as FormData;
     expect(JSON.parse(body.get("prior_annotations") as string)).toHaveLength(1);
   });
+
+  it("sends the structured problem separately from the image", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    const spy = mockFetch();
+    await run(fake.editor, {
+      problem: {
+        id: "problem_1",
+        courseId: "course_demo",
+        documentId: "doc_1",
+        source: "generated",
+        prompt: "Differentiate x².",
+      },
+    });
+    const body = spy.mock.calls[0][1].body as FormData;
+    expect(JSON.parse(body.get("problem_context") as string)).toMatchObject({
+      id: "problem_1",
+      prompt: "Differentiate x².",
+    });
+  });
 });
 
 describe("when there is nothing to analyze", () => {
