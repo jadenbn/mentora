@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlmodel import Session, select
@@ -231,3 +232,74 @@ def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
             session.add(version)
 
     session.commit()
+
+
+@dataclass(frozen=True)
+class MergeReport:
+    added: list[str]
+    updated: list[str]
+    blocked_seed_collisions: list[str]
+
+
+def merge_generated(session: Session, course_id: str, produced: list[Skill]) -> MergeReport:
+    """Additively merge a freshly generated (or emergent) batch into a course.
+
+    Upserts by id: a produced skill whose id already belongs to a GENERATED
+    skill updates its describing fields (name, description, difficulty,
+    keywords, question_forms). SkillState is never touched here — it is
+    keyed by skill_id in a different table and survives any update to the
+    Skill row it names. A seed skill is read-only: a produced id colliding
+    with an origin=SEED skill is skipped and logged, never overwritten.
+
+    Nothing already in the course is ever deleted by this function. Removal
+    is a separate, deliberate operation and is out of scope here.
+
+    Validates the graph this merge would *produce* — every existing skill
+    this batch doesn't touch, plus the batch — as one unit, so a new skill's
+    prereq on an existing skill resolves, and so no addition introduces a
+    cycle spanning old and new skills, not just within the new batch.
+    """
+    existing = session.exec(select(Skill).where(Skill.course_id == course_id)).all()
+    existing_by_id = {s.id: s for s in existing}
+
+    to_apply: list[Skill] = []
+    blocked: list[str] = []
+    for skill in produced:
+        current = existing_by_id.get(skill.id)
+        if current is not None and current.origin != SkillOrigin.GENERATED:
+            blocked.append(skill.id)
+            continue
+        to_apply.append(skill)
+
+    if blocked:
+        logger.warning(
+            "merge_generated for %s: %d produced skill(s) collided with "
+            "non-generated (seed) skill ids and were not applied: %s",
+            course_id,
+            len(blocked),
+            blocked,
+        )
+
+    apply_ids = {s.id for s in to_apply}
+    resulting = [s for s in existing if s.id not in apply_ids] + to_apply
+    validate_taxonomy(resulting)
+
+    added: list[str] = []
+    updated: list[str] = []
+    for skill in to_apply:
+        current = existing_by_id.get(skill.id)
+        if current is None:
+            session.add(skill)
+            added.append(skill.id)
+        else:
+            current.name = skill.name
+            current.description = skill.description
+            current.difficulty_band = skill.difficulty_band
+            current.prereqs = skill.prereqs
+            current.keywords = skill.keywords
+            current.question_forms = skill.question_forms
+            session.add(current)
+            updated.append(skill.id)
+
+    session.commit()
+    return MergeReport(added=added, updated=updated, blocked_seed_collisions=blocked)

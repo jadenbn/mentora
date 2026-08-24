@@ -3,17 +3,28 @@
 from __future__ import annotations
 
 import pytest
+from sqlmodel import Session, SQLModel, create_engine
 
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
+from app.models.skill_state import SkillState
 from app.services.taxonomy import (
     DATA_DIR,
     TaxonomyError,
     build_taxonomy,
     load_taxonomy,
+    merge_generated,
     normalize_slug,
     validate_taxonomy,
 )
+
+
+@pytest.fixture
+def session():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        yield s
 
 
 def test_load_taxonomy_returns_fifteen_validated_skills() -> None:
@@ -172,3 +183,101 @@ def test_validate_taxonomy_accepts_valid_dag() -> None:
               difficulty_band=0.6, prereqs=["calc1.a", "calc1.b"]),
     ]
     validate_taxonomy(skills)  # must not raise
+
+
+def test_merge_generated_inserts_new_skills(session) -> None:
+    produced = [
+        Skill(id="calc1.a", course_id="calc1", name="A", description="d",
+              difficulty_band=0.3, prereqs=[], origin=SkillOrigin.GENERATED),
+    ]
+    report = merge_generated(session, "calc1", produced)
+    assert report.added == ["calc1.a"]
+    assert report.updated == []
+    assert report.blocked_seed_collisions == []
+    assert session.get(Skill, "calc1.a") is not None
+
+
+def test_merge_generated_updates_existing_generated_skill_without_touching_state(session) -> None:
+    session.add(Skill(id="calc1.a", course_id="calc1", name="Old name", description="old",
+                      difficulty_band=0.3, prereqs=[], origin=SkillOrigin.GENERATED))
+    session.add(SkillState(student_id="stu1", course_id="calc1", skill_id="calc1.a", mastery=0.77))
+    session.commit()
+
+    produced = [
+        Skill(id="calc1.a", course_id="calc1", name="New name", description="new",
+              difficulty_band=0.5, prereqs=[], origin=SkillOrigin.GENERATED),
+    ]
+    report = merge_generated(session, "calc1", produced)
+    assert report.updated == ["calc1.a"]
+    assert report.added == []
+
+    refreshed = session.get(Skill, "calc1.a")
+    assert refreshed.name == "New name"
+    assert refreshed.difficulty_band == 0.5
+
+    state = session.get(SkillState, ("stu1", "calc1.a"))
+    assert state is not None
+    assert state.mastery == 0.77  # untouched by the merge
+
+
+def test_merge_generated_never_overwrites_a_seed_skill(session) -> None:
+    session.add(Skill(id="calc1.a", course_id="calc1", name="Authored", description="seeded",
+                      difficulty_band=0.3, prereqs=[], origin=SkillOrigin.SEED))
+    session.commit()
+
+    produced = [
+        Skill(id="calc1.a", course_id="calc1", name="AI overwrite attempt", description="x",
+              difficulty_band=0.9, prereqs=[], origin=SkillOrigin.GENERATED),
+    ]
+    report = merge_generated(session, "calc1", produced)
+    assert report.blocked_seed_collisions == ["calc1.a"]
+    assert report.added == []
+    assert report.updated == []
+
+    untouched = session.get(Skill, "calc1.a")
+    assert untouched.name == "Authored"
+    assert untouched.origin == SkillOrigin.SEED
+
+
+def test_merge_generated_never_deletes_untouched_skills(session) -> None:
+    session.add(Skill(id="calc1.old", course_id="calc1", name="Old", description="d",
+                      difficulty_band=0.3, prereqs=[], origin=SkillOrigin.GENERATED))
+    session.commit()
+
+    produced = [
+        Skill(id="calc1.new", course_id="calc1", name="New", description="d",
+              difficulty_band=0.4, prereqs=[], origin=SkillOrigin.GENERATED),
+    ]
+    merge_generated(session, "calc1", produced)
+
+    assert session.get(Skill, "calc1.old") is not None
+    assert session.get(Skill, "calc1.new") is not None
+
+
+def test_merge_generated_lets_a_new_skill_depend_on_an_existing_one(session) -> None:
+    session.add(Skill(id="calc1.root", course_id="calc1", name="Root", description="d",
+                      difficulty_band=0.2, prereqs=[], origin=SkillOrigin.SEED))
+    session.commit()
+
+    produced = [
+        Skill(id="calc1.child", course_id="calc1", name="Child", description="d",
+              difficulty_band=0.5, prereqs=["calc1.root"], origin=SkillOrigin.GENERATED),
+    ]
+    report = merge_generated(session, "calc1", produced)
+    assert report.added == ["calc1.child"]
+    assert session.get(Skill, "calc1.child").prereqs == ["calc1.root"]
+
+
+def test_merge_generated_rejects_a_cycle_spanning_old_and_new_skills(session) -> None:
+    session.add(Skill(id="calc1.a", course_id="calc1", name="A", description="d",
+                      difficulty_band=0.3, prereqs=["calc1.b"], origin=SkillOrigin.GENERATED))
+    session.commit()
+
+    produced = [
+        Skill(id="calc1.b", course_id="calc1", name="B", description="d",
+              difficulty_band=0.5, prereqs=["calc1.a"], origin=SkillOrigin.GENERATED),
+    ]
+    with pytest.raises(TaxonomyError, match="cycle"):
+        merge_generated(session, "calc1", produced)
+    # Rejected atomically: the colliding update never landed.
+    assert session.get(Skill, "calc1.b") is None
