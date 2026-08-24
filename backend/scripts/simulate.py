@@ -61,6 +61,9 @@ CONVERGENCE_MIN_ATTEMPTS = 8
 STARVATION_FLOOR = 5  # touched fewer than this many times => "under-served"
 CONCENTRATION_WARN = 0.5  # one skill taking this share of all attempts is worth a flag
 
+MASTERY_BAR = 0.85  # narrative-only "mastered" bar for --journey, well above UNLOCK_THRESHOLD
+JOURNEY_SNAPSHOTS = 10  # how many progress snapshots to print across a --journey run
+
 SESSION_SIZE_RANGE = (4, 14)  # attempts per simulated sitting
 TYPICAL_GAP_DAYS = (0.5, 2.0)  # gap before the next sitting, usually
 BREAK_PROBABILITY = 0.12  # chance a gap is a real break instead
@@ -307,6 +310,153 @@ def run_trial(archetype: Archetype, rng: random.Random, target_attempts: int, st
         return result
 
 
+def run_journey(seed: int, target_attempts: int) -> int:
+    """One narrated trial: a complete novice who ends up mastering every
+    skill in the course. Unlike run_trial(), this prints events as they
+    happen -- when a skill first enters rotation, periodic mastery
+    snapshots -- instead of only reporting a final state. Single trial, one
+    archetype defined locally rather than added to ARCHETYPES: this is a
+    demonstration run, not part of the standing eval suite.
+    """
+    rng = random.Random(seed)
+    # Deliberately high and tight: this student is capable everywhere, not
+    # just on average -- the point is to watch the whole DAG unlock and
+    # converge, not to model a realistic mixed-ability student.
+    archetype = Archetype("master_journey", lambda sk, d, r: _correlated_abilities(0.93, 0.04, sk, r))
+    student_id = "journey-student"
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        skills = _seed_calc1(session)
+        depths = compute_depths(skills)
+        true_ability = archetype.ability_fn(skills, depths, rng)
+
+        print(f"=== NOVICE -> MASTER: {COURSE_ID}, seed={seed}, "
+              f"target={target_attempts} attempts ===")
+        print(f"({len(skills)} skills, hidden true ability ~0.93 +/- 0.04 on every one, "
+              f"starting mastery 0.50 on all)\n")
+
+        clock = {"now": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+        original_clock = selection.datetime
+        selection.datetime = _FrozenClock(lambda: clock["now"])
+
+        first_practiced: dict[str, int] = {}
+        review_count = 0
+        snapshot_every = max(1, target_attempts // JOURNEY_SNAPSHOTS)
+
+        try:
+            attempts_done = 0
+            session_index = 0
+
+            while attempts_done < target_attempts:
+                session_index += 1
+                sitting_size = rng.randint(*SESSION_SIZE_RANGE)
+
+                for _ in range(sitting_size):
+                    if attempts_done >= target_attempts:
+                        break
+
+                    spec = selection.select_next(session, COURSE_ID, student_id)
+                    if spec is None:
+                        print(f"  [attempt {attempts_done}] STALL -- select_next returned "
+                              f"None; stopping early")
+                        attempts_done = target_attempts
+                        break
+
+                    if spec.skill_id not in first_practiced:
+                        first_practiced[spec.skill_id] = attempts_done + 1
+                        day = (clock["now"] - datetime(2026, 1, 1, tzinfo=timezone.utc)).days
+                        skill_name = next(s.name for s in skills if s.id == spec.skill_id)
+                        print(f"  day {day:4d}  attempt {attempts_done + 1:4d}  "
+                              f"ENTERS ROTATION (d{depths[spec.skill_id]})  "
+                              f"{spec.skill_id}  -- {skill_name}")
+
+                    if spec.is_review:
+                        review_count += 1
+
+                    correct, hints, partial = simulate_outcome(
+                        true_ability[spec.skill_id], spec.target_difficulty, rng,
+                        hint_farmer=False,
+                    )
+                    payload = AttemptCreate(
+                        student_id=student_id,
+                        session_id=f"sitting-{session_index}",
+                        problem_id=f"sim-{attempts_done}",
+                        expected_skills=[spec.skill_id],
+                        difficulty=spec.target_difficulty,
+                        correct=correct,
+                        partial=partial,
+                        hints_used=hints,
+                        total_time_ms=None,
+                        errors=[],
+                    )
+                    outcome = student_model_service.record_attempt(session, COURSE_ID, payload)
+
+                    now = clock["now"]
+                    state = session.get(SkillState, (student_id, spec.skill_id))
+                    state.last_seen = now
+                    session.add(state)
+                    attempt_row = session.get(Attempt, outcome.attempt_id)
+                    attempt_row.created_at = now
+                    session.add(attempt_row)
+                    session.commit()
+
+                    attempts_done += 1
+
+                    if attempts_done % snapshot_every == 0:
+                        states = {s.id: session.get(SkillState, (student_id, s.id)) for s in skills}
+                        touched = {sid: st for sid, st in states.items() if st is not None}
+                        mastered = sum(1 for st in touched.values() if st.mastery >= MASTERY_BAR)
+                        avg_mastery = (
+                            sum(st.mastery for st in touched.values()) / len(touched)
+                            if touched else 0.0
+                        )
+                        day = (clock["now"] - datetime(2026, 1, 1, tzinfo=timezone.utc)).days
+                        print(f"  --- snapshot: attempt {attempts_done:4d}, day {day:4d} -- "
+                              f"{len(touched):2d}/{len(skills)} skills touched, "
+                              f"{mastered:2d}/{len(skills)} mastered (>={MASTERY_BAR}), "
+                              f"avg mastery {avg_mastery:.2f} ---")
+
+                if attempts_done >= target_attempts:
+                    break
+
+                gap_days = (
+                    rng.uniform(*BREAK_GAP_DAYS) if rng.random() < BREAK_PROBABILITY
+                    else rng.uniform(*TYPICAL_GAP_DAYS)
+                )
+                clock["now"] += timedelta(days=gap_days)
+
+            total_days = (clock["now"] - datetime(2026, 1, 1, tzinfo=timezone.utc)).days
+
+            print(f"\n=== FINAL: {attempts_done} attempts across {total_days} simulated days ===")
+            print(f"  forced review: {review_count} picks ({review_count / attempts_done:.1%})")
+            print(f"\n  {'depth':<6}{'skill':<45}{'attempts':>9}{'mastery':>9}{'true':>7}")
+            mastered_count = 0
+            for skill in sorted(skills, key=lambda s: (depths[s.id], s.id)):
+                state = session.get(SkillState, (student_id, skill.id))
+                if state is None:
+                    print(f"  d{depths[skill.id]:<5}{skill.id:<45}{'--':>9}{'--':>9}{'--':>7}"
+                          f"  NEVER ENTERED ROTATION")
+                    continue
+                if state.mastery >= MASTERY_BAR:
+                    mastered_count += 1
+                flag = "  MASTERED" if state.mastery >= MASTERY_BAR else ""
+                print(f"  d{depths[skill.id]:<5}{skill.id:<45}{state.attempts:>9}"
+                      f"{state.mastery:>9.2f}{true_ability[skill.id]:>7.2f}{flag}")
+
+            print(f"\n  {mastered_count}/{len(skills)} skills mastered (mastery >= {MASTERY_BAR})")
+            if mastered_count == len(skills):
+                print("  full course mastered.")
+                return 0
+            print(f"  {len(skills) - mastered_count} skill(s) short of mastery -- "
+                  f"try a larger --attempts budget")
+            return 1
+        finally:
+            selection.datetime = original_clock
+
+
 # ---------------------------------------------------------------------------
 # Metrics.
 
@@ -434,13 +584,27 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=42)
     # 400 wasn't enough for a stable read: an "average" student only lands
     # 2-3 skills above the convergence-attempt floor by then, so MAE swings
-    # on sampling noise alone. 600 was stable across repeated seeds.
-    parser.add_argument("--attempts", type=int, default=600, help="attempts per trial")
+    # on sampling noise alone. 600 was stable across repeated seeds. A
+    # --journey run needs more: no cross-trial averaging to smooth noise,
+    # and every one of 15 skills -- including depth-4 leaves -- has to
+    # individually converge, not just enough of them for a stable average.
+    parser.add_argument("--attempts", type=int, default=None,
+                         help="attempts per trial (default: 600, or 1200 with --journey)")
     parser.add_argument("--trials", type=int, default=3, help="trials per archetype")
     parser.add_argument("--archetype", type=str, default=None,
                          help="run only this archetype (default: all)")
     parser.add_argument("--verbose", action="store_true", help="print per-skill detail")
+    parser.add_argument("--journey", action="store_true",
+                         help="narrate one student from novice to mastering every skill, "
+                              "instead of running the multi-archetype eval suite")
     args = parser.parse_args()
+
+    if args.journey:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(line_buffering=True)
+        return run_journey(args.seed, args.attempts or 1200)
+
+    args.attempts = args.attempts or 600
 
     archetypes = (
         [a for a in ARCHETYPES if a.name == args.archetype] if args.archetype else ARCHETYPES
@@ -448,17 +612,6 @@ def main() -> int:
     if args.archetype and not archetypes:
         print(f"unknown archetype {args.archetype!r}; choices: {[a.name for a in ARCHETYPES]}")
         return 2
-
-    # Python fully buffers stdout (vs. line-buffering) whenever it isn't
-    # attached to a real terminal -- piped, redirected, some IDE terminals --
-    # so without this, nothing appears until the whole run ends and flushes
-    # on exit. A ~90s run with no output for that long looks indistinguishable
-    # from hanging or producing nothing.
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(line_buffering=True)
-
-    print(f"running {len(archetypes)} archetype(s) x {args.trials} trial(s) x "
-          f"{args.attempts} attempts (seed={args.seed})...")
 
     started = time.time()
     all_summaries = []
@@ -468,7 +621,6 @@ def main() -> int:
         trials, last_trial, last_skills, last_depths = [], None, None, None
 
         for i in range(args.trials):
-            trial_started = time.time()
             # Not hash(archetype.name): Python randomizes str hashing per
             # process by default, which would make --seed non-reproducible
             # across runs despite looking deterministic.
@@ -478,8 +630,6 @@ def main() -> int:
             depths = compute_depths(skills)
             trials.append(analyze(trial, skills, depths))
             last_trial, last_skills, last_depths = trial, skills, depths
-            print(f"  {archetype.name} trial {i + 1}/{args.trials} done "
-                  f"({time.time() - trial_started:.1f}s)")
 
         summary = average_reports(trials)
         all_summaries.append(summary)
