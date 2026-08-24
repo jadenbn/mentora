@@ -29,7 +29,7 @@ const failure = (status: number, detail?: unknown) => ({
 });
 
 const call = (over = {}) =>
-  analyzeCanvas({ roomId: "course_demo", mode: "hint", canvasImage: IMAGE, priorAnnotations: [], ...over });
+  analyzeCanvas({ roomId: "room_demo", mode: "hint", canvasImage: IMAGE, priorAnnotations: [], ...over });
 
 const bodyOf = (spy: ReturnType<typeof mockFetch>) => spy.mock.calls[0][1].body as FormData;
 
@@ -69,7 +69,7 @@ describe("request construction", () => {
     const spy = mockFetch(ok());
     await call({ mode: "stuck" });
     const body = bodyOf(spy);
-    expect(body.get("course_id")).toBe("course_demo");
+    expect(body.get("room_id")).toBe("room_demo");
     expect(body.get("mode")).toBe("stuck");
     expect(body.get("canvas_image")).toBeInstanceOf(Blob);
   });

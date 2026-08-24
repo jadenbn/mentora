@@ -78,10 +78,7 @@ export async function analyzeCanvas(args: {
   signal?: AbortSignal;
 }): Promise<TutorResponse> {
   const form = new FormData();
-  // The backend's wire contract still calls this field course_id
-  // (docs/TUTOR_AGENT.md) — deliberately not renamed alongside the frontend's
-  // "room" vocabulary.
-  form.append("course_id", args.roomId);
+  form.append("room_id", args.roomId);
   form.append("mode", args.mode);
   form.append("canvas_image", args.canvasImage, "canvas.png");
   form.append("prior_annotations", JSON.stringify(args.priorAnnotations));

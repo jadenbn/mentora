@@ -3,11 +3,11 @@ import type { Room } from "@/types/domain";
 /**
  * Rooms are hardcoded until the room API exists.
  *
- * Ids stay prefixed `course_` on purpose: they are the backend's actual
- * `course_id` values (see docs/TUTOR_AGENT.md), not a frontend label, and
+ * Ids stay prefixed `course_` on purpose: they are the literal values already
+ * indexed in Pinecone under the (now-renamed) room_id metadata key, and
  * `course_demo` is the one the chain-rule lecture was ingested under, so it
- * is the room where grounding actually works today. Renaming these strings
- * would silently break retrieval.
+ * is the room where grounding actually works today. Renaming these string
+ * values (not just the field name) would silently break retrieval.
  */
 export const ROOMS: Room[] = [
   {

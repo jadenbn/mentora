@@ -7,7 +7,7 @@
  * the same `system | student | ai` ownership the real flow uses.
  *
  * The problem is the chain rule, matching the lecture ingested into
- * course_demo, so the demo lines up with the course the tutor is grounded in.
+ * course_demo, so the demo lines up with the room the tutor is grounded in.
  */
 
 import type { Box, Editor, TLDefaultColorStyle, TLShapeId } from "tldraw";
