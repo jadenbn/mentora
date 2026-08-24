@@ -6,8 +6,6 @@ python-multipart>=0.0.9
 # Course ingestion
 pymupdf>=1.24.0
 langchain-text-splitters>=0.2.0
-openai>=1.40.0
-pinecone>=5.0.0,<8.0.0
 
 # Tutor agent
 google-adk>=2.0.0,<3.0.0

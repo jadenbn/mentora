@@ -1,13 +1,10 @@
-"""Environment-backed configuration.
-
-One required credential. Course retrieval is deferred, so Pinecone and OpenAI
-are no longer needed to run the tutor.
-"""
+"""Environment-backed configuration for Gemini, SQLite, and browser access."""
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 REQUIRED_SETTINGS = ("GEMINI_API_KEY",)
 
@@ -28,6 +25,13 @@ def cors_allow_origins() -> list[str]:
     """
     raw = os.getenv("CORS_ALLOW_ORIGINS") or "http://localhost:3000"
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def database_path() -> Path:
+    configured = os.getenv("MENTORA_DB_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    return Path(__file__).resolve().parents[1] / "mentora.db"
 
 
 @dataclass(frozen=True)

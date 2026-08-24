@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.schemas.tutor import TutorMode, WorkStatus
+from app.schemas.problems import GroundedProblem, GroundingChunk, ProblemContext
 from app.services.tutor_service import TutorService
 from tests import factories as f
 
@@ -55,6 +56,66 @@ class TestWorkflowHandoff:
         svc, stub = service()
         await analyze(svc)
         assert stub.last_call["prior_annotations"] == []
+
+    async def test_a_recorded_problem_and_its_exact_sources_reach_the_workflow(self):
+        problem = ProblemContext(
+            id="problem_1",
+            course_id="course_demo",
+            document_id="doc_1",
+            source="generated",
+            prompt="Differentiate x².",
+        )
+
+        class Repo:
+            def get_grounded_problem(self, **_kwargs):
+                return GroundedProblem(
+                    problem=problem,
+                    chunks=[GroundingChunk(chunk_id="chunk_1", page=2, text="Power rule")],
+                )
+
+        stub = f.StubWorkflow()
+        svc = TutorService(workflow=stub, repository=Repo())
+        await analyze(svc, problem_context=problem)
+        assert stub.last_call["problem"] == problem
+        assert [chunk.chunk_id for chunk in stub.last_call["course_context"]] == ["chunk_1"]
+
+    async def test_a_missing_record_uses_the_browser_problem_without_sources(self):
+        problem = ProblemContext(
+            id="missing",
+            course_id="course_demo",
+            document_id="doc_1",
+            source="generated",
+            prompt="Differentiate x².",
+        )
+
+        class Repo:
+            def get_grounded_problem(self, **_kwargs):
+                return None
+
+        stub = f.StubWorkflow()
+        svc = TutorService(workflow=stub, repository=Repo())
+        await analyze(svc, problem_context=problem)
+        assert stub.last_call["problem"] == problem
+        assert stub.last_call["course_context"] == []
+
+    async def test_a_database_failure_still_uses_the_browser_problem(self):
+        problem = ProblemContext(
+            id="problem_1",
+            course_id="course_demo",
+            document_id="doc_1",
+            source="generated",
+            prompt="Differentiate x².",
+        )
+
+        class Repo:
+            def get_grounded_problem(self, **_kwargs):
+                raise RuntimeError("database unavailable")
+
+        stub = f.StubWorkflow()
+        svc = TutorService(workflow=stub, repository=Repo())
+        await analyze(svc, problem_context=problem)
+        assert stub.last_call["problem"] == problem
+        assert stub.last_call["course_context"] == []
 
 
 class TestResponseAssembly:

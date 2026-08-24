@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 from app.api.documents import router as documents_router  # noqa: E402
+from app.api.questions import router as questions_router  # noqa: E402
 from app.api.tutor import router as tutor_router  # noqa: E402
 from app.config import cors_allow_origins, missing_settings  # noqa: E402
 
@@ -18,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(documents_router)
+app.include_router(questions_router)
 app.include_router(tutor_router)
 
 

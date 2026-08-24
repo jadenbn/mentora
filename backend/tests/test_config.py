@@ -10,6 +10,7 @@ from app.config import (
     REQUIRED_SETTINGS,
     TutorSettings,
     cors_allow_origins,
+    database_path,
     missing_settings,
 )
 
@@ -75,3 +76,15 @@ def test_cors_accepts_extra_origins_for_another_device(monkeypatch):
 def test_an_empty_cors_override_falls_back_rather_than_blocking_everything(monkeypatch):
     monkeypatch.setenv("CORS_ALLOW_ORIGINS", "")
     assert cors_allow_origins() == ["http://localhost:3000"]
+
+
+def test_database_path_defaults_inside_the_backend(monkeypatch):
+    monkeypatch.delenv("MENTORA_DB_PATH", raising=False)
+    assert database_path().name == "mentora.db"
+    assert database_path().parent.name == "backend"
+
+
+def test_database_path_can_be_overridden(monkeypatch, tmp_path):
+    configured = tmp_path / "course-context.db"
+    monkeypatch.setenv("MENTORA_DB_PATH", str(configured))
+    assert database_path() == configured

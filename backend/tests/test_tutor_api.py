@@ -59,6 +59,17 @@ class TestHappyPath:
         post(client)
         assert workflow.last_call["prior_annotations"] == []
 
+    def test_problem_context_is_parsed_and_forwarded(self, client, workflow):
+        problem = {
+            "id": "problem_1",
+            "course_id": "course_demo",
+            "document_id": "doc_1",
+            "source": "generated",
+            "prompt": "Differentiate x squared.",
+        }
+        post(client, problem_context=json.dumps(problem))
+        assert workflow.last_call["problem"].id == "problem_1"
+
     @pytest.mark.parametrize("image,mime", [(f.PNG, "image/png"), (f.JPEG, "image/jpeg"), (f.WEBP, "image/webp")])
     def test_every_supported_image_format_is_accepted(self, client, image, mime):
         assert post(client, image=image, mime=mime).status_code == 200
@@ -85,6 +96,19 @@ class TestRequestValidation:
     def test_prior_annotations_outside_the_canvas_are_rejected(self, client):
         off_canvas = json.dumps([{"x": 0.9, "y": 0.1, "width": 0.5, "height": 0.1}])
         assert post(client, prior_annotations=off_canvas).status_code == 422
+
+    def test_malformed_problem_context_is_rejected(self, client):
+        assert post(client, problem_context="not json").status_code == 422
+
+    def test_problem_context_must_belong_to_the_requested_course(self, client):
+        problem = {
+            "id": "problem_1",
+            "course_id": "course_linear",
+            "document_id": "doc_1",
+            "source": "generated",
+            "prompt": "Question",
+        }
+        assert post(client, problem_context=json.dumps(problem)).status_code == 422
 
 
 class TestImageHandling:

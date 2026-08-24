@@ -18,14 +18,18 @@ RUN_LIVE_GEMINI=1 .venv/bin/python -m pytest -q -m live -s
 | `test_prompts.py` | mode policy distinctness and the allowed action set | — |
 | `test_config.py` | one required credential | — |
 | `test_tutor_workflow.py` | provider adapter: schema dialect, null stripping, repair, failure translation | google-adk |
+| `test_database.py` | additive SQLite schema, document replacement, problem grounding | sqlite3 |
+| `test_documents_api.py` | document upload validation and listing | fastapi |
+| `test_question_service.py` | bounded context selection and grounded persistence | pydantic |
+| `test_question_workflow.py` | source-id validation and bounded repair | google-adk |
+| `test_questions_api.py` | generated-problem HTTP contract and safe failures | fastapi |
 | `test_live_gemini.py` | opt-in real request | credentials |
 
 ## Why the dependency column matters
 
-Only the provider adapter may import `google.adk`. Everything else — schemas,
-policy, service, API — must be testable with pydantic and fastapi alone, so the
-fast suite stays fast and a provider SDK change cannot break tests that have
-nothing to do with the provider.
+Only the tutor and question provider adapters may import `google.adk`.
+Everything else — schemas, policy, services, database, and APIs — remains
+testable without making a provider call.
 
 That constraint is a design constraint, not a testing trick: it forces the
 `TutorWorkflow` port to be declared by the service that consumes it rather than
