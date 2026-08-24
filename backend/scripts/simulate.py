@@ -449,6 +449,17 @@ def main() -> int:
         print(f"unknown archetype {args.archetype!r}; choices: {[a.name for a in ARCHETYPES]}")
         return 2
 
+    # Python fully buffers stdout (vs. line-buffering) whenever it isn't
+    # attached to a real terminal -- piped, redirected, some IDE terminals --
+    # so without this, nothing appears until the whole run ends and flushes
+    # on exit. A ~90s run with no output for that long looks indistinguishable
+    # from hanging or producing nothing.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+
+    print(f"running {len(archetypes)} archetype(s) x {args.trials} trial(s) x "
+          f"{args.attempts} attempts (seed={args.seed})...")
+
     started = time.time()
     all_summaries = []
     failures = []
@@ -457,6 +468,7 @@ def main() -> int:
         trials, last_trial, last_skills, last_depths = [], None, None, None
 
         for i in range(args.trials):
+            trial_started = time.time()
             # Not hash(archetype.name): Python randomizes str hashing per
             # process by default, which would make --seed non-reproducible
             # across runs despite looking deterministic.
@@ -466,6 +478,8 @@ def main() -> int:
             depths = compute_depths(skills)
             trials.append(analyze(trial, skills, depths))
             last_trial, last_skills, last_depths = trial, skills, depths
+            print(f"  {archetype.name} trial {i + 1}/{args.trials} done "
+                  f"({time.time() - trial_started:.1f}s)")
 
         summary = average_reports(trials)
         all_summaries.append(summary)
