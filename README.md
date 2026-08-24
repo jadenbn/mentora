@@ -103,10 +103,12 @@ The opt-in live check spends one real Gemini request:
 cd backend && RUN_LIVE_GEMINI=1 .venv/bin/python -m pytest -q -m live -s
 ```
 
-Korey's credentialed RAG pipeline check needs the OpenAI and Pinecone keys:
+Seeding the demo course indexes `backend/seed_data/` and then queries it back,
+so a silent empty index fails loudly. Needs the OpenAI and Pinecone keys, and
+is safe to re-run:
 
 ```bash
-cd backend && .venv/bin/python test_pipeline.py
+cd backend && PYTHONPATH=. .venv/bin/python scripts/seed_course.py
 ```
 
 ## Team workstreams
