@@ -21,7 +21,17 @@ from app.schemas.learning import (
     SkillStateOut,
     StudentModelResponse,
 )
-from app.services.mastery import apply_decay, confidence, prereq_delta, score_attempt, update_mastery
+from app.services import selection
+from app.services.mastery import (
+    MASTERY_CEIL,
+    MASTERY_FLOOR,
+    clamp,
+    confidence,
+    prereq_delta,
+    score_attempt,
+    update_mastery,
+)
+from app.services.skill_progress import SkillProgress
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +181,7 @@ def record_attempt(
         prereq_state = _get_or_create_skill_state(
             session, payload.student_id, course_id, prereq_id, profile.global_ability
         )
-        prereq_state.mastery = max(0.02, min(0.98, prereq_state.mastery + bleed))
+        prereq_state.mastery = clamp(prereq_state.mastery + bleed, MASTERY_FLOOR, MASTERY_CEIL)
         session.add(prereq_state)
 
     attempt = Attempt(
@@ -202,20 +212,17 @@ def get_student_model(session: Session, course_id: str, student_id: str) -> Stud
         state = session.get(SkillState, (student_id, skill.id))
         if state is None:
             continue
-        last_seen = state.last_seen
-        if last_seen.tzinfo is None:
-            last_seen = last_seen.replace(tzinfo=timezone.utc)
-        days_since = (now - last_seen).total_seconds() / 86400
-        decayed = apply_decay(state.mastery, days_since)
-        top = sorted(state.misconception_counts.items(), key=lambda kv: -kv[1])
+        progress = SkillProgress(state, default_mastery=0.5, now=now)
         out.append(
             SkillStateOut(
                 skill_id=skill.id,
                 skill_name=skill.name,
-                mastery=decayed,
-                confidence=confidence(state.attempts),
-                attempts=state.attempts,
-                top_misconceptions=[tag for tag, _ in top[:TOP_MISCONCEPTIONS_LIMIT]],
+                mastery=progress.mastery,
+                confidence=confidence(progress.attempts),
+                attempts=progress.attempts,
+                top_misconceptions=[
+                    tag for tag, _ in progress.ranked_misconceptions[:TOP_MISCONCEPTIONS_LIMIT]
+                ],
             )
         )
 
@@ -230,9 +237,6 @@ def get_skills_overview(
     Read-only dev/analytics view. Untouched skills appear at their seed mastery
     (the student's global ability, or 0.5 cold) rather than being omitted.
     """
-    # Imported here to avoid a module-level cycle (selection imports this module).
-    from app.services.selection import UNLOCK_THRESHOLD
-
     skills = session.exec(select(Skill).where(Skill.course_id == course_id)).all()
     now = _utcnow()
     profile = session.get(StudentProfile, (student_id, course_id))
@@ -242,49 +246,35 @@ def get_skills_overview(
     rows: dict[str, SkillOverviewOut] = {}
     for skill in skills:
         state = session.get(SkillState, (student_id, skill.id))
-        if state is None:
-            mastery = default_mastery
-            attempts = 0
-            top_misconceptions: list[str] = []
-            has_state = False
-        else:
-            last_seen = state.last_seen
-            if last_seen.tzinfo is None:
-                last_seen = last_seen.replace(tzinfo=timezone.utc)
-            days_since = (now - last_seen).total_seconds() / 86400
-            mastery = apply_decay(state.mastery, days_since)
-            attempts = state.attempts
-            top = sorted(state.misconception_counts.items(), key=lambda kv: -kv[1])
-            top_misconceptions = [tag for tag, _ in top[:TOP_MISCONCEPTIONS_LIMIT]]
-            has_state = True
+        progress = SkillProgress(state, default_mastery, now)
 
-        mastery_by_id[skill.id] = mastery
+        mastery_by_id[skill.id] = progress.mastery
         rows[skill.id] = SkillOverviewOut(
             skill_id=skill.id,
             skill_name=skill.name,
             description=skill.description,
             difficulty_band=skill.difficulty_band,
             prereqs=list(skill.prereqs),
-            mastery=mastery,
-            confidence=confidence(attempts),
-            attempts=attempts,
+            mastery=progress.mastery,
+            confidence=confidence(progress.attempts),
+            attempts=progress.attempts,
             unlocked=False,  # filled below once every skill's mastery is known
-            has_state=has_state,
-            top_misconceptions=top_misconceptions,
+            has_state=state is not None,
+            top_misconceptions=[
+                tag for tag, _ in progress.ranked_misconceptions[:TOP_MISCONCEPTIONS_LIMIT]
+            ],
         )
 
     out: list[SkillOverviewOut] = []
     for skill in skills:
         row = rows[skill.id]
         row.unlocked = all(
-            mastery_by_id.get(p, 0.0) >= UNLOCK_THRESHOLD for p in skill.prereqs
+            mastery_by_id.get(p, 0.0) >= selection.UNLOCK_THRESHOLD for p in skill.prereqs
         )
         out.append(row)
 
     spec = None
     try:
-        from app.services import selection
-
         spec = selection.select_next(session, course_id, student_id)
     except Exception:  # a read-only view must never fail because selection did
         logger.exception("select_next failed while building skills overview")

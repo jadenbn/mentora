@@ -15,7 +15,8 @@ from app.models.skill import Skill
 from app.models.skill_state import SkillState
 from app.models.student_profile import StudentProfile
 from app.schemas.learning import GenerationSpec
-from app.services.mastery import apply_decay
+from app.services.mastery import clamp
+from app.services.skill_progress import SkillProgress, days_since
 
 W_URGENCY = 0.60
 W_STALENESS = 0.25
@@ -40,32 +41,18 @@ def retrieval_query(skill: Skill) -> str:
     return " ".join([skill.name, skill.description, *skill.keywords])
 
 
-def _clamp(value: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, value))
-
-
-def _days_since(last_seen: datetime, now: datetime) -> float:
-    if last_seen.tzinfo is None:
-        last_seen = last_seen.replace(tzinfo=timezone.utc)
-    return (now - last_seen).total_seconds() / 86400
-
-
 class _SkillView:
-    """Decayed mastery, attempt count, and top misconception for one skill."""
+    """A skill plus its SkillProgress, with selection's own read on the
+    top misconception (count-gated, unlike the ungated top-N a report wants)."""
 
     def __init__(self, skill: Skill, state: SkillState | None, default_mastery: float, now: datetime):
         self.skill = skill
-        if state is None:
-            self.mastery = default_mastery
-            self.attempts = 0
-            self.top_misconception = None
-            self.last_seen: datetime | None = None
-        else:
-            self.mastery = apply_decay(state.mastery, _days_since(state.last_seen, now))
-            self.attempts = state.attempts
-            top = sorted(state.misconception_counts.items(), key=lambda kv: -kv[1])
-            self.top_misconception = top[0][0] if top and top[0][1] >= MISCONCEPTION_MIN_COUNT else None
-            self.last_seen = state.last_seen
+        progress = SkillProgress(state, default_mastery, now)
+        self.mastery = progress.mastery
+        self.attempts = progress.attempts
+        self.last_seen = progress.last_seen
+        top = progress.ranked_misconceptions
+        self.top_misconception = top[0][0] if top and top[0][1] >= MISCONCEPTION_MIN_COUNT else None
 
 
 def _recent_primary_skills(session: Session, course_id: str, student_id: str, limit: int) -> list[str]:
@@ -106,7 +93,7 @@ def select_next(session: Session, course_id: str, student_id: str) -> Generation
         v = views[skill.id]
         urgency = 1.0 - v.mastery
         staleness = 1.0 if v.last_seen is None else min(
-            _days_since(v.last_seen, now) / STALENESS_CAP_DAYS, 1.0
+            days_since(v.last_seen, now) / STALENESS_CAP_DAYS, 1.0
         )
         recency_penalty = W_RECENCY_PENALTY if skill.id in recent else 0.0
         return W_URGENCY * urgency + W_STALENESS * staleness - recency_penalty
@@ -125,7 +112,7 @@ def select_next(session: Session, course_id: str, student_id: str) -> Generation
         chosen = max(unlocked, key=priority)
 
     view = views[chosen.id]
-    target_difficulty = _clamp(view.mastery + DIFFICULTY_OFFSET, 0.1, 0.9)
+    target_difficulty = clamp(view.mastery + DIFFICULTY_OFFSET, 0.1, 0.9)
     prereq_mastery = {p: views[p].mastery for p in chosen.prereqs if p in views}
 
     return GenerationSpec(

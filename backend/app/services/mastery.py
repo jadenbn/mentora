@@ -76,7 +76,7 @@ def learning_rate(attempts: int) -> float:
     return max(ALPHA_FLOOR, ALPHA_BASE / (1 + ALPHA_DECAY * attempts))
 
 
-def _clamp(value: float, lo: float, hi: float) -> float:
+def clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
@@ -96,7 +96,7 @@ def update_mastery(mastery: float, score: float, difficulty: float, attempts: in
     alpha = learning_rate(attempts)
     residual = score - expected_score(mastery, difficulty)
     updated = mastery + alpha * residual
-    return _clamp(updated, MASTERY_FLOOR, MASTERY_CEIL)
+    return clamp(updated, MASTERY_FLOOR, MASTERY_CEIL)
 
 
 def apply_decay(mastery: float, days_since_seen: float) -> float:
