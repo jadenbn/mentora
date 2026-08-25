@@ -115,7 +115,7 @@ export function TutorControls({
       <button
         aria-expanded={open}
         aria-label={open ? "Close tutor actions" : "Open tutor actions"}
-        className={`pointer-events-auto absolute left-0 top-0 z-30 flex h-14 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-l-full border border-r-0 border-slate-200 bg-white text-slate-950 shadow-md transition-[transform,background-color] duration-200 hover:cursor-grab hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 ${open ? "-translate-x-[calc(50%+4px)] bg-slate-50" : ""}`}
+        className={`pointer-events-auto absolute left-0 top-0 z-30 flex h-14 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-l-full border border-r-0 border-slate-200 bg-white text-slate-950 shadow-md transition-[transform,background-color] duration-200 hover:cursor-grab hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 ${open ? "bg-slate-50" : ""}`}
         disabled={disabled || busy}
         onClick={() => setOpen((current) => !current)}
         type="button"
