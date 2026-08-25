@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronLeft, X } from "lucide-react";
 import type { TutorMode } from "@/types/tutor";
 
 const MODE_ACTIONS: { mode: TutorMode; label: string }[] = [
@@ -120,9 +121,15 @@ export function TutorControls({
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        <span aria-hidden="true" className="text-lg leading-none">
-          {open ? "×" : "‹"}
-        </span>
+        {open ? (
+          <X aria-hidden="true" className="size-4 shrink-0" strokeWidth={2.5} />
+        ) : (
+          <ChevronLeft
+            aria-hidden="true"
+            className="size-4 shrink-0"
+            strokeWidth={2.5}
+          />
+        )}
       </button>
     </div>
   );
