@@ -167,6 +167,17 @@ interface ProblemResponse {
   prompt: string;
 }
 
+interface AttributedSkillResponse {
+  id: string;
+  name: string;
+  difficulty_band: number;
+}
+
+interface GeneratedProblemResponse {
+  problem: ProblemResponse;
+  skills: AttributedSkillResponse[];
+}
+
 export async function generateCourseQuestion(
   courseId: string,
   documentId: string,
@@ -183,13 +194,29 @@ export async function generateCourseQuestion(
       }),
     },
   );
-  const problem = await courseResponse<ProblemResponse>(response, "Generating a question");
+  const data = await courseResponse<GeneratedProblemResponse>(
+    response,
+    "Generating a question",
+  );
+  // The server attributes every generated problem to the skill(s) it
+  // exercises (existing or newly proposed), same as next-problem — surface
+  // the primary one so marking this problem correct can record an attempt
+  // and move mastery, not just next-problem-generated ones.
+  const primary = data.skills[0];
   return {
-    id: problem.id,
-    courseId: problem.course_id,
-    documentId: problem.document_id,
-    source: problem.source,
-    prompt: problem.prompt,
+    id: data.problem.id,
+    courseId: data.problem.course_id,
+    documentId: data.problem.document_id,
+    source: data.problem.source,
+    prompt: data.problem.prompt,
+    skill: primary
+      ? {
+          skillId: primary.id,
+          skillName: primary.name,
+          targetDifficulty: primary.difficulty_band,
+          isReview: false,
+        }
+      : undefined,
   };
 }
 

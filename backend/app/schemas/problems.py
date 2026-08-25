@@ -59,3 +59,26 @@ class QuestionPlan(StrictModel):
     prompt: str = Field(min_length=1, max_length=8_000)
     grounding_chunk_ids: list[str] = Field(min_length=1, max_length=8)
     skills: list[RawSkillEntry] = Field(min_length=1, max_length=4)
+
+
+class AttributedSkill(StrictModel):
+    """A persisted skill this generated problem was attributed to — enough
+    for a client to show what it's practicing and to grade an attempt
+    against it without a second lookup."""
+
+    id: str
+    name: str
+    difficulty_band: float = Field(ge=0.0, le=1.0)
+
+
+class GeneratedProblemResponse(StrictModel):
+    """A generated problem plus the skill(s) it was attributed to.
+
+    The client posts the attempt back with problem.id; expected_skills is
+    still resolved server-side from problem_skills (this is only what the
+    client uses to render a badge and pick a difficulty for the attempt),
+    same trust model as NextProblemResponse.
+    """
+
+    problem: GeneratedProblem
+    skills: list[AttributedSkill]

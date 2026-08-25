@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
 from app.api.dependencies import get_course_repository, get_session
@@ -14,7 +14,12 @@ from app.config import (
     question_full_context_max_chars,
 )
 from app.database import CourseRepository
-from app.schemas.problems import GenerateQuestionRequest, ProblemContext
+from app.models.skill import Skill
+from app.schemas.problems import (
+    AttributedSkill,
+    GenerateQuestionRequest,
+    GeneratedProblemResponse,
+)
 from app.services.question_service import (
     ContextRetrievalError,
     ContextRetrievalNotConfigured,
@@ -62,14 +67,16 @@ def get_question_service(
     )
 
 
-@router.post("/generate", response_model=ProblemContext)
+@router.post("/generate", response_model=GeneratedProblemResponse)
 async def generate_question(
     course_id: str,
     request: GenerateQuestionRequest,
     service: QuestionService = Depends(get_question_service),
-) -> ProblemContext:
+    repository: CourseRepository = Depends(get_course_repository),
+    session: Session = Depends(get_session),
+) -> GeneratedProblemResponse:
     try:
-        return await service.generate(
+        problem = await service.generate(
             course_id=course_id,
             document_id=request.document_id,
             question_request=request.question_request,
@@ -93,3 +100,17 @@ async def generate_question(
         raise HTTPException(504, "Question generation took too long") from exc
     except QuestionWorkflowError as exc:
         raise HTTPException(502, "Question generation is temporarily unavailable") from exc
+
+    skill_ids = repository.get_problem_skills(problem.id)
+    skills = (
+        session.exec(select(Skill).where(Skill.id.in_(skill_ids))).all()
+        if skill_ids
+        else []
+    )
+    return GeneratedProblemResponse(
+        problem=problem,
+        skills=[
+            AttributedSkill(id=s.id, name=s.name, difficulty_band=s.difficulty_band)
+            for s in skills
+        ],
+    )

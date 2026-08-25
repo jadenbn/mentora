@@ -149,11 +149,16 @@ describe("course material APIs", () => {
 
   it("maps a generated backend problem into the frontend domain", async () => {
     const spy = mockFetch(ok({
-      id: "problem_1",
-      course_id: "course_demo",
-      document_id: "doc_1",
-      source: "generated",
-      prompt: "Differentiate x squared.",
+      problem: {
+        id: "problem_1",
+        course_id: "course_demo",
+        document_id: "doc_1",
+        source: "generated",
+        prompt: "Differentiate x squared.",
+      },
+      skills: [
+        { id: "course_demo.power-rule", name: "Power rule", difficulty_band: 0.4 },
+      ],
     }));
     await expect(
       generateCourseQuestion("course_demo", "doc_1", "  A conceptual question  "),
@@ -163,6 +168,12 @@ describe("course material APIs", () => {
       documentId: "doc_1",
       source: "generated",
       prompt: "Differentiate x squared.",
+      skill: {
+        skillId: "course_demo.power-rule",
+        skillName: "Power rule",
+        targetDifficulty: 0.4,
+        isReview: false,
+      },
     });
     expect(spy.mock.calls[0][1]).toMatchObject({
       method: "POST",
@@ -172,6 +183,21 @@ describe("course material APIs", () => {
       document_id: "doc_1",
       question_request: "A conceptual question",
     });
+  });
+
+  it("leaves skill undefined when the server attributed nothing", async () => {
+    mockFetch(ok({
+      problem: {
+        id: "problem_2",
+        course_id: "course_demo",
+        document_id: "doc_1",
+        source: "generated",
+        prompt: "Differentiate x squared.",
+      },
+      skills: [],
+    }));
+    const result = await generateCourseQuestion("course_demo", "doc_1", "Conceptual");
+    expect(result.skill).toBeUndefined();
   });
 });
 

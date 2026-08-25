@@ -92,6 +92,38 @@ def test_normalize_slug_collapses_and_lowercases() -> None:
     assert normalize_slug("calc1", "Product   Rule") == "calc1.product-rule"
 
 
+def test_normalize_slug_course_id_with_underscore_does_not_double_prefix() -> None:
+    """Regression: a course id like "course_demo" contains a character
+    (underscore) the slug substitution rewrites to a hyphen. Comparing the
+    normalized slug against the raw, un-normalized course id used to miss
+    the match and prepend the prefix a second time — so the same skill,
+    depending on whether the model happened to echo the course id back,
+    landed under two different ids (course_demo.foo vs
+    course_demo.course-demo.foo) and was never recognized as one skill."""
+    bare = normalize_slug("course_demo", "differentiation-product-rule")
+    prefixed_underscore = normalize_slug(
+        "course_demo", "course_demo.differentiation-product-rule"
+    )
+    prefixed_hyphen = normalize_slug(
+        "course_demo", "course-demo.differentiation-product-rule"
+    )
+    assert bare == "course_demo.differentiation-product-rule"
+    assert prefixed_underscore == bare
+    assert prefixed_hyphen == bare
+
+
+def test_normalize_slug_with_underscore_course_id_is_idempotent() -> None:
+    cases = [
+        "differentiation-product-rule",
+        "course_demo.differentiation-product-rule",
+        "COURSE_DEMO.Differentiation Product Rule",
+    ]
+    for raw in cases:
+        once = normalize_slug("course_demo", raw)
+        twice = normalize_slug("course_demo", once)
+        assert once == twice
+
+
 def test_validate_taxonomy_rejects_unresolved_prereq() -> None:
     skills = [
         Skill(

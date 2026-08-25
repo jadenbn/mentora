@@ -36,14 +36,26 @@ def normalize_slug(course_id: str, raw: str) -> str:
     """Lowercase, hyphenate, collapse repeats, and course-prefix a skill id.
 
     Idempotent: normalize_slug(c, normalize_slug(c, x)) == normalize_slug(c, x).
+
+    A course id containing characters outside [a-z0-9.] (e.g. "course_demo")
+    goes through the same _SLUG_INVALID/_SLUG_REPEAT substitution as the raw
+    slug before either is compared — otherwise a raw id that already includes
+    the course prefix (e.g. an LLM echoing "course_demo.foo" back) fails the
+    startswith check against the *unnormalized* course_id (its underscore
+    never matches the slug's now-hyphenated one) and gets prefixed a second
+    time, producing two different ids for what should be one skill.
     """
     slug = raw.strip().lower()
     slug = _SLUG_INVALID.sub("-", slug)
     slug = _SLUG_REPEAT.sub("-", slug).strip("-")
-    prefix = f"{course_id}."
-    if not slug.startswith(prefix):
-        slug = f"{prefix}{slug}"
-    return slug
+
+    normalized_course_id = _SLUG_INVALID.sub("-", course_id.strip().lower())
+    normalized_course_id = _SLUG_REPEAT.sub("-", normalized_course_id).strip("-")
+    normalized_prefix = f"{normalized_course_id}."
+    if slug.startswith(normalized_prefix):
+        slug = slug[len(normalized_prefix):]
+
+    return f"{course_id}.{slug}"
 
 
 def _validate_acyclic(skills: dict[str, Skill]) -> None:
