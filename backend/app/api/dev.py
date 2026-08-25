@@ -231,7 +231,7 @@ function masteryColor(m) {
 async function load() {
   selected = null; renderSelected();
   try {
-    const r = await fetch(api('skills-overview'));
+    const r = await fetch(api('skills-overview'), { cache: 'no-store' });
     if (!r.ok) throw new Error(await r.text());
     data = await r.json();
   } catch (e) { log('load failed: ' + e.message, true); return; }
