@@ -18,9 +18,10 @@ import type {
 } from "tldraw";
 import { toWorldPoint, toWorldRect } from "@/lib/annotations/geometry";
 import type { CanvasAction, MarkType } from "@/types/tutor";
+import { AI_SHAPE_OWNER } from "@/lib/canvas/ownership";
 
 /** Marks every shape this module creates, so tutor output stays identifiable. */
-export const AI_SHAPE_OWNER = "ai";
+export { AI_SHAPE_OWNER } from "@/lib/canvas/ownership";
 
 export interface RenderContext {
   /** World rectangle the analyzed image covered, from captureCanvasForAnalysis. */

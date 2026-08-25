@@ -25,10 +25,6 @@ import {
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
-import { animateCanvasActions } from "@/lib/annotations/animateActions";
-import { randomDemoActions } from "@/lib/annotations/demoAnnotation";
-import { clearDemoShapes, runDemoScript } from "@/lib/annotations/demoScript";
-import type { AnimationHandle } from "@/lib/annotations/animate";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
 import { touchSpace } from "@/lib/spaces/store";
@@ -99,18 +95,12 @@ function TutorResult({
 function CanvasPanel({
   onAnalyze,
   onClear,
-  onAnimateDemo,
-  onRunDemo,
-  demoPhase,
   busyMode,
   response,
   error,
 }: {
   onAnalyze: (mode: TutorMode) => void;
   onClear: () => void;
-  onAnimateDemo: () => void;
-  onRunDemo: () => void;
-  demoPhase: string | null;
   busyMode: TutorMode | null;
   response: TutorResponse | null;
   error: string | null;
@@ -165,29 +155,6 @@ function CanvasPanel({
           <TutorResult error={error} response={response} />
         </section>
 
-        <section className="mt-6 border-t border-slate-200 pt-5">
-          <h3 className="text-sm font-semibold text-slate-950">Testing</h3>
-          <button
-            className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-            onClick={onAnimateDemo}
-            type="button"
-          >
-            Animate test note
-          </button>
-          <button
-            className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-            onClick={onRunDemo}
-            type="button"
-          >
-            Run full demo
-          </button>
-          {demoPhase ? (
-            <p className="mt-2 text-xs font-semibold text-blue-700">
-              {demoPhase}…
-            </p>
-          ) : null}
-        </section>
-
       </aside>
     </>
   );
@@ -205,8 +172,6 @@ export function Whiteboard({
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const animation = useRef<AnimationHandle | null>(null);
-  const [demoPhase, setDemoPhase] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
@@ -244,37 +209,7 @@ export function Whiteboard({
     [busyMode, courseId, problem],
   );
 
-  /** Testing only: draw a random tutor-shaped annotation with animation. */
-  const handleAnimateDemo = useCallback(() => {
-    const current = editor.current;
-    if (!current) return;
-    animation.current?.cancel();
-    animation.current = animateCanvasActions(current, randomDemoActions(), {
-      bounds: current.getViewportPageBounds(),
-      interactionId: `demo_${Date.now()}`,
-    });
-  }, []);
-
-  /** Testing only: replay a whole tutoring session end to end. */
-  const handleRunDemo = useCallback(() => {
-    const current = editor.current;
-    if (!current) return;
-    animation.current?.cancel();
-    setDemoPhase(null);
-    const handle = runDemoScript(current, current.getViewportPageBounds(), {
-      onPhase: setDemoPhase,
-    });
-    animation.current = handle;
-    void handle.done.then(() => {
-      if (animation.current === handle) animation.current = null;
-    });
-  }, []);
-
   const handleClear = useCallback(() => {
-    animation.current?.cancel();
-    setDemoPhase(null);
-    if (editor.current) clearDemoShapes(editor.current);
-    animation.current = null;
     if (editor.current) {
       clearAiShapes(editor.current);
     }
@@ -287,8 +222,6 @@ export function Whiteboard({
     return () => {
       disposeAutosave.current?.();
       disposeAutosave.current = null;
-      animation.current?.cancel();
-      animation.current = null;
       if (savedTimer.current !== null) {
         clearTimeout(savedTimer.current);
         savedTimer.current = null;
@@ -337,11 +270,8 @@ export function Whiteboard({
         <CanvasPanel
           busyMode={busyMode}
           error={error}
-          demoPhase={demoPhase}
           onAnalyze={handleAnalyze}
-          onAnimateDemo={handleAnimateDemo}
           onClear={handleClear}
-          onRunDemo={handleRunDemo}
           response={response}
         />
       </Tldraw>
