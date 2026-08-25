@@ -33,6 +33,7 @@ import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
 import { touchSpace } from "@/lib/spaces/store";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
+import type { ProblemContext } from "@/types/domain";
 import type { TutorMode, TutorResponse } from "@/types/tutor";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
@@ -186,6 +187,7 @@ function CanvasPanel({
             </p>
           ) : null}
         </section>
+
       </aside>
     </>
   );
@@ -194,9 +196,11 @@ function CanvasPanel({
 export function Whiteboard({
   spaceId,
   courseId,
+  problem,
 }: {
   spaceId: string;
   courseId: string;
+  problem?: ProblemContext;
 }) {
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
@@ -223,6 +227,7 @@ export function Whiteboard({
           editor: current,
           mode,
           courseId,
+          problem,
         });
         setResponse(result);
       } catch (caught) {
@@ -236,16 +241,13 @@ export function Whiteboard({
         setBusyMode(null);
       }
     },
-    [busyMode, courseId],
+    [busyMode, courseId, problem],
   );
 
   /** Testing only: draw a random tutor-shaped annotation with animation. */
   const handleAnimateDemo = useCallback(() => {
     const current = editor.current;
-    if (!current) {
-      return;
-    }
-    // A second press interrupts the first rather than overlapping it.
+    if (!current) return;
     animation.current?.cancel();
     animation.current = animateCanvasActions(current, randomDemoActions(), {
       bounds: current.getViewportPageBounds(),
@@ -256,29 +258,22 @@ export function Whiteboard({
   /** Testing only: replay a whole tutoring session end to end. */
   const handleRunDemo = useCallback(() => {
     const current = editor.current;
-    if (!current) {
-      return;
-    }
+    if (!current) return;
     animation.current?.cancel();
     setDemoPhase(null);
-
     const handle = runDemoScript(current, current.getViewportPageBounds(), {
       onPhase: setDemoPhase,
     });
     animation.current = handle;
     void handle.done.then(() => {
-      if (animation.current === handle) {
-        animation.current = null;
-      }
+      if (animation.current === handle) animation.current = null;
     });
   }, []);
 
   const handleClear = useCallback(() => {
     animation.current?.cancel();
     setDemoPhase(null);
-    if (editor.current) {
-      clearDemoShapes(editor.current);
-    }
+    if (editor.current) clearDemoShapes(editor.current);
     animation.current = null;
     if (editor.current) {
       clearAiShapes(editor.current);
