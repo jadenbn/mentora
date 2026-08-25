@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.api.dependencies import get_course_repository, get_session
+from app.config import TutorSettings, missing_settings
 from app.database import CourseRepository
+from app.models.skill import Skill
 from app.schemas.learning import (
     AttemptCreate,
     AttemptResult,
@@ -25,6 +27,7 @@ from app.services.question_service import (
     QuestionService,
 )
 from app.services.retrieval import search_course
+from app.services.skill_generation import bootstrap_first_skill
 from app.services.student_model_service import UnknownSkillError
 
 logger = logging.getLogger(__name__)
@@ -165,6 +168,35 @@ def get_question_service_dep(
     return get_question_service(repository=repository)
 
 
+def _course_has_no_skills(session: Session, course_id: str) -> bool:
+    return session.exec(select(Skill).where(Skill.course_id == course_id)).first() is None
+
+
+async def _bootstrap_course(
+    session: Session, course_id: str, repository: CourseRepository
+) -> None:
+    """Give selection one skill to start from, for a course that has none.
+
+    Best-effort and silent: if the taxonomy provider isn't configured, or the
+    call fails, this simply leaves selection with nothing — the caller's
+    existing 404 for "no unlocked skills" stands, it never becomes a 500.
+    """
+    if missing_settings():
+        return
+    from app.agents.taxonomy_workflow import GeminiTaxonomyWorkflow
+
+    settings = TutorSettings.from_environment()
+    workflow = GeminiTaxonomyWorkflow(
+        api_key=settings.gemini_api_key,
+        model=settings.gemini_model,
+        timeout_seconds=settings.request_timeout_seconds,
+    )
+    try:
+        await bootstrap_first_skill(session, course_id, repository, workflow)
+    except Exception:
+        logger.exception("cold-start skill bootstrap failed for course %s", course_id)
+
+
 @router.post("/next-problem", response_model=NextProblemResponse)
 async def next_problem(
     course_id: str,
@@ -178,8 +210,17 @@ async def next_problem(
     The one route that runs the whole loop: select -> ground -> generate -> tag.
     The returned problem carries a server-side problem_skills row, so the attempt
     the client posts back moves the skill selection actually chose.
+
+    A course with ingested documents but zero skills gets exactly one
+    cold-start skill proposed here before selection runs again — the one gap
+    piggybacking on question generation can't fill, since there is no prior
+    skill for question generation to be grounded by. Every subsequent skill
+    the course grows is expected to come from that piggybacking instead.
     """
     spec = selection.select_next(session, course_id, student_id)
+    if spec is None and _course_has_no_skills(session, course_id):
+        await _bootstrap_course(session, course_id, repository)
+        spec = selection.select_next(session, course_id, student_id)
     if spec is None:
         raise HTTPException(404, f"no unlocked skills available for course '{course_id}'")
 

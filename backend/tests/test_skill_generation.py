@@ -14,7 +14,7 @@ from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.models.skill_state import SkillState
 from app.schemas.documents import ChunkMetadata, DocumentType
-from app.services.skill_generation import generate_taxonomy_for_course
+from app.services.skill_generation import bootstrap_first_skill, generate_taxonomy_for_course
 
 CHAIN_RULE = {
     "id": "chain-rule",
@@ -168,6 +168,41 @@ def test_existing_skills_are_offered_to_the_workflow_as_prereq_context(session, 
     )
     offered = workflow.calls[0]["existing_skills"]
     assert {"id": "calc1.root", "name": "Root"} in offered
+
+
+def test_bootstrap_first_skill_persists_exactly_one_skill(session, tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    _seed_document(repo, course_id="calc1", document_id="doc1", texts=["chain rule text"])
+    workflow = StubWorkflow([[CHAIN_RULE]])
+
+    report = asyncio.run(bootstrap_first_skill(session, "calc1", repo, workflow))
+    assert report is not None
+    assert report.added == ["calc1.chain-rule"]
+    assert len(workflow.calls) == 1
+    assert workflow.calls[0]["emergent"] is True
+    assert workflow.calls[0]["existing_skills"] == []
+
+
+def test_bootstrap_first_skill_uses_only_one_document(session, tmp_path):
+    # list_documents orders most-recently-updated first (same convention
+    # _resolve_target_document's own fallback uses); doc2 lands there.
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    _seed_document(repo, course_id="calc1", document_id="doc1", texts=["from doc1"])
+    _seed_document(repo, course_id="calc1", document_id="doc2", texts=["from doc2"])
+    workflow = StubWorkflow([[CHAIN_RULE]])
+
+    asyncio.run(bootstrap_first_skill(session, "calc1", repo, workflow))
+    text = workflow.calls[0]["source_text"]
+    assert "from doc2" in text
+    assert "from doc1" not in text
+
+
+def test_bootstrap_first_skill_returns_none_without_documents(session, tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    workflow = StubWorkflow([])
+    result = asyncio.run(bootstrap_first_skill(session, "calc1", repo, workflow))
+    assert result is None
+    assert workflow.calls == []
 
 
 def test_source_text_samples_across_documents_within_the_char_cap(session, tmp_path):

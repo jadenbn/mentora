@@ -1,13 +1,22 @@
-"""Generate a course's skill taxonomy from its documents, additively.
+"""Generate a course's skill taxonomy, additively, without a dedicated call
+on every upload.
 
-Orchestrates the violet path of the pipeline: gather source text from a
-course's ingested chunks, call the taxonomy workflow, build the result
-through the same validator every taxonomy source uses, and merge it in
-without disturbing anything a student has already touched.
+The steady-state strategy is emergent: skill discovery piggybacks on calls
+the system makes anyway (question generation, attempt grading), so ongoing
+growth costs no extra LLM spend. That piggybacking lives where those calls
+happen, not here.
 
-A content-hash guard (CourseGenerationVersion) means calling this twice for
-an unchanged document set is a no-op that never reaches the model — so it is
-safe to call after every upload rather than only the first one.
+This module holds the one deliberate, standalone call the system does make:
+bootstrap_first_skill, fired from next_problem only when a course has no
+skills at all and selection has nothing to work with — the one situation
+piggybacking can't help, because there is no question-generation call to
+piggyback on yet. It fires at most once per course.
+
+generate_taxonomy_for_course (whole-course, content-hash-guarded generation
+from sampled text across every document) remains here as tested, working
+infrastructure — reusable for a manual "regenerate this course's taxonomy"
+action or a future switch back to eager generation — but nothing currently
+calls it automatically.
 """
 
 from __future__ import annotations
@@ -25,6 +34,9 @@ from app.models.skill import Skill
 from app.services.taxonomy import MergeReport, build_taxonomy, merge_generated
 
 logger = logging.getLogger(__name__)
+
+_BOOTSTRAP_CHUNK_LIMIT = 6
+_BOOTSTRAP_MAX_CHARS = 6_000
 
 
 class TaxonomyWorkflow(Protocol):
@@ -128,3 +140,43 @@ async def generate_taxonomy_for_course(
         len(report.blocked_seed_collisions),
     )
     return report
+
+
+async def bootstrap_first_skill(
+    session: Session,
+    course_id: str,
+    repository: CourseRepository,
+    workflow: TaxonomyWorkflow,
+) -> MergeReport | None:
+    """Propose and persist exactly one skill for a course that has none yet.
+
+    The one deliberate, standalone generation call in the system — called
+    from next_problem only when selection has nothing to pick from because
+    no Skill row exists at all for the course. Deliberately cheap: a handful
+    of chunks from the first document, not generate_taxonomy_for_course's
+    course-wide sampling, because the only job here is giving selection ONE
+    skill to start from. After this succeeds, selection always has something
+    to work with and this path never runs again for the course — further
+    growth is expected to come from folding skill context into
+    question-generation and grading calls that already happen, not from
+    calling this again.
+
+    Returns None if the course has no ingested documents (or no chunks) to
+    draw a skill from yet — the caller's existing "nothing to select" 404
+    stands unchanged in that case.
+    """
+    documents = repository.list_documents(course_id)
+    if not documents:
+        return None
+    chunks = repository.get_chunks(
+        course_id=course_id, document_id=documents[0].document_id
+    )
+    if not chunks:
+        return None
+
+    excerpt = "\n\n".join(c.text for c in chunks[:_BOOTSTRAP_CHUNK_LIMIT])
+    excerpt = excerpt[:_BOOTSTRAP_MAX_CHARS]
+
+    raw = await workflow.run(source_text=excerpt, existing_skills=[], emergent=True)
+    produced = build_taxonomy(course_id, raw, SkillOrigin.GENERATED)
+    return merge_generated(session, course_id, produced)
