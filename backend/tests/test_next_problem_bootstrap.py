@@ -16,6 +16,7 @@ from app.api import learning as learning_api
 from app.database import CourseRepository
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
+from app.services import attribution
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import ProblemContext
 
@@ -53,12 +54,13 @@ def _seed_document(repo: CourseRepository, *, course_id: str, document_id: str, 
 
 
 class StubQuestionService:
-    """Persists via the real repository, like QuestionService.generate does,
-    so problem_skills' FK to generated_problems is satisfied — just skips the
-    provider call and grounds in whatever chunk_index 0 of the document is."""
+    """Persists via the real repository and session, like QuestionService
+    .generate does -- just skips the provider call and grounds in whatever
+    chunk_index 0 of the document is."""
 
-    def __init__(self, repository: CourseRepository):
+    def __init__(self, repository: CourseRepository, session):
         self.repository = repository
+        self.session = session
 
     async def generate(self, *, course_id, document_id, question_request, required_skill_id=None):
         chunks = self.repository.get_chunks(course_id=course_id, document_id=document_id)
@@ -75,9 +77,7 @@ class StubQuestionService:
         # Mirror QuestionService.generate()'s own attribution step, minus a
         # model call: the real service always includes required_skill_id.
         if required_skill_id:
-            self.repository.set_problem_skills(
-                problem_id=generated.id, skill_ids=[required_skill_id]
-            )
+            attribution.set_problem_skills(self.session, generated.id, [required_skill_id])
         return generated
 
 
@@ -103,12 +103,12 @@ def test_next_problem_bootstraps_a_skill_for_a_course_with_none(session, tmp_pat
             student_id="stu1",
             session=session,
             repository=repo,
-            service=StubQuestionService(repo),
+            service=StubQuestionService(repo, session),
         )
     )
     assert result.spec.skill_id == "calc1.chain-rule"
     assert result.problem.id == "problem_1"
-    assert repo.get_problem_skills("problem_1") == ["calc1.chain-rule"]
+    assert attribution.get_problem_skills(session, "problem_1") == ["calc1.chain-rule"]
 
 
 def test_next_problem_still_404s_when_bootstrap_finds_nothing(session, tmp_path, monkeypatch):
@@ -127,7 +127,7 @@ def test_next_problem_still_404s_when_bootstrap_finds_nothing(session, tmp_path,
                 student_id="stu1",
                 session=session,
                 repository=repo,
-                service=StubQuestionService(repo),
+                service=StubQuestionService(repo, session),
             )
         )
     assert exc_info.value.status_code == 404
@@ -152,7 +152,7 @@ def test_next_problem_skips_bootstrap_when_provider_is_unconfigured(session, tmp
                 student_id="stu1",
                 session=session,
                 repository=repo,
-                service=StubQuestionService(repo),
+                service=StubQuestionService(repo, session),
             )
         )
     assert exc_info.value.status_code == 404
@@ -182,7 +182,7 @@ def test_next_problem_never_calls_bootstrap_when_a_skill_already_exists(session,
             student_id="stu1",
             session=session,
             repository=repo,
-            service=StubQuestionService(repo),
+            service=StubQuestionService(repo, session),
         )
     )
     assert result.spec.skill_id == "calc1.a"

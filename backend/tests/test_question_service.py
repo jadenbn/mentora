@@ -9,6 +9,7 @@ from app.database import CourseRepository
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.models.skill_proposal import ProposalStatus, SkillProposal
+from app.services import attribution
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import GroundingChunk, QuestionPlan
 from app.services.question_service import (
@@ -193,7 +194,7 @@ def test_generation_attributes_the_problem_to_an_existing_skill(tmp_path, sessio
             question_request="Conceptual",
         )
     )
-    assert repo.get_problem_skills(generated.id) == ["course_1.chain-rule"]
+    assert attribution.get_problem_skills(session, generated.id) == ["course_1.chain-rule"]
 
 
 def test_generation_never_creates_a_skill(tmp_path, session):
@@ -215,7 +216,7 @@ def test_generation_never_creates_a_skill(tmp_path, session):
     )
 
     assert session.get(Skill, "course_1.chain-rule") is None
-    assert repo.get_problem_skills(generated.id) == []
+    assert attribution.get_problem_skills(session, generated.id) == []
 
     proposal = session.exec(
         select(SkillProposal).where(SkillProposal.slug == "course_1.chain-rule")
@@ -257,7 +258,7 @@ def test_generation_attributes_every_existing_skill_the_model_names(tmp_path, se
             question_request="Conceptual",
         )
     )
-    assert set(repo.get_problem_skills(generated.id)) == {
+    assert set(attribution.get_problem_skills(session, generated.id)) == {
         "course_1.chain-rule",
         "course_1.product-rule",
     }
@@ -279,7 +280,7 @@ def test_generation_always_includes_the_required_skill_even_if_the_model_misses_
             required_skill_id="course_1.selected",
         )
     )
-    assert repo.get_problem_skills(generated.id) == ["course_1.selected"]
+    assert attribution.get_problem_skills(session, generated.id) == ["course_1.selected"]
 
 
 def test_generation_offers_existing_skills_to_the_workflow(tmp_path, session):
@@ -317,7 +318,7 @@ def test_generation_never_overwrites_a_seed_skill(tmp_path, session):
     )
     # The problem is still attributed to the id, but the seed skill's own
     # fields are untouched.
-    assert "course_1.chain-rule" in repo.get_problem_skills(generated.id)
+    assert "course_1.chain-rule" in attribution.get_problem_skills(session, generated.id)
     untouched = session.get(Skill, "course_1.chain-rule")
     assert untouched.name == "Authored"
     assert untouched.origin == SkillOrigin.SEED
@@ -330,6 +331,7 @@ def test_a_malformed_skill_batch_does_not_fail_the_problem_request(tmp_path, ses
     batch -- here a prereq that resolves nowhere -- must cost them the skill
     attribution the model proposed, not the problem itself.
     """
+    _existing_skill(session, "course_1.seeded", name="Seeded")
     repo = seeded_repo(tmp_path)
     broken = {**VALID_SKILL, "prereqs": ["nothing-defines-this"]}
     workflow = StubQuestionWorkflow(skills=[broken])
@@ -344,5 +346,5 @@ def test_a_malformed_skill_batch_does_not_fail_the_problem_request(tmp_path, ses
     )
 
     assert generated.prompt
-    assert repo.get_problem_skills(generated.id) == ["course_1.seeded"]
+    assert attribution.get_problem_skills(session, generated.id) == ["course_1.seeded"]
     assert session.get(Skill, "course_1.chain-rule") is None

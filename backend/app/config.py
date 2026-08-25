@@ -42,6 +42,22 @@ def cors_allow_origins() -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+def api_key() -> str | None:
+    """Shared secret required on /api requests, or None to leave the API open.
+
+    Set MENTORA_API_KEY on any deployment reachable by anything but you. This
+    API spends provider quota on every generation and grading call, and it
+    writes student mastery.
+
+    Scope, stated plainly: a shared key authenticates the *caller*, not the
+    student. `student_id` is still whatever the request says it is, so any
+    holder of the key can read or write any student's model. Per-student
+    identity needs a real user system and per-user tokens; this closes the
+    open-to-the-internet hole, not that one.
+    """
+    return os.getenv("MENTORA_API_KEY") or None
+
+
 def database_path() -> Path:
     configured = os.getenv("MENTORA_DB_PATH")
     if configured:

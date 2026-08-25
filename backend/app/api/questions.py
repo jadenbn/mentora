@@ -20,6 +20,7 @@ from app.schemas.problems import (
     GenerateQuestionRequest,
     GeneratedProblemResponse,
 )
+from app.services import attribution
 from app.services.question_service import (
     ContextRetrievalError,
     ContextRetrievalNotConfigured,
@@ -101,7 +102,7 @@ async def generate_question(
     except QuestionWorkflowError as exc:
         raise HTTPException(502, "Question generation is temporarily unavailable") from exc
 
-    skill_ids = repository.get_problem_skills(problem.id)
+    skill_ids = attribution.get_problem_skills(session, problem.id)
     skills = (
         session.exec(select(Skill).where(Skill.id.in_(skill_ids))).all()
         if skill_ids

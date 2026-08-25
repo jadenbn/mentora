@@ -27,7 +27,7 @@ from app.schemas.learning import (
     StudentModelResponse,
     WorkResponse,
 )
-from app.services import selection, student_model_service
+from app.services import attribution, selection, student_model_service
 from app.services.question_service import (
     ContextRetrievalError,
     ContextRetrievalNotConfigured,
@@ -309,7 +309,7 @@ async def submit_work(
 
     attempt = None
     if mode == TutorMode.mark and response.status != WorkStatus.uncertain:
-        skills = repository.get_problem_skills(problem_id)
+        skills = attribution.get_problem_skills(session, problem_id)
         difficulty = repository.get_problem_difficulty(problem_id)
         if skills and difficulty is not None:
             try:
@@ -326,7 +326,6 @@ async def submit_work(
                         partial=response.status == WorkStatus.partial,
                         hints_used=hints_used,
                     ),
-                    repository=repository,
                 )
             except UnknownSkillError:
                 # The problem names a skill the taxonomy no longer has (a

@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import event
 from sqlmodel import SQLModel, create_engine
 
+import app.models  # noqa: F401  -- registers every table on SQLModel.metadata
 from app.config import database_path
 
 DB_PATH = database_path()
@@ -19,6 +20,10 @@ def _configure_sqlite(dbapi_connection, connection_record) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA busy_timeout=5000")
+    # Off by default in SQLite. ProblemSkill.skill_id references skill.id, and
+    # that reference is the attribution invariant -- unenforced it is a
+    # comment, not a constraint.
+    cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
 

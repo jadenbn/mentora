@@ -18,7 +18,7 @@ from app.models.skill_proposal import ProposalStatus, SkillProposal
 from app.models.skill_state import SkillState
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import QuestionPlan
-from app.services import selection, student_model_service
+from app.services import attribution, selection, student_model_service
 from app.schemas.learning import AttemptCreate
 from app.services.question_service import QuestionService
 
@@ -124,7 +124,7 @@ async def test_select_generate_tag_grade_record_moves_the_selected_skill(
     # 4. Attribution already happened inside generate(), server-side. The
     #    stub names a skill the course doesn't have; that becomes a proposal,
     #    not an attribution, so only the selected skill counts.
-    attributed = repo.get_problem_skills(problem.id)
+    attributed = attribution.get_problem_skills(session, problem.id)
     assert attributed == ["calc1.derivatives.chain-rule"]
     proposal = session.exec(
         select(SkillProposal).where(SkillProposal.slug == "calc1.unrelated-skill")
@@ -141,9 +141,7 @@ async def test_select_generate_tag_grade_record_moves_the_selected_skill(
         difficulty=spec.target_difficulty,
         correct=True,
     )
-    result = student_model_service.record_attempt(
-        session, "calc1", payload, repository=repo
-    )
+    result = student_model_service.record_attempt(session, "calc1", payload)
 
     # Mastery moved for the *selected* skill, not the one the client named.
     assert "calc1.derivatives.chain-rule" in result.updated_skills

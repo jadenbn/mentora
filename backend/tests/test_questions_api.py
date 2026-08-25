@@ -13,6 +13,7 @@ from app.db import engine
 from app.main import app
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
+from app.services import attribution
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import GeneratedProblem, ProblemContext
 from app.services.question_service import (
@@ -75,11 +76,12 @@ def test_generation_response_includes_the_attributed_skills():
     document_id = "doc_skills_lookup"
 
     class AttributingStubService:
-        """Persists via the real repository, like QuestionService.generate
-        does, so problem_skills' FK to generated_problems is satisfied."""
+        """Persists via the real repository and session, like
+        QuestionService.generate does."""
 
-        def __init__(self, repository) -> None:
+        def __init__(self, repository, session) -> None:
             self.repository = repository
+            self.session = session
 
         async def generate(self, **kwargs):
             chunks = self.repository.get_chunks(
@@ -95,9 +97,7 @@ def test_generation_response_includes_the_attributed_skills():
                 ),
                 grounding_chunk_ids=[chunks[0].chunk_id],
             )
-            self.repository.set_problem_skills(
-                problem_id=generated.id, skill_ids=[f"{course_id}.chain-rule"]
-            )
+            attribution.set_problem_skills(self.session, generated.id, [f"{course_id}.chain-rule"])
             return generated
 
     with TestClient(app) as http:
@@ -135,7 +135,9 @@ def test_generation_response_includes_the_attributed_skills():
                 )
             ],
         )
-        app.dependency_overrides[get_question_service] = lambda: AttributingStubService(repository)
+        app.dependency_overrides[get_question_service] = lambda: AttributingStubService(
+            repository, Session(engine)
+        )
 
         response = http.post(
             f"/api/courses/{course_id}/questions/generate",

@@ -113,3 +113,43 @@ def test_database_path_can_be_overridden(monkeypatch, tmp_path):
     configured = tmp_path / "course-context.db"
     monkeypatch.setenv("MENTORA_DB_PATH", str(configured))
     assert database_path() == configured
+
+
+class TestApiKeyGate:
+    """MENTORA_API_KEY closes the API to unauthenticated callers when set."""
+
+    def test_the_api_is_open_when_no_key_is_configured(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from app.config import api_key
+        from app.main import app
+
+        monkeypatch.delenv("MENTORA_API_KEY", raising=False)
+        assert api_key() is None
+        with TestClient(app) as client:
+            assert client.get("/health").status_code == 200
+            assert client.get(
+                "/api/courses/calc1/student-model", params={"student_id": "s"}
+            ).status_code == 200
+
+    def test_a_configured_key_is_required_on_api_routes(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+
+        monkeypatch.setenv("MENTORA_API_KEY", "secret")
+        with TestClient(app) as client:
+            unauthorized = client.get(
+                "/api/courses/calc1/student-model", params={"student_id": "s"}
+            )
+            assert unauthorized.status_code == 401
+
+            authorized = client.get(
+                "/api/courses/calc1/student-model",
+                params={"student_id": "s"},
+                headers={"x-api-key": "secret"},
+            )
+            assert authorized.status_code == 200
+
+            # A deployment must stay probeable without the key.
+            assert client.get("/health").status_code == 200

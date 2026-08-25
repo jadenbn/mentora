@@ -14,7 +14,7 @@ from app.database import CourseRepository
 from app.models.skill import Skill
 from app.schemas.problems import GeneratedProblem, GroundingChunk, ProblemContext, QuestionPlan
 from app.schemas.taxonomy import RawSkillEntry
-from app.services import proposals
+from app.services import attribution, proposals
 
 logger = logging.getLogger(__name__)
 RETRIEVAL_TOP_K = 12
@@ -142,7 +142,7 @@ class QuestionService:
             grounding_chunk_ids=plan.grounding_chunk_ids,
         )
         skill_ids = self._attribute_skills(course_id, plan.skills, required_skill_id)
-        self.repository.set_problem_skills(problem_id=generated.id, skill_ids=skill_ids)
+        attribution.set_problem_skills(self.session, generated.id, skill_ids)
         logger.info(
             "question generated strategy=%s duration_ms=%d skills=%s",
             strategy,

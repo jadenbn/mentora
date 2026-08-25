@@ -15,8 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
-from app.api.dependencies import get_course_repository, get_session
-from app.database import CourseRepository
+from app.api.dependencies import get_session
 from app.config import missing_indexing_settings
 from app.models.enums import SkillOrigin
 from app.models.skill_proposal import ProposalStatus, SkillProposal
@@ -64,7 +63,6 @@ def create_synthetic_attempt(
     course_id: str,
     payload: AttemptCreate,
     session: Session = Depends(get_session),
-    repository: CourseRepository = Depends(get_course_repository),
 ):
     """Record an attempt from an explicitly stated outcome. Dev only.
 
@@ -75,9 +73,7 @@ def create_synthetic_attempt(
     dashboard can drive the loop without a canvas and a model call.
     """
     try:
-        return student_model_service.record_attempt(
-            session, course_id, payload, repository=repository
-        )
+        return student_model_service.record_attempt(session, course_id, payload)
     except UnknownSkillError as exc:
         raise HTTPException(400, str(exc)) from exc
 

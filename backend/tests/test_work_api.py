@@ -13,6 +13,8 @@ from app.api.tutor import get_tutor_service
 from app.db import engine
 from app.main import app
 from app.models.skill_state import SkillState
+from app.services import attribution
+from app.services.taxonomy import seed_all_courses
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import ProblemContext
 from app.schemas.tutor import TutorResponse, WorkStatus
@@ -50,10 +52,13 @@ def seeded():
                                source="generated", prompt="Differentiate."),
         grounding_chunk_ids=["chunk_doc_1_00000"],
     )
-    repo.set_problem_skills(problem_id=problem.id, skill_ids=["calc1.derivatives.chain-rule"])
+    # Seed the real calc1 taxonomy here rather than relying on the app
+    # lifespan: attribution now validates against skill.id, so the skill has
+    # to exist before the problem can be attributed to it.
+    with Session(engine) as s:
+        seed_all_courses(s)
+        attribution.set_problem_skills(s, problem.id, ["calc1.derivatives.chain-rule"])
     repo.set_problem_difficulty(problem_id=problem.id, target_difficulty=0.65)
-    # calc1.derivatives.chain-rule comes from the real seed taxonomy, loaded
-    # by the app lifespan -- inserting our own here would be deleted by it.
     return problem
 
 

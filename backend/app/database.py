@@ -59,17 +59,6 @@ CREATE TABLE IF NOT EXISTS problem_grounding_chunks (
     UNIQUE(problem_id, ordinal)
 );
 
--- Which skill(s) a generated problem targets. Deliberately no foreign key to
--- the skill table: that table belongs to the SQLModel layer, and a cross-layer
--- FK would couple two independent schemas. skill_id is validated in the service.
-CREATE TABLE IF NOT EXISTS problem_skills (
-    problem_id TEXT NOT NULL REFERENCES generated_problems(problem_id) ON DELETE CASCADE,
-    skill_id   TEXT NOT NULL,
-    ordinal    INTEGER NOT NULL,
-    PRIMARY KEY(problem_id, skill_id)
-);
-CREATE INDEX IF NOT EXISTS ix_problem_skills_skill ON problem_skills(skill_id);
-
 -- The difficulty selection asked this problem to be written at. Recorded at
 -- generation time so grading reads it back from the server rather than
 -- trusting a client to restate it.
@@ -309,25 +298,6 @@ class CourseRepository:
             chunks=[GroundingChunk.model_validate(dict(row)) for row in chunk_rows],
         )
 
-    def set_problem_skills(self, *, problem_id: str, skill_ids: list[str]) -> None:
-        """Record which skills a generated problem targets, preserving order.
-
-        Replaces any existing rows for the problem. skill_id validity is the
-        caller's responsibility — this layer does not know the skill table.
-        """
-        ordered = list(dict.fromkeys(skill_ids))
-        with self.connect() as connection:
-            connection.execute(
-                "DELETE FROM problem_skills WHERE problem_id = ?", (problem_id,)
-            )
-            connection.executemany(
-                """
-                INSERT INTO problem_skills (problem_id, skill_id, ordinal)
-                VALUES (?, ?, ?)
-                """,
-                [(problem_id, skill_id, ordinal) for ordinal, skill_id in enumerate(ordered)],
-            )
-
     def set_problem_difficulty(self, *, problem_id: str, target_difficulty: float) -> None:
         """Record the difficulty this problem was asked to be written at."""
         with self.connect() as connection:
@@ -347,41 +317,6 @@ class CourseRepository:
                 (problem_id,),
             ).fetchone()
         return row["target_difficulty"] if row else None
-
-    def get_problem_skills(self, problem_id: str) -> list[str]:
-        """Skills a generated problem targets, in declared order. Empty if none."""
-        with self.connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT skill_id FROM problem_skills
-                WHERE problem_id = ? ORDER BY ordinal
-                """,
-                (problem_id,),
-            ).fetchall()
-        return [row["skill_id"] for row in rows]
-
-    def delete_course(self, course_id: str) -> int:
-        """Delete one course's generated problems, documents, and chunks."""
-        with self.connect() as connection:
-            connection.execute(
-                """
-                DELETE FROM problem_grounding_chunks
-                WHERE problem_id IN (
-                    SELECT problem_id FROM generated_problems WHERE course_id = ?
-                )
-                """,
-                (course_id,),
-            )
-            connection.execute(
-                "DELETE FROM generated_problems WHERE course_id = ?", (course_id,)
-            )
-            deleted = connection.execute(
-                "DELETE FROM document_chunks WHERE course_id = ?", (course_id,)
-            ).rowcount
-            connection.execute(
-                "DELETE FROM course_documents WHERE course_id = ?", (course_id,)
-            )
-        return deleted
 
     @staticmethod
     def _document(row: sqlite3.Row) -> CourseDocument:
