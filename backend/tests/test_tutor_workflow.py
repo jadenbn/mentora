@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-pytest.importorskip("google.adk", reason="provider adapter requires google-adk")
+pytest.importorskip("google.genai", reason="provider adapter requires google-genai")
 
 from app.agents.tutor_workflow import (  # noqa: E402
     TUTOR_PLAN_RESPONSE_SCHEMA,
@@ -40,8 +40,7 @@ class TestProviderSchemaDialect:
         assert keyword not in _walk_keys(TUTOR_PLAN_RESPONSE_SCHEMA)
 
     def test_generation_is_tuned_for_an_interactive_path(self):
-        agent = GeminiTutorWorkflow(model="m")._build_agent(TutorMode.hint)
-        config = agent.generate_content_config
+        config = GeminiTutorWorkflow(model="m")._generation_config(TutorMode.hint)
         assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
         assert config.max_output_tokens == 1_024
         # Vision tokens dominate; medium keeps handwriting legible for less.
@@ -177,7 +176,7 @@ def _workflow(*, raises: Exception | None = None, malformed_responses: int = 0):
 
     class Harness(GeminiTutorWorkflow):
         def __init__(self):
-            super().__init__(model="test-model", timeout_seconds=1)
+            super().__init__(api_key="test-key", model="test-model", timeout_seconds=1)
             self.attempts = 0
 
         async def _request_plan(self, **kwargs):

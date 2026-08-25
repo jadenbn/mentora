@@ -11,22 +11,16 @@ import asyncio
 import json
 import logging
 from typing import Any
-from uuid import uuid4
 
-from google.adk.agents import LlmAgent
-from google.adk.models import Gemini
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import ValidationError
 
+from app.agents.gemini import create_client, response_object
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
 from app.schemas.tutor import NormalizedBounds, TutorMode, TutorPlan
 
 logger = logging.getLogger(__name__)
-
-APP_NAME = "mentora_tutor"
 
 _POINT = {
     "type": "object",
@@ -126,7 +120,10 @@ def drop_nulls(value: Any) -> Any:
 class GeminiTutorWorkflow:
     """Reads the canvas and plans annotations in a single model call."""
 
-    def __init__(self, *, model: str, timeout_seconds: float = 45) -> None:
+    def __init__(
+        self, *, api_key: str = "", model: str, timeout_seconds: float = 45
+    ) -> None:
+        self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
 
@@ -141,73 +138,53 @@ class GeminiTutorWorkflow:
         malformed: Exception | None = None
         # One repair attempt. Transient HTTP retries belong to the SDK; this
         # is specifically the bounded retry for unusable structured output.
-        for attempt in range(2):
-            try:
-                raw = await self._request_plan(
-                    mode=mode,
-                    canvas_image=canvas_image,
-                    canvas_mime_type=canvas_mime_type,
-                    prior_annotations=prior_annotations,
-                    repair=attempt == 1,
-                )
-                return TutorPlan.model_validate(normalize_provider_output(raw))
-            except (ValidationError, ValueError, KeyError, TypeError) as exc:
-                malformed = exc
-                logger.warning("tutor output failed validation (attempt %d): %s", attempt + 1, exc)
-            except (TimeoutError, asyncio.TimeoutError) as exc:
-                logger.warning("tutor provider timed out after %ss", self.timeout_seconds)
-                raise TutorWorkflowTimeout("the tutor took too long to respond") from exc
-            except Exception:
-                # Logged in full here because the client is told nothing: a
-                # provider message can quote credentials and prompt fragments.
-                logger.exception("tutor provider request failed")
-                raise TutorWorkflowError("the tutor request failed") from None
+        try:
+            async with create_client(self.api_key).aio as client:
+                for attempt in range(2):
+                    try:
+                        raw = await self._request_plan(
+                            client=client,
+                            mode=mode,
+                            canvas_image=canvas_image,
+                            canvas_mime_type=canvas_mime_type,
+                            prior_annotations=prior_annotations,
+                            repair=attempt == 1,
+                        )
+                        return TutorPlan.model_validate(normalize_provider_output(raw))
+                    except (ValidationError, ValueError, KeyError, TypeError) as exc:
+                        malformed = exc
+                        logger.warning(
+                            "tutor output failed validation (attempt %d): %s",
+                            attempt + 1,
+                            exc,
+                        )
+        except (TimeoutError, asyncio.TimeoutError) as exc:
+            logger.warning("tutor provider timed out after %ss", self.timeout_seconds)
+            raise TutorWorkflowTimeout("the tutor took too long to respond") from exc
+        except Exception:
+            # Logged in full here because the client is told nothing: a
+            # provider message can quote credentials and prompt fragments.
+            logger.exception("tutor provider request failed")
+            raise TutorWorkflowError("the tutor request failed") from None
         logger.error("tutor returned malformed output twice: %s", malformed)
         raise TutorWorkflowError("the tutor returned malformed output") from malformed
 
-    def _build_agent(self, mode: TutorMode) -> LlmAgent:
-        return LlmAgent(
-            name="whiteboard_tutor",
-            description="Reads student work and plans restrained canvas feedback.",
-            model=Gemini(
-                model=self.model,
-                retry_options=types.HttpRetryOptions(
-                    attempts=3,
-                    initial_delay=0.5,
-                    max_delay=4,
-                    exp_base=2,
-                    jitter=0.2,
-                    # 429 is excluded on purpose: retrying cannot fix an
-                    # exhausted daily quota, and the provider's Retry-After can
-                    # be long enough to make an interactive tap look hung.
-                    http_status_codes=[408, 500, 502, 503, 504],
-                ),
+    def _generation_config(self, mode: TutorMode) -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(
+            system_instruction=tutor_instruction(mode),
+            response_mime_type="application/json",
+            response_schema=TUTOR_PLAN_RESPONSE_SCHEMA,
+            max_output_tokens=1_024,
+            thinking_config=types.ThinkingConfig(
+                thinking_level=types.ThinkingLevel.LOW
             ),
-            instruction=tutor_instruction(mode),
-            output_schema=TUTOR_PLAN_RESPONSE_SCHEMA,
-            output_key="tutor_plan",
-            generate_content_config=types.GenerateContentConfig(
-                # A four-action plan needs far less than this; the ceiling is
-                # only here to stop a runaway response.
-                max_output_tokens=1_024,
-                # LOW rather than MINIMAL: measurably the same latency on the
-                # lite model, and MINIMAL is rejected outright by some models
-                # (gemini-3.7-flash among them), which would 400 every request.
-                thinking_config=types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.LOW
-                ),
-                # Vision tokens dominate a canvas request. Handwriting stays
-                # legible at medium, so the default high resolution is paid
-                # latency for no accuracy.
-                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
-            ),
-            disallow_transfer_to_parent=True,
-            disallow_transfer_to_peers=True,
+            media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
         )
 
     async def _request_plan(
         self,
         *,
+        client: Any,
         mode: TutorMode,
         canvas_image: bytes,
         canvas_mime_type: str,
@@ -215,18 +192,8 @@ class GeminiTutorWorkflow:
         repair: bool,
     ) -> dict:
         """One provider round trip, returning raw structured output."""
-        session_service = InMemorySessionService()
-        session_id = uuid4().hex
-        runner = Runner(
-            app_name=APP_NAME,
-            agent=self._build_agent(mode),
-            session_service=session_service,
-        )
-        await session_service.create_session(
-            app_name=APP_NAME, user_id=APP_NAME, session_id=session_id
-        )
-
         prompt = "Repair attempt: return only data matching the schema.\n" if repair else ""
+        prompt += f"<tutor-mode>{mode.value}</tutor-mode>\n\n"
         prompt += "Regions you have already annotated (do not grade them):\n"
         prompt += json.dumps([b.model_dump() for b in prior_annotations])
 
@@ -238,14 +205,9 @@ class GeminiTutorWorkflow:
             ],
         )
         async with asyncio.timeout(self.timeout_seconds):
-            async for _event in runner.run_async(
-                user_id=APP_NAME, session_id=session_id, new_message=message
-            ):
-                pass
-
-        session = await session_service.get_session(
-            app_name=APP_NAME, user_id=APP_NAME, session_id=session_id
-        )
-        if session is None:
-            raise ValueError("provider session was unavailable after the run")
-        return session.state.get("tutor_plan")
+            response = await client.models.generate_content(
+                model=self.model,
+                contents=message,
+                config=self._generation_config(mode),
+            )
+        return response_object(response)

@@ -52,6 +52,7 @@ def get_tutor_service() -> TutorService:
     settings = TutorSettings.from_environment()
     return TutorService(
         workflow=GeminiTutorWorkflow(
+            api_key=settings.gemini_api_key,
             model=settings.gemini_model,
             timeout_seconds=settings.request_timeout_seconds,
         )
