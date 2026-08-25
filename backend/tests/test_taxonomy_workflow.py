@@ -37,36 +37,19 @@ class Harness(GeminiTaxonomyWorkflow):
         return next(self.responses)
 
 
-def test_a_batch_with_an_unresolved_prereq_gets_one_repair_attempt():
-    broken = {**VALID_SKILL, "id": "s1", "prereqs": ["nowhere"]}
-    fixed = {**VALID_SKILL, "id": "s1", "prereqs": []}
-    workflow = Harness([{"skills": [broken]}, {"skills": [fixed]}])
-    result = asyncio.run(workflow.run(source_text="text"))
-    assert result[0]["id"] == "s1"
-    assert workflow.attempts == 2
-
-
-def test_a_same_batch_cycle_gets_one_repair_attempt():
-    cyclic = [
-        {**VALID_SKILL, "id": "a", "prereqs": ["b"]},
-        {**VALID_SKILL, "id": "b", "prereqs": ["a"]},
-    ]
-    fixed = [{**VALID_SKILL, "id": "a", "prereqs": []}]
-    workflow = Harness([{"skills": cyclic}, {"skills": fixed}])
-    result = asyncio.run(workflow.run(source_text="text"))
-    assert [s["id"] for s in result] == ["a"]
-    assert workflow.attempts == 2
-
-
 def test_persistently_invalid_output_fails_closed():
-    broken = {**VALID_SKILL, "id": "s1", "prereqs": ["nowhere"]}
+    # Shape violation: difficulty_band outside [0, 1]. Graph-level rules
+    # (unresolved prereqs, cycles) are no longer checked here -- they are
+    # enforced once, in services.taxonomy.build_taxonomy, against the whole
+    # course rather than one batch's private view of it.
+    broken = {**VALID_SKILL, "id": "s1", "difficulty_band": 4.2}
     workflow = Harness([{"skills": [broken]}, {"skills": [broken]}])
     with pytest.raises(TaxonomyWorkflowError):
         asyncio.run(workflow.run(source_text="text"))
     assert workflow.attempts == 2
 
 
-def test_prereqs_may_resolve_against_existing_skills():
+def test_prereqs_naming_existing_skills_pass_through_unchanged():
     entry = {**VALID_SKILL, "id": "s1", "prereqs": ["calc1.limits.evaluation"]}
     workflow = Harness([{"skills": [entry]}])
     result = asyncio.run(

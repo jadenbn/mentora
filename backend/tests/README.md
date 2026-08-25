@@ -1,9 +1,9 @@
 # Backend test suite
 
 ```bash
-.venv/bin/python -m pytest -q                    # default: everything runnable
-.venv/bin/python -m pytest -q -m "not provider"  # no google-genai installed
-RUN_LIVE_GEMINI=1 .venv/bin/python -m pytest -q -m live -s
+python -m pytest -q                    # default: everything runnable
+python -m pytest -q -m "not provider"  # no google-genai installed
+RUN_LIVE_GEMINI=1 python -m pytest -q -m live -s
 ```
 
 ## Layout
@@ -35,15 +35,18 @@ RUN_LIVE_GEMINI=1 .venv/bin/python -m pytest -q -m live -s
 | --- | --- | --- |
 | `test_mastery.py` | the pure update rules, as **properties** — bounds, monotonicity, decay | hypothesis |
 | `test_taxonomy.py` | slug normalization, validation, cycle detection, seeding, `merge_generated` | — |
-| `test_skill_generation.py` | source gathering, the content-hash no-op guard, additive persistence | — |
+| `test_skill_generation.py` | cold-start bootstrap: one skill, one document, no documents | — |
 | `test_taxonomy_workflow.py` | the taxonomy provider adapter's direct request and repair | google-genai |
 | `test_selection.py` | unlock gating, priority, recency penalty, the forced-review floor | — |
-| `test_student_model_service.py` | the attribution guards, mastery updates, prereq bleed, cold start, decay | — |
+| `test_student_model_service.py` | attribution, idempotency, mastery updates, prereq bleed, decay | — |
 | `test_skills_overview.py` | the dashboard view: all skills, unlock state, seed defaults | — |
-| `test_attempt_grading.py` | the tutor-grade → attempt-fields adapter | — |
+| `test_proposals.py` | the quarantine: recording, merging near-duplicates, promotion | — |
+| `test_attribution.py` | which skills a problem counts toward; unknown ids dropped | — |
+| `test_work_api.py` | server-side grading: the client scores nothing | fastapi |
 | `test_closed_loop.py` | select → generate → tag → grade → record, end to end at the service layer | — |
 | `test_next_problem_bootstrap.py` | the cold-start branch: bootstrap one skill, then retry selection | fastapi |
-| `test_dev_api.py` | the dev dashboard page and the skills-import endpoint | fastapi |
+| `test_dev_api.py` | the dashboard page and the skills-import endpoint | fastapi |
+| `test_proposals_api.py` | listing and reviewing proposals over HTTP | fastapi |
 
 ## Why the dependency column matters
 
@@ -75,11 +78,11 @@ For what the engine *is*, read `docs/LEARNING_ENGINE.md`. This section is how to
 verify it.
 
 ```bash
-.venv/bin/python -m pytest -q tests/test_mastery.py tests/test_taxonomy.py \
+python -m pytest -q tests/test_mastery.py tests/test_taxonomy.py \
   tests/test_selection.py tests/test_student_model_service.py \
   tests/test_skill_generation.py tests/test_skills_overview.py \
-  tests/test_attempt_grading.py tests/test_closed_loop.py \
-  tests/test_next_problem_bootstrap.py tests/test_dev_api.py
+  tests/test_proposals.py tests/test_attribution.py tests/test_closed_loop.py \
+  tests/test_work_api.py tests/test_next_problem_bootstrap.py tests/test_dev_api.py
 ```
 
 **None of these spend a provider call.** Every one runs against an in-memory
@@ -112,9 +115,14 @@ one rule, and asserts on it:
 - **`test_selection.py`** — build a prereq DAG, set masteries, assert *which
   skill comes back*. Locked skills stay unserved; the recency penalty pushes off
   the just-served skill; three weak picks in a row force a review.
-- **`test_student_model_service.py`** — the two guards (§7 of the doc) are the
-  point here. An attempt naming a skill outside the course 400s; an error naming
-  a skill outside `expected_skills` is dropped and counted, not stored.
+- **`test_student_model_service.py`** — attribution and idempotency. An attempt
+  naming a skill outside the course 400s; re-posting the same problem returns
+  the original attempt rather than moving mastery twice.
+- **`test_proposals.py`** — the quarantine. A model-named skill the course lacks
+  becomes a pending proposal, never a `Skill`; repeats accumulate on one row; a
+  near-duplicate merges into the existing skill and a genuine gap is promoted.
+- **`test_attribution.py`** — what a problem is attributed to, and that an id
+  outside the taxonomy is dropped with a warning rather than stored.
 - **`test_taxonomy.py`** — the largest file (25 tests) because it's the widest
   input surface: normalization is idempotent, cycles are caught with the path
   named, seed skills survive a re-seed, `merge_generated` blocks a seed
@@ -131,8 +139,13 @@ It runs `select_next → render request → generate (stubbed) → set_problem_s
 selection actually chose** — proving the server-side attribution path holds end
 to end, not just that each half works alone.
 
-If you break the `problem_skills` bridge, this is what catches it. Keep it
+If you break the `ProblemSkill` bridge, this is what catches it. Keep it
 passing.
+
+`test_work_api.py` covers the other half of the same guarantee: `POST /work`
+grades server-side, takes difficulty from what generation recorded rather than
+from the request, records nothing for a hint or an unreadable canvas, and
+answers a repeated mark with the original attempt.
 
 `test_next_problem_bootstrap.py` covers the same route's cold-start branch:
 a course with documents but zero skills bootstraps exactly one skill and retries

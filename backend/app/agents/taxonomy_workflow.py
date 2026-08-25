@@ -26,7 +26,7 @@ from google import genai
 from google.genai import types
 from pydantic import ValidationError
 
-from app.agents.skill_batch import SKILL_ENTRY_SCHEMA, validate_skill_batch
+from app.schemas.taxonomy import SKILL_ENTRY_SCHEMA
 from app.agents.workflow_errors import TaxonomyWorkflowError, TaxonomyWorkflowTimeout
 from app.prompts.taxonomy_generation import (
     EMERGENT_SKILL_INSTRUCTION,
@@ -86,7 +86,6 @@ class GeminiTaxonomyWorkflow:
         "don't duplicate this" context. emergent=True asks for exactly one
         new skill filling a gap rather than a full-course taxonomy.
         """
-        known_ids = {s["id"] for s in (existing_skills or [])}
         malformed: Exception | None = None
         previous_error: str | None = None
         try:
@@ -101,7 +100,6 @@ class GeminiTaxonomyWorkflow:
                             previous_error=previous_error,
                         )
                         plan = TaxonomyPlan.model_validate(raw)
-                        validate_skill_batch(plan.skills, known_ids)
                         return [entry.model_dump(mode="json") for entry in plan.skills]
                     except (ValidationError, ValueError, KeyError, TypeError) as exc:
                         malformed = exc

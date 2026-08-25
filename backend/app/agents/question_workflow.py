@@ -4,7 +4,7 @@ Also attributes the question to the skill(s) it exercises, in the same call
 — no second round trip. A skill entry either names an existing course skill
 by id or proposes a new one; either way it is the exact same shape
 taxonomy_workflow.py emits, held to the exact same batch-local structural
-checks (see agents/skill_batch.py), so an inline proposal here is not a
+checks in services/taxonomy.py, so an inline proposal here is not a
 lesser-validated shortcut.
 """
 
@@ -19,7 +19,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
-from app.agents.skill_batch import SKILL_ENTRY_SCHEMA, validate_skill_batch
+from app.schemas.taxonomy import SKILL_ENTRY_SCHEMA
 from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
 from app.prompts.question_generation import QUESTION_INSTRUCTION
 from app.schemas.problems import GroundingChunk, QuestionPlan
@@ -81,7 +81,6 @@ class GeminiQuestionWorkflow:
         course, offered as skill-attribution targets so the model reuses an
         id instead of proposing a near-duplicate."""
         allowed = {chunk.chunk_id for chunk in chunks}
-        known_ids = {s["id"] for s in (existing_skills or [])}
         malformed: Exception | None = None
         previous_error: str | None = None
         try:
@@ -105,7 +104,6 @@ class GeminiQuestionWorkflow:
                             for chunk_id in plan.grounding_chunk_ids
                         ):
                             raise ValueError("grounding chunk ID was not supplied")
-                        validate_skill_batch(plan.skills, known_ids)
                         return plan
                     except (ValidationError, ValueError, KeyError, TypeError) as exc:
                         malformed = exc

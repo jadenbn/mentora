@@ -60,18 +60,6 @@ def test_persistently_invalid_source_ids_fail_closed():
     assert workflow.attempts == 2
 
 
-def test_a_skill_with_an_unresolved_prereq_gets_one_repair_attempt():
-    broken = {**VALID_SKILL, "id": "s1", "prereqs": ["nowhere"]}
-    fixed = {**VALID_SKILL, "id": "s1", "prereqs": []}
-    workflow = Harness([
-        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [broken]},
-        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [fixed]},
-    ])
-    result = asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
-    assert result.skills[0].id == "s1"
-    assert workflow.attempts == 2
-
-
 def test_a_skill_may_resolve_a_prereq_against_existing_skills():
     entry = {**VALID_SKILL, "id": "s1", "prereqs": ["calc1.limits.evaluation"]}
     workflow = Harness([

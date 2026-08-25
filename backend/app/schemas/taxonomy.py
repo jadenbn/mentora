@@ -48,3 +48,26 @@ class TaxonomyPlan(StrictModel):
     """
 
     skills: list[RawSkillEntry] = Field(min_length=1, max_length=40)
+
+
+#: The provider-side JSON schema for one RawSkillEntry. Kept beside the model
+#: it describes so the two cannot drift.
+SKILL_ENTRY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "difficulty_band": {"type": "number", "minimum": 0, "maximum": 1},
+        "prereqs": {"type": "array", "items": {"type": "string"}},
+        "keywords": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": _MAX_ENTRY_CHARS},
+        },
+        "question_forms": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": _MAX_ENTRY_CHARS},
+        },
+    },
+    "required": ["id", "name", "description", "difficulty_band"],
+}
