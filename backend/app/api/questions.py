@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session
 
 from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
-from app.api.dependencies import get_course_repository
+from app.api.dependencies import get_course_repository, get_session
 from app.config import (
     TutorSettings,
     missing_indexing_settings,
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/api/courses/{course_id}/questions", tags=["questions
 
 def get_question_service(
     repository: CourseRepository = Depends(get_course_repository),
+    session: Session = Depends(get_session),
 ) -> QuestionService:
     missing = missing_settings()
     if missing:
@@ -56,6 +58,7 @@ def get_question_service(
         ),
         retriever=Retriever(),
         full_context_max_chars=question_full_context_max_chars(),
+        session=session,
     )
 
 

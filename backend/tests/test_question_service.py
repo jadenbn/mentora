@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from sqlmodel import Session, SQLModel, create_engine
 
 from app.database import CourseRepository
+from app.models.enums import SkillOrigin
+from app.models.skill import Skill
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import GroundingChunk, QuestionPlan
 from app.services.question_service import (
@@ -14,10 +17,29 @@ from app.services.question_service import (
     serialized_context_chars,
 )
 
+VALID_SKILL = {
+    "id": "chain-rule",
+    "name": "Chain rule",
+    "description": "Differentiate a composite function.",
+    "difficulty_band": 0.5,
+    "prereqs": [],
+    "keywords": [],
+    "question_forms": [],
+}
+
+
+@pytest.fixture
+def session():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        yield s
+
 
 class StubQuestionWorkflow:
-    def __init__(self, chunk_id="chunk_doc_1_00000"):
+    def __init__(self, chunk_id="chunk_doc_1_00000", skills=None):
         self.chunk_id = chunk_id
+        self.skills = skills if skills is not None else [VALID_SKILL]
         self.calls = []
 
     async def run(self, **kwargs):
@@ -25,6 +47,7 @@ class StubQuestionWorkflow:
         return QuestionPlan(
             prompt="Differentiate a nested function.",
             grounding_chunk_ids=[self.chunk_id],
+            skills=self.skills,
         )
 
 
@@ -67,12 +90,13 @@ def seeded_repo(tmp_path):
     return repo
 
 
-def service(repo, workflow, retriever, threshold):
+def service(repo, workflow, retriever, threshold, session):
     return QuestionService(
         repository=repo,
         workflow=workflow,
         retriever=retriever,
         full_context_max_chars=threshold,
+        session=session,
     )
 
 
@@ -81,12 +105,12 @@ def test_serialized_context_counts_labels_and_text():
     assert serialized_context_chars(chunks) == len("chunk_1") + 3 + 32
 
 
-def test_small_documents_send_all_chunks_and_bypass_retrieval(tmp_path):
+def test_small_documents_send_all_chunks_and_bypass_retrieval(tmp_path, session):
     repo = seeded_repo(tmp_path)
     workflow = StubQuestionWorkflow()
     retriever = StubRetriever(error=AssertionError("retrieval should be bypassed"))
     generated = asyncio.run(
-        service(repo, workflow, retriever, 10_000).generate(
+        service(repo, workflow, retriever, 10_000, session).generate(
             course_id="course_1",
             document_id="doc_1",
             question_request="A conceptual question",
@@ -98,7 +122,7 @@ def test_small_documents_send_all_chunks_and_bypass_retrieval(tmp_path):
     assert workflow.calls[0]["question_request"] == "A conceptual question"
 
 
-def test_large_documents_retrieve_ranked_sqlite_context(tmp_path):
+def test_large_documents_retrieve_ranked_sqlite_context(tmp_path, session):
     repo = seeded_repo(tmp_path)
     selected = GroundingChunk(
         chunk_id="chunk_doc_1_00001", page=1, text="worked example"
@@ -106,7 +130,7 @@ def test_large_documents_retrieve_ranked_sqlite_context(tmp_path):
     workflow = StubQuestionWorkflow(chunk_id=selected.chunk_id)
     retriever = StubRetriever([selected])
     generated = asyncio.run(
-        service(repo, workflow, retriever, 1).generate(
+        service(repo, workflow, retriever, 1, session).generate(
             course_id="course_1",
             document_id="doc_1",
             question_request="A difficult applied question",
@@ -124,12 +148,12 @@ def test_large_documents_retrieve_ranked_sqlite_context(tmp_path):
     assert [chunk.chunk_id for chunk in grounded.chunks] == [selected.chunk_id]
 
 
-def test_empty_or_failed_large_document_retrieval_fails_closed(tmp_path):
+def test_empty_or_failed_large_document_retrieval_fails_closed(tmp_path, session):
     repo = seeded_repo(tmp_path)
     for retriever in (StubRetriever(), StubRetriever(error=RuntimeError("secret"))):
         with pytest.raises(ContextRetrievalError):
             asyncio.run(
-                service(repo, StubQuestionWorkflow(), retriever, 1).generate(
+                service(repo, StubQuestionWorkflow(), retriever, 1, session).generate(
                     course_id="course_1",
                     document_id="doc_1",
                     question_request="Question",
@@ -137,13 +161,111 @@ def test_empty_or_failed_large_document_retrieval_fails_closed(tmp_path):
             )
 
 
-def test_generation_rejects_a_document_from_another_course(tmp_path):
+def test_generation_rejects_a_document_from_another_course(tmp_path, session):
     repo = seeded_repo(tmp_path)
     with pytest.raises(DocumentNotFoundError):
         asyncio.run(
-            service(repo, StubQuestionWorkflow(), StubRetriever(), 10_000).generate(
+            service(repo, StubQuestionWorkflow(), StubRetriever(), 10_000, session).generate(
                 course_id="wrong_course",
                 document_id="doc_1",
                 question_request="Question",
             )
         )
+
+
+def test_generation_attributes_the_problem_to_the_returned_skill(tmp_path, session):
+    repo = seeded_repo(tmp_path)
+    workflow = StubQuestionWorkflow(skills=[VALID_SKILL])
+    generated = asyncio.run(
+        service(repo, workflow, StubRetriever(), 10_000, session).generate(
+            course_id="course_1",
+            document_id="doc_1",
+            question_request="Conceptual",
+        )
+    )
+    assert repo.get_problem_skills(generated.id) == ["course_1.chain-rule"]
+    persisted = session.get(Skill, "course_1.chain-rule")
+    assert persisted is not None
+    assert persisted.origin == SkillOrigin.GENERATED
+
+
+def test_generation_attributes_multiple_skills(tmp_path, session):
+    repo = seeded_repo(tmp_path)
+    second = {**VALID_SKILL, "id": "product-rule", "name": "Product rule"}
+    workflow = StubQuestionWorkflow(skills=[VALID_SKILL, second])
+    generated = asyncio.run(
+        service(repo, workflow, StubRetriever(), 10_000, session).generate(
+            course_id="course_1",
+            document_id="doc_1",
+            question_request="Conceptual",
+        )
+    )
+    assert set(repo.get_problem_skills(generated.id)) == {
+        "course_1.chain-rule",
+        "course_1.product-rule",
+    }
+
+
+def test_generation_always_includes_the_required_skill_even_if_the_model_misses_it(
+    tmp_path, session
+):
+    repo = seeded_repo(tmp_path)
+    session.add(
+        Skill(id="course_1.selected", course_id="course_1", name="Selected",
+              description="d", difficulty_band=0.5, prereqs=[], origin=SkillOrigin.GENERATED)
+    )
+    session.commit()
+    # The model names a different skill than the one selection asked for.
+    workflow = StubQuestionWorkflow(skills=[VALID_SKILL])
+    generated = asyncio.run(
+        service(repo, workflow, StubRetriever(), 10_000, session).generate(
+            course_id="course_1",
+            document_id="doc_1",
+            question_request="Conceptual",
+            required_skill_id="course_1.selected",
+        )
+    )
+    attributed = set(repo.get_problem_skills(generated.id))
+    assert "course_1.selected" in attributed
+    assert "course_1.chain-rule" in attributed
+
+
+def test_generation_offers_existing_skills_to_the_workflow(tmp_path, session):
+    repo = seeded_repo(tmp_path)
+    session.add(
+        Skill(id="course_1.root", course_id="course_1", name="Root", description="d",
+              difficulty_band=0.2, prereqs=[], origin=SkillOrigin.SEED)
+    )
+    session.commit()
+    workflow = StubQuestionWorkflow()
+    asyncio.run(
+        service(repo, workflow, StubRetriever(), 10_000, session).generate(
+            course_id="course_1",
+            document_id="doc_1",
+            question_request="Conceptual",
+        )
+    )
+    assert {"id": "course_1.root", "name": "Root"} in workflow.calls[0]["existing_skills"]
+
+
+def test_generation_never_overwrites_a_seed_skill(tmp_path, session):
+    repo = seeded_repo(tmp_path)
+    session.add(
+        Skill(id="course_1.chain-rule", course_id="course_1", name="Authored",
+              description="seeded", difficulty_band=0.3, prereqs=[], origin=SkillOrigin.SEED)
+    )
+    session.commit()
+    workflow = StubQuestionWorkflow(skills=[VALID_SKILL])  # same id, different content
+    generated = asyncio.run(
+        service(repo, workflow, StubRetriever(), 10_000, session).generate(
+            course_id="course_1",
+            document_id="doc_1",
+            question_request="Conceptual",
+        )
+    )
+    # The problem is still attributed to the id, but the seed skill's own
+    # fields are untouched.
+    assert "course_1.chain-rule" in repo.get_problem_skills(generated.id)
+    untouched = session.get(Skill, "course_1.chain-rule")
+    assert untouched.name == "Authored"
+    assert untouched.origin == SkillOrigin.SEED

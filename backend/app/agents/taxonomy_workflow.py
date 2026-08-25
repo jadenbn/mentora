@@ -26,96 +26,23 @@ from google import genai
 from google.genai import types
 from pydantic import ValidationError
 
+from app.agents.skill_batch import SKILL_ENTRY_SCHEMA, validate_skill_batch
 from app.agents.workflow_errors import TaxonomyWorkflowError, TaxonomyWorkflowTimeout
 from app.prompts.taxonomy_generation import (
     EMERGENT_SKILL_INSTRUCTION,
     TAXONOMY_INSTRUCTION,
 )
-from app.schemas.taxonomy import RawSkillEntry, TaxonomyPlan
+from app.schemas.taxonomy import TaxonomyPlan
 
 logger = logging.getLogger(__name__)
-
-_SKILL_ENTRY_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "id": {"type": "string"},
-        "name": {"type": "string"},
-        "description": {"type": "string"},
-        "difficulty_band": {"type": "number", "minimum": 0, "maximum": 1},
-        "prereqs": {"type": "array", "items": {"type": "string"}},
-        "keywords": {
-            "type": "array",
-            "items": {"type": "string", "maxLength": 80},
-        },
-        "question_forms": {
-            "type": "array",
-            "items": {"type": "string", "maxLength": 80},
-        },
-    },
-    "required": ["id", "name", "description", "difficulty_band"],
-}
 
 TAXONOMY_PLAN_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
-        "skills": {"type": "array", "items": _SKILL_ENTRY_SCHEMA},
+        "skills": {"type": "array", "items": SKILL_ENTRY_SCHEMA},
     },
     "required": ["skills"],
 }
-
-
-def _find_cycle(entries: list[RawSkillEntry]) -> str | None:
-    """DFS over one batch's own prereq edges. Returns a description or None.
-
-    Only edges between ids present in this batch are checked — a prereq
-    pointing outside the batch (at an existing course skill) cannot
-    participate in a same-batch cycle by construction.
-    """
-    by_id = {entry.id: entry for entry in entries}
-    WHITE, GRAY, BLACK = 0, 1, 2
-    state = {entry.id: WHITE for entry in entries}
-
-    def visit(skill_id: str, path: list[str]) -> str | None:
-        state[skill_id] = GRAY
-        for prereq_id in by_id[skill_id].prereqs:
-            if prereq_id not in by_id:
-                continue
-            if state[prereq_id] == GRAY:
-                return " -> ".join(path + [prereq_id])
-            if state[prereq_id] == WHITE:
-                found = visit(prereq_id, path + [prereq_id])
-                if found:
-                    return found
-        state[skill_id] = BLACK
-        return None
-
-    for entry in entries:
-        if state[entry.id] == WHITE:
-            found = visit(entry.id, [entry.id])
-            if found:
-                return found
-    return None
-
-
-def _validate_batch(plan: TaxonomyPlan, known_ids: set[str]) -> None:
-    """Raise ValueError on any batch-local structural problem."""
-    seen: set[str] = set()
-    for entry in plan.skills:
-        if entry.id in seen:
-            raise ValueError(f"duplicate skill id in batch: {entry.id}")
-        seen.add(entry.id)
-
-    resolvable = seen | known_ids
-    for entry in plan.skills:
-        unresolved = [p for p in entry.prereqs if p not in resolvable]
-        if unresolved:
-            raise ValueError(
-                f"{entry.id}: prereq(s) resolve nowhere: {unresolved}"
-            )
-
-    cycle = _find_cycle(plan.skills)
-    if cycle:
-        raise ValueError(f"prerequisite cycle detected: {cycle}")
 
 
 class GeminiTaxonomyWorkflow:
@@ -174,7 +101,7 @@ class GeminiTaxonomyWorkflow:
                             previous_error=previous_error,
                         )
                         plan = TaxonomyPlan.model_validate(raw)
-                        _validate_batch(plan, known_ids)
+                        validate_skill_batch(plan.skills, known_ids)
                         return [entry.model_dump(mode="json") for entry in plan.skills]
                     except (ValidationError, ValueError, KeyError, TypeError) as exc:
                         malformed = exc

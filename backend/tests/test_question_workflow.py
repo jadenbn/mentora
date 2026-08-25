@@ -18,6 +18,16 @@ pytestmark = pytest.mark.provider
 
 CHUNKS = [GroundingChunk(chunk_id="chunk_1", page=1, text="The chain rule applies.")]
 
+VALID_SKILL = {
+    "id": "chain-rule",
+    "name": "Chain rule",
+    "description": "Differentiate a composite function.",
+    "difficulty_band": 0.5,
+    "prereqs": [],
+    "keywords": ["composite function"],
+    "question_forms": ["differentiate a nested expression"],
+}
+
 
 class Harness(GeminiQuestionWorkflow):
     def __init__(self, responses):
@@ -32,8 +42,8 @@ class Harness(GeminiQuestionWorkflow):
 
 def test_an_invented_chunk_id_gets_one_repair_attempt():
     workflow = Harness([
-        {"prompt": "Question", "grounding_chunk_ids": ["invented"]},
-        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"]},
+        {"prompt": "Question", "grounding_chunk_ids": ["invented"], "skills": [VALID_SKILL]},
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [VALID_SKILL]},
     ])
     result = asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
     assert result.grounding_chunk_ids == ["chunk_1"]
@@ -42,11 +52,50 @@ def test_an_invented_chunk_id_gets_one_repair_attempt():
 
 def test_persistently_invalid_source_ids_fail_closed():
     workflow = Harness([
-        {"prompt": "Question", "grounding_chunk_ids": ["invented"]},
-        {"prompt": "Question", "grounding_chunk_ids": ["still_invented"]},
+        {"prompt": "Question", "grounding_chunk_ids": ["invented"], "skills": [VALID_SKILL]},
+        {"prompt": "Question", "grounding_chunk_ids": ["still_invented"], "skills": [VALID_SKILL]},
     ])
     with pytest.raises(QuestionWorkflowError):
         asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
+    assert workflow.attempts == 2
+
+
+def test_a_skill_with_an_unresolved_prereq_gets_one_repair_attempt():
+    broken = {**VALID_SKILL, "id": "s1", "prereqs": ["nowhere"]}
+    fixed = {**VALID_SKILL, "id": "s1", "prereqs": []}
+    workflow = Harness([
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [broken]},
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [fixed]},
+    ])
+    result = asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
+    assert result.skills[0].id == "s1"
+    assert workflow.attempts == 2
+
+
+def test_a_skill_may_resolve_a_prereq_against_existing_skills():
+    entry = {**VALID_SKILL, "id": "s1", "prereqs": ["calc1.limits.evaluation"]}
+    workflow = Harness([
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [entry]},
+    ])
+    result = asyncio.run(
+        workflow.run(
+            chunks=CHUNKS,
+            question_request="Conceptual",
+            existing_skills=[{"id": "calc1.limits.evaluation", "name": "Limits"}],
+        )
+    )
+    assert result.skills[0].prereqs == ["calc1.limits.evaluation"]
+    assert workflow.attempts == 1
+
+
+def test_more_than_four_skills_is_rejected():
+    five = [{**VALID_SKILL, "id": f"s{i}"} for i in range(5)]
+    workflow = Harness([
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": five},
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [VALID_SKILL]},
+    ])
+    result = asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
+    assert len(result.skills) == 1
     assert workflow.attempts == 2
 
 
@@ -60,6 +109,7 @@ def test_direct_request_sends_grounding_and_schema_configuration():
                 parsed={
                     "prompt": "Differentiate $x^2$.",
                     "grounding_chunk_ids": ["chunk_1"],
+                    "skills": [VALID_SKILL],
                 },
                 text=None,
             )
@@ -79,11 +129,19 @@ def test_direct_request_sends_grounding_and_schema_configuration():
         timeout_seconds=1,
     )
     workflow._client = lambda: SimpleNamespace(aio=AsyncClient())
-    asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual chain rule"))
+    asyncio.run(
+        workflow.run(
+            chunks=CHUNKS,
+            question_request="Conceptual chain rule",
+            existing_skills=[{"id": "calc1.a", "name": "A"}],
+        )
+    )
 
     call = calls[0]
     prompt = call["contents"].parts[0].text
     assert "Conceptual chain rule" in prompt
     assert "chunk_1" in prompt
+    assert "calc1.a" in prompt
     assert call["config"].response_schema == QUESTION_PLAN_RESPONSE_SCHEMA
     assert "dollar-delimited LaTeX" in call["config"].system_instruction
+    assert "identify every skill it exercises" in call["config"].system_instruction

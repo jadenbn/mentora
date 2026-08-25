@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.schemas.taxonomy import RawSkillEntry
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -44,7 +46,16 @@ class GroundedProblem(StrictModel):
 
 
 class QuestionPlan(StrictModel):
-    """Provider output before source IDs have been verified by the workflow."""
+    """Provider output before source IDs have been verified by the workflow.
+
+    skills: every skill this question exercises, usually one but sometimes a
+    few for a composite problem. Each entry either names an existing course
+    skill (by id, offered as context) or proposes a new one — same shape and
+    same downstream handling (build_taxonomy + merge_generated) as
+    taxonomy_workflow's output, so an inline proposal here is held to
+    exactly the same rules a full taxonomy-generation pass is.
+    """
 
     prompt: str = Field(min_length=1, max_length=8_000)
     grounding_chunk_ids: list[str] = Field(min_length=1, max_length=8)
+    skills: list[RawSkillEntry] = Field(min_length=1, max_length=4)

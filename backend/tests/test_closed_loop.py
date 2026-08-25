@@ -36,11 +36,23 @@ class _StubWorkflow:
     def __init__(self, chunk_id: str) -> None:
         self._chunk_id = chunk_id
 
-    async def run(self, *, chunks, question_request: str) -> QuestionPlan:
+    async def run(
+        self, *, chunks, question_request: str, existing_skills=None
+    ) -> QuestionPlan:
         assert chunks  # generate handed us grounding context
+        # No skill is proposed here — the test proves attribution comes from
+        # required_skill_id (what selection chose), not from the model.
         return QuestionPlan(
             prompt=f"Generated from request: {question_request}",
             grounding_chunk_ids=[self._chunk_id],
+            skills=[
+                {
+                    "id": "unrelated-skill",
+                    "name": "Unrelated",
+                    "description": "Not the selected skill.",
+                    "difficulty_band": 0.5,
+                }
+            ],
         )
 
 
@@ -94,21 +106,26 @@ async def test_select_generate_tag_grade_record_moves_the_selected_skill(
     assert spec.retrieval_query  # assembled from name/description/keywords
 
     # 2 + 3. Generate against the course document with a request from the spec.
+    #    The stub workflow proposes an unrelated skill of its own, to prove
+    #    required_skill_id still forces the selected skill's inclusion.
     service = QuestionService(
         repository=repo,
         workflow=_StubWorkflow(chunk_id),
         retriever=None,  # small context -> full, retriever unused
         full_context_max_chars=10_000,
+        session=session,
     )
     problem = await service.generate(
         course_id="calc1",
         document_id="doc_1",
         question_request=_render_question_request(spec),
+        required_skill_id=spec.skill_id,
     )
 
-    # 4. Tag the problem with the selected skill, server-side.
-    repo.set_problem_skills(problem_id=problem.id, skill_ids=[spec.skill_id])
-    assert repo.get_problem_skills(problem.id) == ["calc1.derivatives.chain-rule"]
+    # 4. Attribution already happened inside generate(), server-side.
+    attributed = repo.get_problem_skills(problem.id)
+    assert "calc1.derivatives.chain-rule" in attributed
+    assert "calc1.unrelated-skill" in attributed
 
     # 5. Grade a correct attempt. The client lies about which skill it was;
     #    the server must ignore that and use problem_skills.

@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
+from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
 from app.api.dependencies import get_course_repository, get_session
 from app.config import TutorSettings, missing_settings
 from app.database import CourseRepository
@@ -160,12 +161,15 @@ def _resolve_target_document(
 
 def get_question_service_dep(
     repository: CourseRepository = Depends(get_course_repository),
+    session: Session = Depends(get_session),
 ) -> QuestionService:
     # Reuse the question API's own factory so both routes build the service the
-    # same way (config gating, Gemini workflow, document retriever).
+    # same way (config gating, Gemini workflow, document retriever, skill
+    # attribution). FastAPI resolves Depends(get_session) once per request, so
+    # this is the same session next_problem's own session param gets.
     from app.api.questions import get_question_service
 
-    return get_question_service(repository=repository)
+    return get_question_service(repository=repository, session=session)
 
 
 def _course_has_no_skills(session: Session, course_id: str) -> bool:
@@ -208,8 +212,10 @@ async def next_problem(
     """Select a skill, ground a question in the course, and tag it with the skill.
 
     The one route that runs the whole loop: select -> ground -> generate -> tag.
-    The returned problem carries a server-side problem_skills row, so the attempt
-    the client posts back moves the skill selection actually chose.
+    The returned problem carries server-side problem_skills rows, so the
+    attempt the client posts back moves the skill(s) it actually exercised —
+    the one selection chose, plus whatever else the model's own read of the
+    question identified (a composite problem can span more than one skill).
 
     A course with ingested documents but zero skills gets exactly one
     cold-start skill proposed here before selection runs again — the one gap
@@ -232,6 +238,7 @@ async def next_problem(
             course_id=course_id,
             document_id=document_id,
             question_request=_render_question_request(spec),
+            required_skill_id=spec.skill_id,
         )
     except DocumentNotFoundError as exc:
         raise HTTPException(404, "Document was not found in this course") from exc
@@ -247,6 +254,12 @@ async def next_problem(
         raise HTTPException(
             502, "Relevant textbook context could not be retrieved"
         ) from exc
+    except QuestionWorkflowTimeout as exc:
+        raise HTTPException(504, "Question generation took too long") from exc
+    except QuestionWorkflowError as exc:
+        raise HTTPException(502, "Question generation is temporarily unavailable") from exc
 
-    repository.set_problem_skills(problem_id=problem.id, skill_ids=[spec.skill_id])
+    # Skill attribution (including spec.skill_id) already happened inside
+    # service.generate() via QuestionPlan.skills -> build_taxonomy ->
+    # merge_generated -> set_problem_skills.
     return NextProblemResponse(problem=problem, spec=spec)

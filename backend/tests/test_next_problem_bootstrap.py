@@ -11,6 +11,7 @@ import pytest
 from fastapi import HTTPException
 from sqlmodel import Session, SQLModel, create_engine
 
+from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
 from app.api import learning as learning_api
 from app.database import CourseRepository
 from app.models.enums import SkillOrigin
@@ -59,9 +60,9 @@ class StubQuestionService:
     def __init__(self, repository: CourseRepository):
         self.repository = repository
 
-    async def generate(self, *, course_id, document_id, question_request):
+    async def generate(self, *, course_id, document_id, question_request, required_skill_id=None):
         chunks = self.repository.get_chunks(course_id=course_id, document_id=document_id)
-        return self.repository.create_problem(
+        generated = self.repository.create_problem(
             problem=ProblemContext(
                 id="problem_1",
                 course_id=course_id,
@@ -71,6 +72,13 @@ class StubQuestionService:
             ),
             grounding_chunk_ids=[chunks[0].chunk_id],
         )
+        # Mirror QuestionService.generate()'s own attribution step, minus a
+        # model call: the real service always includes required_skill_id.
+        if required_skill_id:
+            self.repository.set_problem_skills(
+                problem_id=generated.id, skill_ids=[required_skill_id]
+            )
+        return generated
 
 
 def test_next_problem_bootstraps_a_skill_for_a_course_with_none(session, tmp_path, monkeypatch):
@@ -179,3 +187,55 @@ def test_next_problem_never_calls_bootstrap_when_a_skill_already_exists(session,
     )
     assert result.spec.skill_id == "calc1.a"
     assert calls == []
+
+
+class _FailingQuestionService:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def generate(self, **_kwargs):
+        raise self._error
+
+
+def test_next_problem_maps_a_provider_timeout_to_504(session, tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    _seed_document(repo, course_id="calc1", document_id="doc1", texts=["chain rule text"])
+    session.add(
+        Skill(id="calc1.a", course_id="calc1", name="A", description="d",
+              difficulty_band=0.3, prereqs=[], origin=SkillOrigin.SEED)
+    )
+    session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            learning_api.next_problem(
+                course_id="calc1",
+                student_id="stu1",
+                session=session,
+                repository=repo,
+                service=_FailingQuestionService(QuestionWorkflowTimeout("slow")),
+            )
+        )
+    assert exc_info.value.status_code == 504
+
+
+def test_next_problem_maps_a_provider_failure_to_502_not_a_raw_500(session, tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    _seed_document(repo, course_id="calc1", document_id="doc1", texts=["chain rule text"])
+    session.add(
+        Skill(id="calc1.a", course_id="calc1", name="A", description="d",
+              difficulty_band=0.3, prereqs=[], origin=SkillOrigin.SEED)
+    )
+    session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            learning_api.next_problem(
+                course_id="calc1",
+                student_id="stu1",
+                session=session,
+                repository=repo,
+                service=_FailingQuestionService(QuestionWorkflowError("quota exhausted")),
+            )
+        )
+    assert exc_info.value.status_code == 502
