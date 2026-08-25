@@ -142,12 +142,20 @@ export function ProblemCard({ problem }: { problem: Problem }) {
       className="shrink-0 border-b border-[#d9d6cc] bg-[#f5f2e9] px-4 py-3 sm:px-6 sm:py-4"
     >
       <div className="mx-auto max-h-[32dvh] max-w-5xl overflow-y-auto rounded-2xl border border-[#d8d3c6] border-l-[6px] border-l-[#607d6c] bg-[#fffdf8] px-5 py-4 shadow-[0_10px_30px_rgba(48,58,48,0.08)] sm:px-8 sm:py-5">
-        <p
-          className="mb-2 text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[#607d6c]"
-          id="workspace-problem-heading"
-        >
-          Problem
-        </p>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <p
+            className="text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[#607d6c]"
+            id="workspace-problem-heading"
+          >
+            Problem
+          </p>
+          {problem.skill ? (
+            <span className="rounded-full bg-[#e8f2ea] px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#2f5a41]">
+              {problem.skill.isReview ? "Review · " : ""}
+              {problem.skill.skillName}
+            </span>
+          ) : null}
+        </div>
         <ProblemBody prompt={problem.prompt} />
       </div>
     </section>

@@ -192,3 +192,96 @@ export async function generateCourseQuestion(
     prompt: problem.prompt,
   };
 }
+
+interface GenerationSpecResponse {
+  skill_id: string;
+  skill_name: string;
+  target_difficulty: number;
+  is_review: boolean;
+}
+
+interface NextProblemResponse {
+  problem: ProblemResponse;
+  spec: GenerationSpecResponse;
+}
+
+/**
+ * POST /api/courses/{course_id}/next-problem
+ *
+ * The learning engine picks what to practice and grounds a question for it —
+ * no document or question text to supply. A 404 means the course has no
+ * unlocked skill to serve yet: either no documents have been ingested, or
+ * (for a course with documents but no taxonomy) the cold-start bootstrap
+ * itself found nothing to propose from.
+ */
+export async function fetchNextProblem(
+  courseId: string,
+  studentId: string,
+): Promise<Problem> {
+  const response = await fetch(
+    `${apiBaseUrl()}/api/courses/${courseId}/next-problem?student_id=${encodeURIComponent(studentId)}`,
+    { method: "POST" },
+  );
+  const data = await courseResponse<NextProblemResponse>(
+    response,
+    "Selecting the next problem",
+  );
+  return {
+    id: data.problem.id,
+    courseId: data.problem.course_id,
+    documentId: data.problem.document_id,
+    source: data.problem.source,
+    prompt: data.problem.prompt,
+    skill: {
+      skillId: data.spec.skill_id,
+      skillName: data.spec.skill_name,
+      targetDifficulty: data.spec.target_difficulty,
+      isReview: data.spec.is_review,
+    },
+  };
+}
+
+export interface AttemptOutcome {
+  attemptId: string;
+  updatedSkills: Record<string, number>;
+}
+
+/**
+ * POST /api/courses/{course_id}/attempts
+ *
+ * The skills this attempt actually moves are resolved server-side from the
+ * problem's own record when the problem came from next-problem — expectedSkills
+ * here is only a hint the server cross-checks, never the final say.
+ */
+export async function recordAttempt(args: {
+  courseId: string;
+  studentId: string;
+  sessionId: string;
+  problemId: string;
+  expectedSkills: string[];
+  difficulty: number;
+  correct: boolean;
+  partial: boolean;
+  hintsUsed: number;
+}): Promise<AttemptOutcome> {
+  const response = await fetch(`${apiBaseUrl()}/api/courses/${args.courseId}/attempts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      student_id: args.studentId,
+      session_id: args.sessionId,
+      problem_id: args.problemId,
+      expected_skills: args.expectedSkills,
+      difficulty: args.difficulty,
+      correct: args.correct,
+      partial: args.partial,
+      hints_used: args.hintsUsed,
+      errors: [],
+    }),
+  });
+  const data = await courseResponse<{ attempt_id: string; updated_skills: Record<string, number> }>(
+    response,
+    "Recording the attempt",
+  );
+  return { attemptId: data.attempt_id, updatedSkills: data.updated_skills };
+}

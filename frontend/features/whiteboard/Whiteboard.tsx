@@ -28,9 +28,11 @@ import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { ProblemCard } from "@/features/problems/ProblemCard";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
+import { recordAttempt, type AttemptOutcome } from "@/lib/api/api";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
 import { saveCanvas } from "@/lib/canvas/persistence";
 import { removeLegacyProblemShape } from "@/lib/problems/renderProblem";
+import { getStudentId } from "@/lib/student/identity";
 import { touchSpace } from "@/lib/spaces/store";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import type { TutorMode, TutorResponse } from "@/types/tutor";
@@ -100,6 +102,27 @@ function TutorResult({
   );
 }
 
+/** Surfaces the one thing "mark" changed server-side: this skill's mastery. */
+function MasteryUpdate({
+  outcome,
+  skillId,
+  skillName,
+}: {
+  outcome: AttemptOutcome | null;
+  skillId: string | undefined;
+  skillName: string | undefined;
+}) {
+  if (!outcome || !skillId || !(skillId in outcome.updatedSkills)) {
+    return null;
+  }
+  const mastery = outcome.updatedSkills[skillId];
+  return (
+    <p className="mt-2 rounded-lg border border-[#cbd9cf] bg-[#eef5ef] px-3 py-2 text-xs font-semibold text-[#2f5a41]">
+      {skillName ?? skillId} mastery → {mastery.toFixed(2)}
+    </p>
+  );
+}
+
 function CanvasPanel({
   host,
   onAnalyze,
@@ -107,6 +130,9 @@ function CanvasPanel({
   busyMode,
   response,
   error,
+  attemptOutcome,
+  skillId,
+  skillName,
 }: {
   host: HTMLElement | null;
   onAnalyze: (mode: TutorMode) => void;
@@ -114,6 +140,9 @@ function CanvasPanel({
   busyMode: TutorMode | null;
   response: TutorResponse | null;
   error: string | null;
+  attemptOutcome: AttemptOutcome | null;
+  skillId: string | undefined;
+  skillName: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -162,6 +191,7 @@ function CanvasPanel({
             />
           </div>
           <TutorResult error={error} response={response} />
+          <MasteryUpdate outcome={attemptOutcome} skillId={skillId} skillName={skillName} />
         </section>
 
         <section className="mt-6 border-t border-[#e2dfd6] pt-5">
@@ -198,11 +228,17 @@ export function Whiteboard({
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Hints given for this problem, across every "mark" so far — feeds
+  // hints_used on the attempt. A ref because it drives what gets posted, not
+  // what renders. problem is fixed for a space's whole life (createSpace sets
+  // it once; nothing reassigns it), so this never needs to reset mid-mount.
+  const hintCount = useRef(0);
   const [drawerHost, setDrawerHost] = useState<HTMLDivElement | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attemptOutcome, setAttemptOutcome] = useState<AttemptOutcome | null>(null);
 
   const handleAnalyze = useCallback(
     async (mode: TutorMode) => {
@@ -222,6 +258,34 @@ export function Whiteboard({
           problem,
         });
         setResponse(result);
+
+        if (mode === "hint") {
+          hintCount.current += 1;
+        }
+
+        // Only a graded check-in on a skill-attributed problem moves mastery.
+        // "uncertain" means the tutor never actually read the canvas, so
+        // there is nothing to record — matches attempt_grading.py's
+        // to_attempt_grading, which returns None for that status.
+        if (mode === "mark" && result.status !== "uncertain" && problem?.skill) {
+          try {
+            const outcome = await recordAttempt({
+              courseId,
+              studentId: getStudentId(),
+              sessionId: spaceId,
+              problemId: problem.id,
+              expectedSkills: [problem.skill.skillId],
+              difficulty: problem.skill.targetDifficulty,
+              correct: result.status === "correct",
+              partial: result.status === "partial",
+              hintsUsed: hintCount.current,
+            });
+            setAttemptOutcome(outcome);
+          } catch {
+            // Grading already succeeded and rendered; a failed attempt post
+            // must not surface as a tutor error, only skip the mastery readout.
+          }
+        }
       } catch (caught) {
         setResponse(null);
         setError(
@@ -233,7 +297,7 @@ export function Whiteboard({
         setBusyMode(null);
       }
     },
-    [busyMode, courseId, problem],
+    [busyMode, courseId, problem, spaceId],
   );
 
   const handleClear = useCallback(() => {
@@ -242,6 +306,7 @@ export function Whiteboard({
     }
     setResponse(null);
     setError(null);
+    setAttemptOutcome(null);
   }, []);
 
   // Autosave outlives any single render, so tear it down when the space closes.
@@ -304,12 +369,15 @@ export function Whiteboard({
             <CanvasToolbar />
             <SaveIndicator visible={justSaved} />
             <CanvasPanel
+              attemptOutcome={attemptOutcome}
               busyMode={busyMode}
               error={error}
               host={drawerHost}
               onAnalyze={handleAnalyze}
               onClear={handleClear}
               response={response}
+              skillId={problem?.skill?.skillId}
+              skillName={problem?.skill?.skillName}
             />
           </Tldraw>
         </div>
