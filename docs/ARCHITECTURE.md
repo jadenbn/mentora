@@ -39,7 +39,7 @@ FastAPI
 Pydantic v2
 uvicorn
 ```
-Exact package tooling may follow repository setup.
+Frontend packages are managed with Bun (`frontend/bun.lock`).
 
 ## 3. High-Level System
 ```text
@@ -119,7 +119,8 @@ User
            ├── Canvas State
            └── Tutor Interactions
 ```
-A session may contain a generated or imported problem.
+A session may contain a generated or imported problem. Generated problems are
+stored in backend SQLite and copied into the local Space record for restore.
 
 ## 6. Course
 A Course owns documents, style/coverage metadata, whiteboard sessions, and course-level student progress.
@@ -136,7 +137,8 @@ Conceptual representation:
 ## 7. Whiteboard Session
 A session is a persistent working document. Called a **space** in the UI and in
 the frontend code, and currently stored in browser localStorage rather than on
-the server. There is no problem entity yet, so `problem_id` below is aspirational.
+the server. The current Space record stores the problem association alongside
+its canvas.
 Conceptual representation:
 ```json
 {
@@ -229,6 +231,7 @@ Possible routes:
 GET  /health                                  implemented
 POST /api/tutor/analyze                       implemented
 POST /api/courses/{course_id}/documents       implemented
+POST /api/courses/{course_id}/questions/generate implemented
 GET  /api/courses/{course_id}/search          implemented
 GET  /api/courses
 POST /api/courses
@@ -237,12 +240,12 @@ GET  /api/courses/{course_id}/sessions
 POST /api/courses/{course_id}/sessions
 GET  /api/sessions/{session_id}
 PUT  /api/sessions/{session_id}
-POST /api/questions/generate
 POST /api/problems/import
 GET  /api/courses/{course_id}/student-model
 ```
 
-Only the four marked lines exist. Sessions ("spaces" in the UI) live in
+The implemented course routes support document upload/listing and grounded
+question generation. Sessions ("spaces" in the UI) live in
 browser localStorage, not on the server, so there is no session endpoint.
 Prefer domain operations over one endpoint per prompt.
 
@@ -264,10 +267,11 @@ course_id          retrieval scope (carried; retrieval is deferred)
 mode               mark | hint | explain | stuck
 canvas_image       PNG, JPEG, or WebP; maximum 10 MB
 prior_annotations  JSON array of normalized bounds; defaults to []
+problem_context    optional validated ProblemContext JSON
 ```
 
-Four fields, no JSON request body. The browser sends an image and three
-scalars; anything larger belongs server-side.
+Five fields at most, no JSON request body. The browser sends an image, three
+scalars, and the exact structured problem separately from the image.
 
 Tutor-authored shapes are excluded from the exported image and their positions
 are sent as `prior_annotations` instead, so the model cannot read its own
@@ -380,7 +384,9 @@ chunk / structure
   ↓
 attach metadata
   ↓
-index
+store canonical text in SQLite
+  ↓
+index vector IDs and scope metadata in Pinecone
   ↓
 retrieve
 ```
@@ -406,10 +412,11 @@ other
 ```
 
 ## 24. Retrieval
-Keep retrieval simple initially.
-It must support tutoring, question generation, coverage checks, and style inference.
-Semantic retrieval plus metadata filtering may be enough.
-Evaluate by user-facing quality, not architectural sophistication.
+SQLite is canonical for documents, chunks, generated problems, and
+problem-to-chunk grounding. Pinecone stores vector IDs and scope metadata;
+retrieval joins ranked IDs back to SQLite text. Small documents use full
+context, while larger documents use semantic retrieval. Extraction, indexing,
+and semantic search run in worker threads so FastAPI's event loop stays free.
 
 ## 25. Course Style Model
 Style may include:
@@ -436,7 +443,12 @@ retrieved examples
 course style profile
 covered-topic constraints
 ```
-Conceptual response:
+Current endpoint: `POST /api/courses/{course_id}/questions/generate` accepts a
+document ID and short question request. The direct `google-genai` workflow
+returns a validated plan, checks grounding IDs against retrieved chunks, and
+persists the generated problem and its grounding in SQLite.
+
+Response:
 ```json
 {
   "id": "problem_123",
@@ -471,8 +483,10 @@ Conceptual representation:
   "metadata": {}
 }
 ```
-Problem import is not built. The tutor reads the problem from the canvas image
-rather than from a structured problem record.
+Imported-problem reconstruction is not built. Generated problems render
+directly on the canvas as locked system-owned tldraw shapes using KaTeX, with a
+readable fallback for malformed LaTeX. Capture excludes system shapes while
+`problem_context` preserves the complete question for Gemini.
 The key boundary is: recognize first, render cleanly second.
 
 ## 28. Persistence
@@ -491,7 +505,9 @@ student-model updates
 preview image
 camera/viewport state
 ```
-Use hackathon-appropriate storage. Product semantics matter more than database sophistication.
+Spaces use browser localStorage for now; course documents, chunks, generated
+problems, and grounding use SQLite. Pinecone is an index, never the canonical
+text store.
 
 ## 29. Autosave
 Desired UX is automatic persistence.
