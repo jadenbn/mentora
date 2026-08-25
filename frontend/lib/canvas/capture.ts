@@ -19,10 +19,31 @@ import type { NormalizedBounds } from "@/types/tutor";
 /** Keeps the upload well under the backend's 10 MB limit. */
 const MAX_IMAGE_EDGE = 1280;
 
+// Valid 1×1 transparent PNG used when a student asks for help before drawing.
+// The problem itself travels separately as structured problem_context.
+const EMPTY_CANVAS_PNG = new Uint8Array([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1,
+  0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65,
+  84, 120, 156, 99, 96, 0, 0, 0, 2, 0, 1, 226, 33, 188, 51, 0, 0, 0, 0,
+  73, 69, 78, 68, 174, 66, 96, 130,
+]);
+
 export interface CanvasCapture {
   blob: Blob;
   /** World-space rectangle the image covers. */
   bounds: Box;
+}
+
+/** A valid blank image for a problem-only tutor request. */
+export function emptyCanvasForAnalysis(editor: Editor): CanvasCapture | null {
+  const bounds = editor.getCurrentPageBounds() ?? editor.getViewportPageBounds();
+  if (!bounds || bounds.w <= 0 || bounds.h <= 0) {
+    return null;
+  }
+  return {
+    blob: new Blob([EMPTY_CANVAS_PNG], { type: "image/png" }),
+    bounds,
+  };
 }
 
 function isTutorShape(editor: Editor, id: TLShapeId): boolean {

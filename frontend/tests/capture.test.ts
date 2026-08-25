@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   captureCanvasForAnalysis,
   collectPriorAnnotations,
+  emptyCanvasForAnalysis,
   toNormalizedBounds,
 } from "@/lib/canvas/capture";
 import { box, makeEditor } from "./fakeEditor";
@@ -147,6 +148,16 @@ describe("captureCanvasForAnalysis", () => {
   it("returns nothing when the export produces no image", async () => {
     const { editor } = makeEditor({ shapes: [studentShape("s1")], image: null });
     expect(await captureCanvasForAnalysis(editor)).toBeNull();
+  });
+});
+
+describe("emptyCanvasForAnalysis", () => {
+  it("provides a valid blank PNG frame for a problem-only request", async () => {
+    const { editor } = makeEditor({ shapes: [] });
+    const capture = emptyCanvasForAnalysis(editor);
+    expect(capture?.blob.type).toBe("image/png");
+    expect((await capture!.blob.arrayBuffer()).byteLength).toBe(67);
+    expect(capture?.bounds).toEqual(box(0, 0, 1000, 800));
   });
 });
 
