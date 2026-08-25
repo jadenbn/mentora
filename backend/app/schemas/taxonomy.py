@@ -8,7 +8,20 @@ same path a hand-authored course JSON takes.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+# Mirrors app.services.taxonomy._MAX_ENTRY_CHARS. Duplicated rather than
+# imported: agents/ (which builds this schema) does not depend on services/
+# (see agents/taxonomy_workflow.py's module docstring) — the same trade-off
+# already made for that module's own cycle-detection DFS. Catching this here
+# means a violation gets the workflow's own repair retry, with the real
+# error fed back, instead of surfacing as a hard failure downstream in
+# build_taxonomy with no chance to fix it.
+_MAX_ENTRY_CHARS = 80
+
+_ShortEntry = Annotated[str, StringConstraints(min_length=1, max_length=_MAX_ENTRY_CHARS)]
 
 
 class StrictModel(BaseModel):
@@ -23,8 +36,8 @@ class RawSkillEntry(StrictModel):
     description: str = Field(min_length=1, max_length=500)
     difficulty_band: float = Field(ge=0.0, le=1.0)
     prereqs: list[str] = Field(default_factory=list, max_length=10)
-    keywords: list[str] = Field(default_factory=list, max_length=12)
-    question_forms: list[str] = Field(default_factory=list, max_length=12)
+    keywords: list[_ShortEntry] = Field(default_factory=list, max_length=12)
+    question_forms: list[_ShortEntry] = Field(default_factory=list, max_length=12)
 
 
 class TaxonomyPlan(StrictModel):

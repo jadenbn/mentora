@@ -41,10 +41,16 @@ _SKILL_ENTRY_SCHEMA = {
         "id": {"type": "string"},
         "name": {"type": "string"},
         "description": {"type": "string"},
-        "difficulty_band": {"type": "number"},
+        "difficulty_band": {"type": "number", "minimum": 0, "maximum": 1},
         "prereqs": {"type": "array", "items": {"type": "string"}},
-        "keywords": {"type": "array", "items": {"type": "string"}},
-        "question_forms": {"type": "array", "items": {"type": "string"}},
+        "keywords": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 80},
+        },
+        "question_forms": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 80},
+        },
     },
     "required": ["id", "name", "description", "difficulty_band"],
 }
@@ -155,6 +161,7 @@ class GeminiTaxonomyWorkflow:
         """
         known_ids = {s["id"] for s in (existing_skills or [])}
         malformed: Exception | None = None
+        previous_error: str | None = None
         try:
             async with self._client().aio as client:
                 for attempt in range(2):
@@ -164,13 +171,14 @@ class GeminiTaxonomyWorkflow:
                             source_text=source_text,
                             existing_skills=existing_skills or [],
                             emergent=emergent,
-                            repair=attempt == 1,
+                            previous_error=previous_error,
                         )
                         plan = TaxonomyPlan.model_validate(raw)
                         _validate_batch(plan, known_ids)
                         return [entry.model_dump(mode="json") for entry in plan.skills]
                     except (ValidationError, ValueError, KeyError, TypeError) as exc:
                         malformed = exc
+                        previous_error = str(exc)
                         logger.warning(
                             "taxonomy output failed validation (attempt %d): %s",
                             attempt + 1,
@@ -192,12 +200,16 @@ class GeminiTaxonomyWorkflow:
         source_text: str,
         existing_skills: list[dict[str, str]],
         emergent: bool,
-        repair: bool,
+        previous_error: str | None,
     ) -> dict:
+        # Echo back exactly what failed, not a generic reminder — a canned
+        # "check ids and cycles" hint is useless (and was actively
+        # misleading) when the real problem was e.g. difficulty_band out of
+        # [0, 1]; the model needs the actual validation error to fix it.
         prefix = (
-            "Repair attempt: every id must be unique, every prereq must "
-            "resolve, and the graph must be acyclic.\n\n"
-            if repair
+            f"Repair attempt: the previous response was rejected with this "
+            f"error — fix it exactly: {previous_error}\n\n"
+            if previous_error
             else ""
         )
         known = "\n".join(f"- {s['id']}: {s['name']}" for s in existing_skills)
