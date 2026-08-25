@@ -22,6 +22,7 @@ import {
   TextToolbarItem,
   TldrawUiMenuContextProvider,
   TldrawUiToolbar,
+  useEditor,
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
@@ -103,6 +104,42 @@ function TutorResult({
   );
 }
 
+function Palette() {
+  const editor = useEditor();
+  const [hasSelection, setHasSelection] = useState(
+    () => editor.getSelectedShapeIds().length > 0,
+  );
+
+  useEffect(() => {
+    const updateSelection = () => {
+      const next = editor.getSelectedShapeIds().length > 0;
+      setHasSelection((current) => (current === next ? current : next));
+    };
+    updateSelection();
+    return editor.store.listen(updateSelection);
+  }, [editor]);
+
+  return (
+    <div className="sidebar-style-panel mt-2">
+      <DefaultStylePanel isMobile>
+        <StylePanelSection>
+          <StylePanelColorPicker />
+          <StylePanelOpacityPicker />
+        </StylePanelSection>
+        {hasSelection ? (
+          <StylePanelSection>
+            <StylePanelFillPicker />
+            <StylePanelDashPicker />
+          </StylePanelSection>
+        ) : null}
+        <StylePanelSection>
+          <StylePanelSizePicker />
+        </StylePanelSection>
+      </DefaultStylePanel>
+    </div>
+  );
+}
+
 function CanvasPanel({
   onAnalyze,
   onClear,
@@ -124,10 +161,18 @@ function CanvasPanel({
 
   return (
     <>
+      {open ? (
+        <button
+          aria-label="Close draw options"
+          className="fixed inset-0 z-20 bg-slate-950/10"
+          onClick={() => setOpen(false)}
+          type="button"
+        />
+      ) : null}
       <button
         aria-controls="canvas-panel"
         aria-expanded={open}
-        aria-label={open ? "Close draw options" : "Open draw options"}
+        aria-label={open ? "Close canvas controls" : "Open canvas controls"}
         className={`absolute top-1/2 z-40 flex h-14 w-10 -translate-y-1/2 items-center justify-center rounded-l-full border border-r-0 border-slate-200 bg-white text-slate-950 shadow-md transition-[right] duration-300 ease-out hover:cursor-grab ${open ? "right-72" : "right-0"}`}
         onClick={() => setOpen((isOpen) => !isOpen)}
       >
@@ -138,28 +183,23 @@ function CanvasPanel({
         />
       </button>
       <aside
-        className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto bg-white p-5 shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
+        className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
         id="canvas-panel"
       >
         <section>
-          <h3 className="text-sm font-semibold text-slate-950">Palette</h3>
-          <div className="sidebar-style-panel mt-2">
-            <DefaultStylePanel isMobile>
-              <StylePanelSection>
-                <StylePanelColorPicker />
-                <StylePanelOpacityPicker />
-              </StylePanelSection>
-              <StylePanelSection>
-                <StylePanelFillPicker />
-                <StylePanelDashPicker />
-                <StylePanelSizePicker />
-              </StylePanelSection>
-            </DefaultStylePanel>
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-950">Tutor</h3>
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Canvas feedback
+            </span>
           </div>
-        </section>
-
-        <section className="mt-6 border-t border-slate-200 pt-5">
-          <h3 className="text-sm font-semibold text-slate-950">Tutor</h3>
+          <p className="mt-1 text-xs leading-4 text-slate-500">
+            {hasStudentWork
+              ? "Feedback will appear beside your work."
+              : hasProblem
+                ? "Start here if you’re unsure where to begin."
+                : "Load a problem to ask the tutor."}
+          </p>
           <div className="mt-2">
             <TutorControls
               busyMode={busyMode}
@@ -172,6 +212,20 @@ function CanvasPanel({
           <TutorResult error={error} response={response} />
         </section>
 
+        <section className="mt-5 border-t border-slate-200 pt-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-950">Palette</h3>
+            {!hasStudentWork ? (
+              <span className="text-[10px] text-slate-400">For drawing</span>
+            ) : null}
+          </div>
+          <Palette />
+          {!hasStudentWork ? (
+            <p className="mt-2 text-[11px] leading-4 text-slate-400">
+              Select a shape to adjust fill and dash.
+            </p>
+          ) : null}
+        </section>
       </aside>
     </>
   );

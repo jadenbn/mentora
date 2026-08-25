@@ -23,6 +23,7 @@ describe("TutorControls", () => {
     expect(html).toMatch(/disabled=""[^>]*>Hint<\/button>/);
     expect(html).toMatch(/disabled=""[^>]*>Explain<\/button>/);
     expect(html).toMatch(/>I’m Stuck<\/button>/);
+    expect(html).toMatch(/bg-blue-600[^>]*>I’m Stuck<\/button>/);
   });
 
   it("also disables I’m Stuck when there is no problem context", () => {
@@ -38,5 +39,6 @@ describe("TutorControls", () => {
     expect(html).not.toMatch(/disabled=""[^>]*>Hint<\/button>/);
     expect(html).not.toMatch(/disabled=""[^>]*>Explain<\/button>/);
     expect(html).not.toMatch(/disabled=""[^>]*>I’m Stuck<\/button>/);
+    expect(html).not.toContain("bg-blue-600");
   });
 });

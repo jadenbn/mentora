@@ -9,10 +9,6 @@ const MODE_ACTIONS: { mode: TutorMode; label: string }[] = [
   { mode: "stuck", label: "I’m Stuck" },
 ];
 
-// Not built yet: Select for AI needs a selection crop, Import problem needs the
-// problem-import pipeline.
-const PENDING_ACTIONS = ["Select for AI", "Import problem"];
-
 export function TutorControls({
   onAnalyze,
   onClear,
@@ -29,13 +25,14 @@ export function TutorControls({
   hasProblem?: boolean;
 }) {
   const busy = busyMode !== null;
+  const blankCanvas = !hasStudentWork;
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="grid grid-cols-2 gap-2">
       {MODE_ACTIONS.map(({ mode, label }) => (
         <button
           key={mode}
-          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+          className={`min-h-10 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 ${blankCanvas && mode === "stuck" ? "border-blue-600 bg-blue-600 text-white shadow-sm hover:bg-blue-700" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"}`}
           disabled={
             disabled ||
             busy ||
@@ -54,7 +51,7 @@ export function TutorControls({
       ))}
 
       <button
-        className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+        className="col-span-2 border-0 px-1 py-1 text-left text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline disabled:cursor-not-allowed disabled:text-slate-300"
         disabled={disabled || busy}
         onClick={onClear}
         type="button"
@@ -62,16 +59,9 @@ export function TutorControls({
         Clear feedback
       </button>
 
-      {PENDING_ACTIONS.map((action) => (
-        <button
-          key={action}
-          className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-400"
-          disabled
-          type="button"
-        >
-          {action}
-        </button>
-      ))}
+      <p className="col-span-2 pt-1 text-[11px] leading-4 text-slate-400">
+        More canvas tools are coming soon.
+      </p>
     </div>
   );
 }
