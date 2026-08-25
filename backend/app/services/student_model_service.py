@@ -4,7 +4,7 @@ mastery, and answers what a student currently knows for a course."""
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
@@ -36,6 +36,10 @@ from app.services.skill_progress import SkillProgress
 logger = logging.getLogger(__name__)
 
 TOP_MISCONCEPTIONS_LIMIT = 3
+# How long a generated skill is flagged "recent" on the dashboard after
+# creation — long enough to notice it appear mid-session, short enough that
+# the flag isn't still on from a run days ago.
+RECENT_SKILL_WINDOW = timedelta(minutes=15)
 
 
 class UnknownSkillError(ValueError):
@@ -248,6 +252,10 @@ def get_skills_overview(
         state = session.get(SkillState, (student_id, skill.id))
         progress = SkillProgress(state, default_mastery, now)
 
+        created_at = skill.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
         mastery_by_id[skill.id] = progress.mastery
         rows[skill.id] = SkillOverviewOut(
             skill_id=skill.id,
@@ -255,6 +263,11 @@ def get_skills_overview(
             description=skill.description,
             difficulty_band=skill.difficulty_band,
             prereqs=list(skill.prereqs),
+            keywords=list(skill.keywords),
+            question_forms=list(skill.question_forms),
+            origin=skill.origin,
+            created_at=created_at,
+            is_recent=(now - created_at) <= RECENT_SKILL_WINDOW,
             mastery=progress.mastery,
             confidence=confidence(progress.attempts),
             attempts=progress.attempts,

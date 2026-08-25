@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import MisconceptionTag
+from app.models.enums import MisconceptionTag, SkillOrigin
 from app.schemas.problems import GeneratedProblem
 
 
@@ -60,6 +62,11 @@ class SkillOverviewOut(StrictModel):
     description: str
     difficulty_band: float
     prereqs: list[str]
+    keywords: list[str]
+    question_forms: list[str]
+    origin: SkillOrigin
+    created_at: datetime
+    is_recent: bool
     mastery: float
     confidence: float
     attempts: int

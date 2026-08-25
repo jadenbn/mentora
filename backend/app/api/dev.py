@@ -9,10 +9,45 @@ mastery move). It hits the same JSON APIs the real client would.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
+from sqlmodel import Session
+
+from app.api.dependencies import get_session
+from app.models.enums import SkillOrigin
+from app.schemas.taxonomy import TaxonomyPlan
+from app.services.taxonomy import TaxonomyError, build_taxonomy, merge_generated
 
 router = APIRouter(prefix="/dev", tags=["dev"])
+
+
+@router.post("/courses/{course_id}/skills/import", include_in_schema=False)
+def import_skills(
+    course_id: str,
+    payload: TaxonomyPlan,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Dev-only: post a raw skills batch straight into a course's taxonomy.
+
+    Runs the same build_taxonomy -> merge_generated path real generation
+    uses (shape-validated by TaxonomyPlan, same as the workflow's own
+    output), so a pasted taxonomy is exercised exactly like a generated one
+    — the fastest way to test selection/dashboard behavior against a
+    specific graph shape without spending a model call. Always tagged
+    GENERATED; a seed skill's id is protected the same as any other path
+    through merge_generated.
+    """
+    raw = [entry.model_dump() for entry in payload.skills]
+    try:
+        produced = build_taxonomy(course_id, raw, SkillOrigin.GENERATED)
+        report = merge_generated(session, course_id, produced)
+    except TaxonomyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "added": report.added,
+        "updated": report.updated,
+        "blocked_seed_collisions": report.blocked_seed_collisions,
+    }
 
 
 _DASHBOARD_HTML = """<!doctype html>
@@ -26,6 +61,7 @@ _DASHBOARD_HTML = """<!doctype html>
     --bg:#0f1319; --panel:#171d26; --panel2:#1e2733; --ink:#e6ebf1;
     --muted:#8fa0b3; --line:#28313d; --accent:#4cb6bc; --good:#3fb27f;
     --warn:#d5a749; --bad:#e0715b; --lock:#5b6775;
+    --gen:#a48cf2; --new:#e8b84b;
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
@@ -67,17 +103,35 @@ _DASHBOARD_HTML = """<!doctype html>
   .pill.unlocked { background:#123a2c; color:var(--good); }
   .pill.locked { background:#31261a; color:var(--warn); }
   .pill.next { background:#0d3134; color:var(--accent); border:1px solid var(--accent); }
+  .pill.seed { background:#242c38; color:var(--muted); }
+  .pill.generated { background:#241f3d; color:var(--gen); }
+  .badge-new { display:inline-block; margin-left:5px; font-size:10px; font-weight:700;
+    color:var(--new); background:#312a12; border-radius:20px; padding:1px 6px;
+    letter-spacing:.03em; vertical-align:middle; }
   .misc { color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
-  .drive { margin-top:18px; background:var(--panel); border:1px solid var(--line);
+  .panel { margin-top:18px; background:var(--panel); border:1px solid var(--line);
     border-radius:10px; padding:16px; }
-  .drive h2 { font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
-  .drive .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .panel h2 { font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+  .panel .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   button.good { background:var(--good); color:#05130d; }
   button.warn { background:var(--warn); color:#1a1305; }
   button.bad { background:var(--bad); color:#1c0a06; }
-  #log { margin-top:12px; font-family:ui-monospace,monospace; font-size:12px;
+  #log, #importLog { margin-top:12px; font-family:ui-monospace,monospace; font-size:12px;
     color:var(--muted); white-space:pre-wrap; max-height:180px; overflow:auto; }
   .err { color:var(--bad); }
+  .ok { color:var(--good); }
+  #detail { display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--line);
+    font-size:12.5px; color:var(--muted); }
+  #detail.show { display:block; }
+  #detail dt { font-family:ui-monospace,monospace; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:.07em; color:var(--ink-faint,var(--muted)); margin-top:8px; }
+  #detail dt:first-child { margin-top:0; }
+  #detail dd { margin:2px 0 0; color:var(--ink); }
+  .chip { display:inline-block; background:var(--panel2); border:1px solid var(--line);
+    border-radius:20px; padding:1px 9px; margin:2px 4px 0 0; font-size:11.5px; }
+  textarea { width:100%; min-height:140px; background:var(--panel2); color:var(--ink);
+    border:1px solid var(--line); border-radius:6px; padding:9px; font-family:ui-monospace,monospace;
+    font-size:12px; resize:vertical; }
 </style>
 </head>
 <body>
@@ -96,13 +150,13 @@ _DASHBOARD_HTML = """<!doctype html>
   <div class="bar" id="stats"></div>
   <table>
     <thead><tr>
-      <th>Skill</th><th>Mastery</th><th>State</th><th>Attempts</th>
+      <th>Skill</th><th>Origin</th><th>Mastery</th><th>State</th><th>Attempts</th>
       <th>Conf.</th><th>Diff.</th><th>Misconceptions</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
 
-  <div class="drive">
+  <div class="panel">
     <h2>Drive the loop — synthetic attempt</h2>
     <div class="row">
       <span id="selName" class="sub">Selected: <b>none</b> (click a skill, or use the selection pick)</span>
@@ -121,7 +175,34 @@ _DASHBOARD_HTML = """<!doctype html>
       </label>
       <button class="ghost" id="bPickNext">Select engine's pick →</button>
     </div>
+    <dl id="detail"></dl>
     <div id="log"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Import skills (dev)</h2>
+    <p class="sub" style="margin-bottom:8px">
+      Paste a raw taxonomy batch and post it straight into the selected course —
+      the same build_taxonomy → merge_generated path real generation uses, no
+      model call. Shape: <code>{"skills":[{"id","name","description","difficulty_band",...}]}</code>.
+    </p>
+    <textarea id="importText" spellcheck="false">{
+  "skills": [
+    {
+      "id": "example-skill",
+      "name": "Example skill",
+      "description": "Replace with a real one.",
+      "difficulty_band": 0.4,
+      "prereqs": [],
+      "keywords": [],
+      "question_forms": []
+    }
+  ]
+}</textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="bImport">Import into course</button>
+    </div>
+    <div id="importLog"></div>
   </div>
 </main>
 <script>
@@ -133,10 +214,10 @@ function api(path) {
   const s = encodeURIComponent($('#student').value.trim());
   return `/api/courses/${c}/${path}${path.includes('?') ? '&' : '?'}student_id=${s}`;
 }
-function log(msg, isErr) {
-  const el = $('#log');
+function log(msg, isErr, target) {
+  const el = $(target || '#log');
   const line = document.createElement('div');
-  if (isErr) line.className = 'err';
+  if (isErr) line.className = 'err'; else if (isErr === false) line.className = 'ok';
   line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
   el.prepend(line);
 }
@@ -179,8 +260,11 @@ function render() {
       : `<span class="pill locked">locked</span>`;
     const next = isNext ? ` <span class="pill next">next</span>` : '';
     const misc = s.top_misconceptions.length ? s.top_misconceptions.join(', ') : '·';
+    const origin = `<span class="pill ${s.origin}">${s.origin}</span>` +
+      (s.is_recent ? '<span class="badge-new" title="created in the last 15 minutes">new</span>' : '');
     return `<tr class="${cls.join(' ')}" data-id="${s.skill_id}">
       <td><div class="name">${s.skill_name}${next}</div><div class="id">${s.skill_id}</div></td>
+      <td>${origin}</td>
       <td><div style="display:flex;gap:8px;align-items:center">
         <div class="track"><div class="fill" style="width:${(s.mastery*100).toFixed(0)}%;background:${masteryColor(s.mastery)}"></div></div>
         <span class="pct">${s.mastery.toFixed(2)}</span></div></td>
@@ -197,10 +281,27 @@ function render() {
   });
 }
 
+function chips(items) {
+  return items.length ? items.map(i => `<span class="chip">${i}</span>`).join('') : '<span class="sub">none</span>';
+}
+
 function renderSelected() {
   const s = data && selected ? data.skills.find(x => x.skill_id === selected) : null;
   $('#selName').innerHTML = 'Selected: <b>' + (s ? s.skill_name + ' <span class="id">'+s.skill_id+'</span>' : 'none') + '</b>';
   for (const id of ['#bCorrect','#bPartial','#bIncorrect']) $(id).disabled = !s;
+
+  const detail = $('#detail');
+  if (!s) { detail.classList.remove('show'); detail.innerHTML = ''; return; }
+  detail.classList.add('show');
+  detail.innerHTML = `
+    <dt>Description</dt><dd>${s.description}</dd>
+    <dt>Origin</dt><dd><span class="pill ${s.origin}">${s.origin}</span>
+      ${s.is_recent ? '<span class="badge-new">new</span>' : ''}
+      <span class="sub" style="margin-left:6px">${new Date(s.created_at).toLocaleString()}</span></dd>
+    <dt>Prereqs</dt><dd>${chips(s.prereqs)}</dd>
+    <dt>Keywords</dt><dd>${chips(s.keywords)}</dd>
+    <dt>Question forms</dt><dd>${chips(s.question_forms)}</dd>
+  `;
 }
 
 async function attempt(kind) {
@@ -232,6 +333,33 @@ async function attempt(kind) {
   selected = s.skill_id; render(); renderSelected();
 }
 
+async function importSkills() {
+  const course = encodeURIComponent($('#course').value.trim());
+  let payload;
+  try {
+    payload = JSON.parse($('#importText').value);
+  } catch (e) {
+    log('invalid JSON: ' + e.message, true, '#importLog');
+    return;
+  }
+  try {
+    const r = await fetch(`/dev/courses/${course}/skills/import`, {
+      method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    const parts = [];
+    if (res.added.length) parts.push(`+${res.added.length} added: ${res.added.join(', ')}`);
+    if (res.updated.length) parts.push(`${res.updated.length} updated: ${res.updated.join(', ')}`);
+    if (res.blocked_seed_collisions.length) parts.push(`${res.blocked_seed_collisions.length} blocked (seed collision): ${res.blocked_seed_collisions.join(', ')}`);
+    log(parts.length ? parts.join(' · ') : 'nothing changed', false, '#importLog');
+  } catch (e) {
+    log('import failed: ' + e.message, true, '#importLog');
+    return;
+  }
+  await load();
+}
+
 $('#reload').onclick = load;
 $('#course').onchange = load;
 $('#student').onchange = load;
@@ -239,6 +367,7 @@ $('#bCorrect').onclick = () => attempt('correct');
 $('#bPartial').onclick = () => attempt('partial');
 $('#bIncorrect').onclick = () => attempt('incorrect');
 $('#bPickNext').onclick = () => { if (data && data.next_skill_id) { selected = data.next_skill_id; render(); renderSelected(); } };
+$('#bImport').onclick = importSkills;
 load();
 </script>
 </body>
