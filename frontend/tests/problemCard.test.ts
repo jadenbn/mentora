@@ -36,6 +36,21 @@ describe("ProblemBody", () => {
     expect(html).toContain('class="katex"');
     expect(html).toContain("e^{3x}");
   });
+
+  it("keeps the complete function clause in the math font", () => {
+    expect(
+      parseProblemPrompt("Find the derivative of f(x) = e^{3x} \\cos(x^2)."),
+    ).toEqual([
+      { kind: "text", value: "Find the derivative of " },
+      {
+        kind: "math",
+        value: "f(x) = e^{3x} \\cos(x^2)",
+        display: false,
+        source: "f(x) = e^{3x} \\cos(x^2)",
+      },
+      { kind: "text", value: "." },
+    ]);
+  });
 });
 
 it("keeps escaped dollars as text", () => {

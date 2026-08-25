@@ -70,10 +70,16 @@ function parseRawMathPrompt(prompt: string): ProblemSegment[] | null {
   const match = marker.exec(prompt);
   if (!match) return null;
 
-  // In a sentence such as "f(x) = e^{3x} \\cos(x^2).", the equals sign is
-  // the safest boundary: keep the prose and render the expression after it.
+  // In a sentence such as "... function f(x) = e^{3x} \\cos(x^2).", keep
+  // the prose in the browser font but render the complete mathematical clause.
   const equals = prompt.lastIndexOf("=", match.index);
-  const start = equals >= 0 ? equals + 1 : match.index;
+  const leftHandSide =
+    equals >= 0
+      ? /([A-Za-z][A-Za-z0-9]*(?:\s*\([^()\n]*\))?\s*=\s*)$/.exec(
+          prompt.slice(0, equals + 1),
+        )
+      : null;
+  const start = leftHandSide?.index ?? (equals >= 0 ? equals + 1 : match.index);
   let end = prompt.length;
   for (const punctuation of [".", "?", "!"]) {
     const candidate = prompt.indexOf(punctuation, match.index);
