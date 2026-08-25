@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useIsClient } from "@/lib/useIsClient";
 import {
   createSpace,
@@ -29,6 +29,7 @@ function formatUpdated(iso: string): string {
 export function SpaceGrid({ courseId }: { courseId: string }) {
   const router = useRouter();
   const hydrated = useIsClient();
+  const [error, setError] = useState<string | null>(null);
   // localStorage is an external store, so it is read through
   // useSyncExternalStore rather than mirrored into state by an effect.
   const all = useSyncExternalStore(
@@ -46,8 +47,12 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
   );
 
   function handleCreate() {
-    const space = createSpace(courseId);
-    router.push(`/spaces/${space.id}`);
+    try {
+      const space = createSpace(courseId);
+      router.push(`/spaces/${space.id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create a Space.");
+    }
   }
 
   function handleDelete(space: Space) {
@@ -71,6 +76,12 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
           New space
         </button>
       </div>
+
+      {error ? (
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          {error}
+        </p>
+      ) : null}
 
       {!hydrated ? (
         <p className="mt-4 text-sm text-slate-500">Loading spaces…</p>

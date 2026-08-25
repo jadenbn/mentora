@@ -17,3 +17,11 @@ class TutorWorkflowError(RuntimeError):
 
 class TutorWorkflowTimeout(TutorWorkflowError):
     """The provider did not answer in time."""
+
+
+class QuestionWorkflowError(RuntimeError):
+    """Question generation failed without exposing provider details."""
+
+
+class QuestionWorkflowTimeout(QuestionWorkflowError):
+    """The provider did not generate a question in time."""

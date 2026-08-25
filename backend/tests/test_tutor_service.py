@@ -43,6 +43,17 @@ class TestWorkflowHandoff:
         await analyze(svc, mode=TutorMode.stuck)
         assert stub.last_call["mode"] == TutorMode.stuck
 
+    async def test_a_problem_only_stuck_request_reaches_the_workflow_without_an_image(self):
+        svc, stub = service()
+        await analyze(
+            svc,
+            mode=TutorMode.stuck,
+            canvas_image=None,
+            canvas_mime_type=None,
+        )
+        assert stub.last_call["canvas_image"] is None
+        assert stub.last_call["canvas_mime_type"] is None
+
     async def test_prior_annotations_reach_the_workflow(self):
         # This is what makes follow-up tutoring work: the model has to know
         # which marks on the canvas are its own so it does not grade them.

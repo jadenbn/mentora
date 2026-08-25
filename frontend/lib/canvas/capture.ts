@@ -13,10 +13,14 @@
 
 import type { Box, Editor, TLShapeId } from "tldraw";
 import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
+import { SYSTEM_SHAPE_OWNER } from "@/lib/canvas/ownership";
 import type { NormalizedBounds } from "@/types/tutor";
 
 /** Keeps the upload well under the backend's 10 MB limit. */
 const MAX_IMAGE_EDGE = 1280;
+
+// Valid 1×1 transparent PNG used when a student asks for help before drawing.
+// The problem itself travels separately as structured problem_context.
 
 export interface CanvasCapture {
   blob: Blob;
@@ -29,7 +33,14 @@ function isTutorShape(editor: Editor, id: TLShapeId): boolean {
 }
 
 function studentShapeIds(editor: Editor): TLShapeId[] {
-  return [...editor.getCurrentPageShapeIds()].filter((id) => !isTutorShape(editor, id));
+  return [...editor.getCurrentPageShapeIds()].filter((id) => {
+    const owner = editor.getShape(id)?.meta?.owner;
+    return owner !== AI_SHAPE_OWNER && owner !== SYSTEM_SHAPE_OWNER;
+  });
+}
+
+export function hasStudentWork(editor: Editor): boolean {
+  return studentShapeIds(editor).length > 0;
 }
 
 export async function captureCanvasForAnalysis(

@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { ChevronLeft } from "lucide-react";
+import { Palette as PaletteIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowToolbarItem,
@@ -22,191 +22,206 @@ import {
   TextToolbarItem,
   TldrawUiMenuContextProvider,
   TldrawUiToolbar,
+  TldrawUiToolbarButton,
+  useEditor,
+  useValue,
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { animateCanvasActions } from "@/lib/annotations/animateActions";
-import { randomDemoActions } from "@/lib/annotations/demoAnnotation";
-import { clearDemoShapes, runDemoScript } from "@/lib/annotations/demoScript";
 import type { AnimationHandle } from "@/lib/annotations/animate";
-import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
+import {
+  clearAiShapes,
+  hasAiShapes as getHasAiCanvasFeedback,
+} from "@/lib/annotations/renderCanvasActions";
+import { hasStudentWork as getHasStudentCanvasWork } from "@/lib/canvas/capture";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
+import { saveCanvas } from "@/lib/canvas/persistence";
+import { ProblemShapeProvider, ProblemShapeUtil } from "@/lib/problems/ProblemShape";
+import { ensureProblemShape } from "@/lib/problems/renderProblem";
 import { touchSpace } from "@/lib/spaces/store";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
-import type { TutorMode, TutorResponse } from "@/types/tutor";
+import type { ProblemContext } from "@/types/domain";
+import type {
+  CanvasAction,
+  TutorMode,
+} from "@/types/tutor";
+import type { RenderContext } from "@/lib/annotations/renderCanvasActions";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
 
-function CanvasToolbar() {
-  return (
-    <TldrawUiToolbar
-      className="absolute! left-4! top-1/2! z-20! -translate-y-1/2!"
-      label="Drawing tools"
-      orientation="vertical"
-      tooltipSide="right"
-    >
-      <TldrawUiMenuContextProvider sourceId="toolbar" type="toolbar">
-        <SelectToolbarItem />
-        <HandToolbarItem />
-        <DrawToolbarItem />
-        <HighlightToolbarItem />
-        <TextToolbarItem />
-        <ArrowToolbarItem />
-        <RectangleToolbarItem />
-        <EraserToolbarItem />
-      </TldrawUiMenuContextProvider>
-    </TldrawUiToolbar>
+function PaletteOptions() {
+  const editor = useEditor();
+  const [hasSelection, setHasSelection] = useState(
+    () => editor.getSelectedShapeIds().length > 0,
   );
-}
 
-function TutorResult({
-  response,
-  error,
-}: {
-  response: TutorResponse | null;
-  error: string | null;
-}) {
-  if (error) {
-    return (
-      <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
-        {error}
-      </p>
-    );
-  }
-
-  if (!response) {
-    return null;
-  }
+  useEffect(() => {
+    const updateSelection = () => {
+      const next = editor.getSelectedShapeIds().length > 0;
+      setHasSelection((current) => (current === next ? current : next));
+    };
+    updateSelection();
+    return editor.store.listen(updateSelection);
+  }, [editor]);
 
   return (
-    <div className="mt-3 space-y-2 text-xs text-slate-700">
-      <p>
-        <span className="font-semibold capitalize text-slate-950">
-          {response.status}
-        </span>{" "}
-        · {response.canvas_actions.length} annotation
-        {response.canvas_actions.length === 1 ? "" : "s"}
-      </p>
-
-      {response.summary ? <p>{response.summary}</p> : null}
+    <div className="sidebar-style-panel w-52 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+      <DefaultStylePanel isMobile>
+        <StylePanelSection>
+          <StylePanelColorPicker />
+          <StylePanelOpacityPicker />
+        </StylePanelSection>
+        {hasSelection ? (
+          <StylePanelSection>
+            <StylePanelFillPicker />
+            <StylePanelDashPicker />
+          </StylePanelSection>
+        ) : null}
+        <StylePanelSection>
+          <StylePanelSizePicker />
+        </StylePanelSection>
+      </DefaultStylePanel>
     </div>
   );
 }
 
-function CanvasPanel({
-  onAnalyze,
-  onClear,
-  onAnimateDemo,
-  onRunDemo,
-  demoPhase,
-  busyMode,
-  response,
-  error,
-}: {
-  onAnalyze: (mode: TutorMode) => void;
-  onClear: () => void;
-  onAnimateDemo: () => void;
-  onRunDemo: () => void;
-  demoPhase: string | null;
-  busyMode: TutorMode | null;
-  response: TutorResponse | null;
-  error: string | null;
-}) {
-  const [open, setOpen] = useState(false);
+function CanvasToolbar() {
+  const editor = useEditor();
+  const currentTool = useValue(
+    "canvas-toolbar-tool",
+    () => editor.getCurrentToolId(),
+    [editor],
+  );
+  const paletteAvailable = currentTool !== "eraser";
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const showPalette = paletteOpen && paletteAvailable;
 
   return (
     <>
-      <button
-        aria-controls="canvas-panel"
-        aria-expanded={open}
-        aria-label={open ? "Close draw options" : "Open draw options"}
-        className={`absolute top-1/2 z-40 flex h-14 w-10 -translate-y-1/2 items-center justify-center rounded-l-full border border-r-0 border-slate-200 bg-white text-slate-950 shadow-md transition-[right] duration-300 ease-out hover:cursor-grab ${open ? "right-72" : "right-0"}`}
-        onClick={() => setOpen((isOpen) => !isOpen)}
+      <TldrawUiToolbar
+        className="absolute! left-4! top-1/2! z-40! -translate-y-1/2!"
+        label="Drawing tools"
+        orientation="vertical"
+        tooltipSide="right"
       >
-        <ChevronLeft
-          aria-hidden="true"
-          className={`size-6 transition-transform duration-300 ease-out ${open ? "rotate-180" : ""}`}
-          strokeWidth={2}
+        <TldrawUiMenuContextProvider sourceId="toolbar" type="toolbar">
+          <SelectToolbarItem />
+          <HandToolbarItem />
+          <DrawToolbarItem />
+          <HighlightToolbarItem />
+          <TextToolbarItem />
+          <ArrowToolbarItem />
+          <RectangleToolbarItem />
+          <EraserToolbarItem />
+          <TldrawUiToolbarButton
+            className="hover:cursor-grab"
+            disabled={!paletteAvailable}
+            isActive={showPalette}
+            onClick={() => setPaletteOpen((current) => !current)}
+            title={showPalette ? "Close palette" : "Open palette"}
+            type="tool"
+            tooltip={showPalette ? "Close palette" : "Open palette"}
+          >
+            <PaletteIcon aria-hidden="true" className="size-4" />
+          </TldrawUiToolbarButton>
+        </TldrawUiMenuContextProvider>
+      </TldrawUiToolbar>
+      {showPalette ? (
+        <button
+          aria-label="Close palette"
+          className="fixed inset-0 z-30 cursor-default"
+          onClick={() => setPaletteOpen(false)}
+          type="button"
         />
-      </button>
-      <aside
-        className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto bg-white p-5 shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
-        id="canvas-panel"
-      >
-        <section>
-          <h3 className="text-sm font-semibold text-slate-950">Palette</h3>
-          <div className="sidebar-style-panel mt-2">
-            <DefaultStylePanel isMobile>
-              <StylePanelSection>
-                <StylePanelColorPicker />
-                <StylePanelOpacityPicker />
-              </StylePanelSection>
-              <StylePanelSection>
-                <StylePanelFillPicker />
-                <StylePanelDashPicker />
-                <StylePanelSizePicker />
-              </StylePanelSection>
-            </DefaultStylePanel>
-          </div>
-        </section>
-
-        <section className="mt-6 border-t border-slate-200 pt-5">
-          <h3 className="text-sm font-semibold text-slate-950">Tutor</h3>
-          <div className="mt-2">
-            <TutorControls
-              busyMode={busyMode}
-              onAnalyze={onAnalyze}
-              onClear={onClear}
-            />
-          </div>
-          <TutorResult error={error} response={response} />
-        </section>
-
-        <section className="mt-6 border-t border-slate-200 pt-5">
-          <h3 className="text-sm font-semibold text-slate-950">Testing</h3>
-          <button
-            className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-            onClick={onAnimateDemo}
-            type="button"
-          >
-            Animate test note
-          </button>
-          <button
-            className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-            onClick={onRunDemo}
-            type="button"
-          >
-            Run full demo
-          </button>
-          {demoPhase ? (
-            <p className="mt-2 text-xs font-semibold text-blue-700">
-              {demoPhase}…
-            </p>
-          ) : null}
-        </section>
-      </aside>
+      ) : null}
+      {showPalette ? (
+        <div className="absolute left-16 top-1/2 z-50 -translate-y-1/2">
+          <PaletteOptions />
+        </div>
+      ) : null}
     </>
   );
+}
+
+function ThinkingIndicator({ busy, error }: { busy: boolean; error: string | null }) {
+  if (busy) {
+    return (
+      <div
+        aria-live="polite"
+        className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+        role="status"
+      >
+        Thinking
+        <span aria-hidden="true" className="ml-1 inline-flex gap-0.5">
+          <span className="animate-bounce [animation-delay:-0.2s] motion-reduce:animate-none">
+            .
+          </span>
+          <span className="animate-bounce [animation-delay:-0.1s] motion-reduce:animate-none">
+            .
+          </span>
+          <span className="animate-bounce motion-reduce:animate-none">.</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        aria-live="assertive"
+        className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 shadow-sm"
+        role="alert"
+      >
+        {error}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 export function Whiteboard({
   spaceId,
   courseId,
+  problem,
 }: {
   spaceId: string;
   courseId: string;
+  problem?: ProblemContext;
 }) {
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
-  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disposeWorkListener = useRef<(() => void) | null>(null);
   const animation = useRef<AnimationHandle | null>(null);
-  const [demoPhase, setDemoPhase] = useState<string | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
-  const [response, setResponse] = useState<TutorResponse | null>(null);
+  const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasStudentCanvasWork, setHasStudentCanvasWork] = useState(false);
+  const [hasAiCanvasFeedback, setHasAiCanvasFeedback] = useState(false);
+
+  const renderTutorActions = useCallback(
+    (
+      currentEditor: Editor,
+      actions: CanvasAction[],
+      context: RenderContext,
+    ): Promise<void> => {
+      animation.current?.cancel();
+      setIsThinking(false);
+      const next = animateCanvasActions(currentEditor, actions, context);
+      animation.current = next;
+      return next.done.then(() => {
+        if (animation.current === next) {
+          animation.current = null;
+        }
+      });
+    },
+    [],
+  );
 
   const handleAnalyze = useCallback(
     async (mode: TutorMode) => {
@@ -216,74 +231,40 @@ export function Whiteboard({
       }
 
       setBusyMode(mode);
+      setIsThinking(true);
       setError(null);
 
       try {
-        const result = await runTutorAnalysis({
+        await runTutorAnalysis({
           editor: current,
           mode,
           courseId,
+          problem,
+          renderActions: renderTutorActions,
         });
-        setResponse(result);
       } catch (caught) {
-        setResponse(null);
         setError(
           caught instanceof EmptyCanvasError || caught instanceof Error
             ? caught.message
             : "The tutor request failed.",
         );
       } finally {
+        animation.current = null;
+        setIsThinking(false);
         setBusyMode(null);
       }
     },
-    [busyMode, courseId],
+    [busyMode, courseId, problem, renderTutorActions],
   );
-
-  /** Testing only: draw a random tutor-shaped annotation with animation. */
-  const handleAnimateDemo = useCallback(() => {
-    const current = editor.current;
-    if (!current) {
-      return;
-    }
-    // A second press interrupts the first rather than overlapping it.
-    animation.current?.cancel();
-    animation.current = animateCanvasActions(current, randomDemoActions(), {
-      bounds: current.getViewportPageBounds(),
-      interactionId: `demo_${Date.now()}`,
-    });
-  }, []);
-
-  /** Testing only: replay a whole tutoring session end to end. */
-  const handleRunDemo = useCallback(() => {
-    const current = editor.current;
-    if (!current) {
-      return;
-    }
-    animation.current?.cancel();
-    setDemoPhase(null);
-
-    const handle = runDemoScript(current, current.getViewportPageBounds(), {
-      onPhase: setDemoPhase,
-    });
-    animation.current = handle;
-    void handle.done.then(() => {
-      if (animation.current === handle) {
-        animation.current = null;
-      }
-    });
-  }, []);
 
   const handleClear = useCallback(() => {
     animation.current?.cancel();
-    setDemoPhase(null);
-    if (editor.current) {
-      clearDemoShapes(editor.current);
-    }
     animation.current = null;
     if (editor.current) {
       clearAiShapes(editor.current);
     }
-    setResponse(null);
+    setHasAiCanvasFeedback(false);
+    setIsThinking(false);
     setError(null);
   }, []);
 
@@ -292,8 +273,11 @@ export function Whiteboard({
     return () => {
       disposeAutosave.current?.();
       disposeAutosave.current = null;
+      disposeWorkListener.current?.();
+      disposeWorkListener.current = null;
       animation.current?.cancel();
       animation.current = null;
+      setIsThinking(false);
       if (savedTimer.current !== null) {
         clearTimeout(savedTimer.current);
         savedTimer.current = null;
@@ -316,9 +300,24 @@ export function Whiteboard({
   const handleMount = useCallback(
     (mountedEditor: Editor) => {
       editor.current = mountedEditor;
+      mountedEditor.updateInstanceState({ isGridMode: true });
       // Restore before the student can draw, so their work is never briefly
       // absent and then overwritten by an autosave of an empty canvas.
       loadCanvas(mountedEditor, spaceId);
+      const updateStudentWork = () => {
+        const next = getHasStudentCanvasWork(mountedEditor);
+        setHasStudentCanvasWork((current) => (current === next ? current : next));
+        const hasAiFeedback = getHasAiCanvasFeedback(mountedEditor);
+        setHasAiCanvasFeedback((current) =>
+          current === hasAiFeedback ? current : hasAiFeedback,
+        );
+      };
+      updateStudentWork();
+      disposeWorkListener.current?.();
+      disposeWorkListener.current = mountedEditor.store.listen(updateStudentWork);
+      if (problem && ensureProblemShape(mountedEditor, problem)) {
+        saveCanvas(mountedEditor, spaceId);
+      }
       disposeAutosave.current?.();
       disposeAutosave.current = startAutosave(mountedEditor, spaceId, {
         onSave: () => {
@@ -327,29 +326,31 @@ export function Whiteboard({
         },
       });
     },
-    [flashSaved, spaceId],
+    [flashSaved, problem, spaceId],
   );
 
   return (
     <div className="relative h-full">
-      <Tldraw
-        hideUi
-        onMount={handleMount}
-        options={{ maxPages: 1 }}
-      >
-        <CanvasToolbar />
-        <SaveIndicator visible={justSaved} />
-        <CanvasPanel
-          busyMode={busyMode}
-          error={error}
-          demoPhase={demoPhase}
-          onAnalyze={handleAnalyze}
-          onAnimateDemo={handleAnimateDemo}
-          onClear={handleClear}
-          onRunDemo={handleRunDemo}
-          response={response}
-        />
-      </Tldraw>
+      <ProblemShapeProvider problem={problem}>
+        <Tldraw
+          hideUi
+          onMount={handleMount}
+          options={{ maxPages: 1 }}
+          shapeUtils={[ProblemShapeUtil]}
+        >
+          <CanvasToolbar />
+          <SaveIndicator visible={justSaved} />
+          <ThinkingIndicator busy={isThinking} error={error} />
+          <TutorControls
+            busyMode={busyMode}
+            hasFeedback={hasAiCanvasFeedback}
+            hasProblem={problem !== undefined}
+            hasStudentWork={hasStudentCanvasWork}
+            onAnalyze={handleAnalyze}
+            onClear={handleClear}
+          />
+        </Tldraw>
+      </ProblemShapeProvider>
     </div>
   );
 }

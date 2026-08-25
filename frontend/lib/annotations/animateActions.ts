@@ -6,7 +6,7 @@
  * next to handwriting reads better than a vector one.
  */
 
-import type { Box, Editor, TLDefaultColorStyle, TLShapeId } from "tldraw";
+import type { Box, Editor, TLDefaultColorStyle } from "tldraw";
 import {
   animateStrokes,
   animateText,
@@ -22,18 +22,17 @@ import {
   toWorldRect,
   type Stroke,
 } from "@/lib/annotations/geometry";
-import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
+import {
+  AI_SHAPE_OWNER,
+  clearAiShapesForInteraction,
+  type RenderContext,
+} from "@/lib/annotations/renderCanvasActions";
 import type { CanvasAction } from "@/types/tutor";
 
 /** How far a stroke wanders from its ideal path, in world units. */
 const JITTER = 1.6;
 
-export interface AnimateContext {
-  bounds: Box;
-  interactionId: string;
-}
-
-function metaFor(context: AnimateContext) {
+function metaFor(context: RenderContext) {
   return { owner: AI_SHAPE_OWNER, interactionId: context.interactionId };
 }
 
@@ -75,20 +74,19 @@ function colorFor(action: CanvasAction): TLDefaultColorStyle {
 function stepFor(
   editor: Editor,
   action: CanvasAction,
-  context: AnimateContext,
-  onShape: (id: TLShapeId) => void,
+  context: RenderContext,
 ): (() => AnimationHandle) | null {
   const meta = metaFor(context);
   const color = colorFor(action);
 
   const strokes = strokesFor(action, context.bounds);
   if (strokes) {
-    return () => animateStrokes(editor, strokes, { meta, color, onShape });
+    return () => animateStrokes(editor, strokes, { meta, color });
   }
 
   if (action.type === "text") {
     const at = toWorldPoint(action.position, context.bounds);
-    return () => animateText(editor, at, action.text, { meta, color, onShape });
+    return () => animateText(editor, at, action.text, { meta, color });
   }
 
   // Unrecognised action from a newer backend: skip rather than guess.
@@ -104,13 +102,12 @@ function stepFor(
 export function animateCanvasActions(
   editor: Editor,
   actions: CanvasAction[],
-  context: AnimateContext,
+  context: RenderContext,
 ): AnimationHandle {
-  const drawn: TLShapeId[] = [];
-  const onShape = (id: TLShapeId) => drawn.push(id);
+  clearAiShapesForInteraction(editor, context.interactionId);
 
   const steps = actions
-    .map((action) => stepFor(editor, action, context, onShape))
+    .map((action) => stepFor(editor, action, context))
     .filter((step): step is () => AnimationHandle => step !== null);
 
   const handle = sequence(steps);

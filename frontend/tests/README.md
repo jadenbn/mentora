@@ -15,6 +15,7 @@ bun run test:watch   # watch mode
 | `fakeEditor.ts` | stand-in for the tldraw `Editor`, recording every mutation |
 | `capture.test.ts` | `lib/canvas/capture.ts` — normalization, export scope, prior annotations |
 | `renderCanvasActions.test.ts` | `lib/annotations/renderCanvasActions.ts` — the four action types, coordinate conversion, provenance |
+| `animate.test.ts` / `animateActions.test.ts` | Progressive stroke/typewriter rendering and cancellable tutor-action sequences |
 | `api.test.ts` | `lib/api/api.ts` — multipart construction, error mapping |
 | `analyze.test.ts` | `lib/tutor/analyze.ts` — capture → request → render, with only the network faked |
 | `persistence.test.ts` | `lib/canvas/persistence.ts` — key scoping, versioned envelope, guarded storage, debounced autosave |

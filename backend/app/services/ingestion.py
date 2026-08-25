@@ -1,10 +1,11 @@
-"""Orchestrate the full ingestion pipeline: extract -> chunk -> embed -> index."""
+"""Orchestrate extraction, chunking, and transactional SQLite persistence."""
 
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
 
+from app.database import CourseRepository
 from app.schemas.documents import DocumentType, IngestionResult
 from app.services.extraction import extract_document
 from app.services.chunking import chunk_pages
@@ -16,9 +17,9 @@ _HASH_BLOCK = 1024 * 1024
 def compute_document_id(file_path: str | Path, course_id: str) -> str:
     """Deterministic id from course + file contents.
 
-    Content-addressed on purpose: re-uploading the same PDF yields the same id,
-    so its vector ids are stable and the upsert overwrites the previous copy
-    instead of indexing the document a second time.
+    Content-addressed on purpose: re-uploading the same file to the same course
+    yields the same id, so its SQLite document and chunks are replaced instead
+    of storing a duplicate copy.
     """
     digest = hashlib.sha256()
     digest.update(course_id.encode("utf-8"))
@@ -26,21 +27,23 @@ def compute_document_id(file_path: str | Path, course_id: str) -> str:
     with Path(file_path).open("rb") as f:
         for block in iter(lambda: f.read(_HASH_BLOCK), b""):
             digest.update(block)
-    return digest.hexdigest()[:16]
+    return f"doc_{digest.hexdigest()[:16]}"
 
 
 def ingest_document(
     file_path: str | Path,
     course_id: str,
+    repository: CourseRepository,
     document_type: DocumentType = DocumentType.other,
     filename: str | None = None,
 ) -> IngestionResult:
     """Run the full pipeline for a single document.
 
-    upload -> extract text -> chunk -> embed/index
+    upload -> extract text -> chunk -> SQLite transaction -> vector index
 
     Idempotent: ingesting the same file into the same course replaces the
-    existing chunks rather than adding duplicates.
+    existing chunks rather than adding duplicates. Nothing is written until
+    extraction and chunking have both completed successfully.
     """
     path = Path(file_path)
     # `path` may be a temp file, so prefer the caller's original filename.
@@ -58,19 +61,24 @@ def ingest_document(
         filename=display_name,
         document_type=document_type,
     )
+    if not pages or not chunks:
+        raise ValueError("document contains no extractable text")
 
-    # 3. Drop any chunks from a previous ingest of this document. Deterministic
-    # ids make the upsert overwrite most of them, but chunking can produce a
-    # different count, which would otherwise leave stale vectors behind.
-    deleted = delete_document_vectors(document_id)
-
-    # 4. Embed and upsert into vector DB
-    upsert_chunks(chunks)
-
-    return IngestionResult(
+    document, replaced = repository.replace_document(
         document_id=document_id,
+        course_id=course_id,
         filename=display_name,
-        total_chunks=len(chunks),
+        document_type=document_type,
         total_pages=len(pages),
-        replaced_existing=deleted > 0,
+        chunks=chunks,
     )
+    try:
+        delete_document_vectors(document_id)
+        upsert_chunks(chunks)
+    except Exception as exc:
+        raise DocumentIndexingError(document_id) from exc
+    return IngestionResult(**document.model_dump(), replaced_existing=replaced)
+
+
+class DocumentIndexingError(RuntimeError):
+    """SQLite is canonical; vector indexing can be retried idempotently."""

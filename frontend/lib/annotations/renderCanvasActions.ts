@@ -18,9 +18,10 @@ import type {
 } from "tldraw";
 import { toWorldPoint, toWorldRect } from "@/lib/annotations/geometry";
 import type { CanvasAction, MarkType } from "@/types/tutor";
+import { AI_SHAPE_OWNER } from "@/lib/canvas/ownership";
 
 /** Marks every shape this module creates, so tutor output stays identifiable. */
-export const AI_SHAPE_OWNER = "ai";
+export { AI_SHAPE_OWNER } from "@/lib/canvas/ownership";
 
 export interface RenderContext {
   /** World rectangle the analyzed image covered, from captureCanvasForAnalysis. */
@@ -45,11 +46,7 @@ export function renderCanvasActions(
   // Re-rendering one interaction replaces its shapes rather than stacking
   // duplicates. Feedback from other interactions is left alone, so a follow-up
   // does not wipe the conversation it is continuing.
-  deleteWhere(
-    editor,
-    (meta) =>
-      meta.owner === AI_SHAPE_OWNER && meta.interactionId === context.interactionId,
-  );
+  clearAiShapesForInteraction(editor, context.interactionId);
 
   const partials = actions
     .map((action) => buildShape(action, context))
@@ -58,6 +55,25 @@ export function renderCanvasActions(
   if (partials.length > 0) {
     editor.createShapes(partials);
   }
+}
+
+/** Remove one interaction's marks before replacing them, animated or not. */
+export function clearAiShapesForInteraction(
+  editor: Editor,
+  interactionId: string,
+): void {
+  deleteWhere(
+    editor,
+    (meta) =>
+      meta.owner === AI_SHAPE_OWNER && meta.interactionId === interactionId,
+  );
+}
+
+export function hasAiShapes(editor: Editor): boolean {
+  return [...editor.getCurrentPageShapeIds()].some((id) => {
+    const shape = editor.getShape(id);
+    return shape?.meta?.owner === AI_SHAPE_OWNER;
+  });
 }
 
 /** Remove every tutor-authored shape from the current page. */

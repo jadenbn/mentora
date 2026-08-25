@@ -9,6 +9,7 @@ this module — and everything that tests it — stays free of a provider SDK.
 
 from __future__ import annotations
 
+import logging
 from typing import Protocol
 from uuid import uuid4
 
@@ -18,7 +19,10 @@ from app.schemas.tutor import (
     TutorPlan,
     TutorResponse,
 )
+from app.schemas.problems import GroundedProblem, GroundingChunk, ProblemContext
 from app.services.tutor_policy import apply_safety_policy
+
+logger = logging.getLogger(__name__)
 
 
 class TutorWorkflow(Protocol):
@@ -26,37 +30,64 @@ class TutorWorkflow(Protocol):
         self,
         *,
         mode: TutorMode,
-        canvas_image: bytes,
-        canvas_mime_type: str,
+        canvas_image: bytes | None,
+        canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
+        problem: ProblemContext | None,
+        course_context: list[GroundingChunk],
     ) -> TutorPlan: ...
 
 
+class ProblemRepository(Protocol):
+    def get_grounded_problem(
+        self, *, course_id: str, problem_id: str
+    ) -> GroundedProblem | None: ...
+
+
 class TutorService:
-    def __init__(self, *, workflow: TutorWorkflow) -> None:
+    def __init__(
+        self,
+        *,
+        workflow: TutorWorkflow,
+        repository: ProblemRepository | None = None,
+    ) -> None:
         self.workflow = workflow
+        self.repository = repository
 
     async def analyze(
         self,
         *,
         course_id: str,
         mode: TutorMode,
-        canvas_image: bytes,
-        canvas_mime_type: str,
+        canvas_image: bytes | None,
+        canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
+        problem_context: ProblemContext | None = None,
     ) -> TutorResponse:
-        # course_id is carried but not yet used: it is the retrieval scope, and
-        # course grounding lands after the canvas loop works end to end.
+        problem = problem_context
+        course_context: list[GroundingChunk] = []
+        if problem_context is not None and problem_context.course_id == course_id and self.repository:
+            try:
+                grounded = self.repository.get_grounded_problem(
+                    course_id=course_id,
+                    problem_id=problem_context.id,
+                )
+                if grounded is not None:
+                    problem = grounded.problem
+                    course_context = grounded.chunks
+            except Exception:
+                # A local retrieval failure must not take down otherwise usable
+                # tutoring. The browser-supplied prompt remains the fallback.
+                logger.exception("could not load grounded problem context")
         plan = await self.workflow.run(
             mode=mode,
             canvas_image=canvas_image,
             canvas_mime_type=canvas_mime_type,
             prior_annotations=prior_annotations,
+            problem=problem,
+            course_context=course_context,
         )
         safe = apply_safety_policy(plan)
-        # Uncertainties stay server-side: the policy has already turned them
-        # into a question placed on the canvas, which is the only form the
-        # student needs.
         return TutorResponse(
             interaction_id=uuid4().hex,
             **safe.model_dump(exclude={"uncertainties"}),

@@ -80,7 +80,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
         </button>
       </header>
       <section className="min-h-0 flex-1" aria-label="Whiteboard canvas">
-        <Whiteboard courseId={space.courseId} spaceId={space.id} />
+        <Whiteboard courseId={space.courseId} problem={space.problem} spaceId={space.id} />
       </section>
     </main>
   );

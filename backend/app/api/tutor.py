@@ -14,7 +14,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import TypeAdapter, ValidationError
 
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
+from app.api.dependencies import get_course_repository
 from app.config import TutorSettings, missing_settings
+from app.database import CourseRepository
+from app.schemas.problems import ProblemContext
 from app.schemas.tutor import NormalizedBounds, TutorMode, TutorResponse
 from app.services.tutor_service import TutorService
 
@@ -29,9 +32,12 @@ _SIGNATURES: tuple[tuple[bytes, str], ...] = (
 )
 
 _PRIOR_ANNOTATIONS = TypeAdapter(list[NormalizedBounds])
+_PROBLEM_CONTEXT = TypeAdapter(ProblemContext)
 
 
-def get_tutor_service() -> TutorService:
+def get_tutor_service(
+    repository: CourseRepository = Depends(get_course_repository),
+) -> TutorService:
     """Build the service, refusing early if the server is not configured.
 
     The provider adapter is imported here rather than at module scope so that
@@ -51,7 +57,9 @@ def get_tutor_service() -> TutorService:
 
     settings = TutorSettings.from_environment()
     return TutorService(
+        repository=repository,
         workflow=GeminiTutorWorkflow(
+            api_key=settings.gemini_api_key,
             model=settings.gemini_model,
             timeout_seconds=settings.request_timeout_seconds,
         )
@@ -90,15 +98,38 @@ def _parse_prior_annotations(raw: str) -> list[NormalizedBounds]:
         raise HTTPException(422, "prior_annotations must be a list of normalized bounds") from exc
 
 
+def _parse_problem_context(raw: str | None, course_id: str) -> ProblemContext | None:
+    if raw is None or not raw.strip():
+        return None
+    try:
+        problem = _PROBLEM_CONTEXT.validate_python(json.loads(raw))
+    except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+        raise HTTPException(422, "problem_context must be a generated problem") from exc
+    if problem.course_id != course_id:
+        raise HTTPException(422, "problem_context must belong to course_id")
+    return problem
+
+
 @router.post("/analyze", response_model=TutorResponse)
 async def analyze(
     course_id: Annotated[str, Form(min_length=1)],
     mode: Annotated[TutorMode, Form()],
-    canvas_image: Annotated[UploadFile, File()],
+    canvas_image: Annotated[UploadFile | None, File()] = None,
     prior_annotations: Annotated[str, Form()] = "[]",
+    problem_context: Annotated[str | None, Form()] = None,
     service: TutorService = Depends(get_tutor_service),
 ) -> TutorResponse:
-    image, mime_type = await _read_image(canvas_image)
+    problem = _parse_problem_context(problem_context, course_id)
+    if canvas_image is None:
+        if mode != TutorMode.stuck or problem is None:
+            raise HTTPException(
+                422,
+                "canvas_image is required unless a stuck request includes problem_context",
+            )
+        image = None
+        mime_type = None
+    else:
+        image, mime_type = await _read_image(canvas_image)
     try:
         return await service.analyze(
             course_id=course_id,
@@ -106,6 +137,7 @@ async def analyze(
             canvas_image=image,
             canvas_mime_type=mime_type,
             prior_annotations=_parse_prior_annotations(prior_annotations),
+            problem_context=problem,
         )
     except TutorWorkflowTimeout as exc:
         raise HTTPException(504, "The tutor took too long to respond") from exc

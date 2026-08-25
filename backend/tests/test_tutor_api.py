@@ -34,7 +34,10 @@ def client(workflow, monkeypatch):
 
 def post(client, *, image=f.PNG, mime="image/png", **over):
     data = {"course_id": "course_demo", "mode": "hint"}
+    problem = over.pop("problem_context", None)
     data.update({k: v for k, v in over.items() if v is not None})
+    if problem is not None:
+        data["problem_context"] = json.dumps(problem)
     files = {"canvas_image": ("canvas.png", image, mime)} if image is not None else {}
     return client.post("/api/tutor/analyze", data=data, files=files)
 
@@ -78,6 +81,29 @@ class TestRequestValidation:
 
     def test_a_missing_image_is_rejected(self, client):
         assert post(client, image=None).status_code == 422
+
+    def test_a_problem_only_stuck_request_does_not_need_an_image(self, client, workflow):
+        problem = {
+            "id": "problem_1",
+            "course_id": "course_demo",
+            "document_id": "document_1",
+            "source": "generated",
+            "prompt": "Solve $x=1$.",
+        }
+        response = post(client, image=None, mode="stuck", problem_context=problem)
+        assert response.status_code == 200
+        assert workflow.last_call["canvas_image"] is None
+        assert workflow.last_call["problem"].prompt == problem["prompt"]
+
+    def test_a_problem_only_non_stuck_request_still_needs_an_image(self, client):
+        problem = {
+            "id": "problem_1",
+            "course_id": "course_demo",
+            "document_id": "document_1",
+            "source": "generated",
+            "prompt": "Solve $x=1$.",
+        }
+        assert post(client, image=None, mode="hint", problem_context=problem).status_code == 422
 
     def test_malformed_prior_annotations_are_rejected(self, client):
         assert post(client, prior_annotations="not json").status_code == 422
