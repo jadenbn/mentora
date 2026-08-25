@@ -7,9 +7,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.models.enums import MisconceptionTag, SkillOrigin
+from app.models.enums import SkillOrigin
 from app.models.skill import Skill
-from app.schemas.learning import AttemptCreate, ErrorReport
+from app.schemas.learning import AttemptCreate
 from app.services import student_model_service
 
 
@@ -61,21 +61,6 @@ def test_overview_unlock_state_tracks_prereq_mastery(session):
     assert by_id2["calc1.b"].unlocked is True
     assert by_id2["calc1.a"].has_state is True
     assert ov2.next_skill_id in {"calc1.a", "calc1.b"}
-
-
-def test_overview_surfaces_top_misconceptions(session):
-    _seed(session)
-    for i in range(4):
-        student_model_service.record_attempt(
-            session, "calc1",
-            AttemptCreate(student_id="stu1", session_id="s", problem_id=f"w{i}",
-                          expected_skills=["calc1.a"], difficulty=0.3, correct=False,
-                          errors=[ErrorReport(skill_id="calc1.a",
-                                              misconception=MisconceptionTag.PROCEDURAL_ERROR)]),
-        )
-    ov = student_model_service.get_skills_overview(session, "calc1", "stu1")
-    a = next(s for s in ov.skills if s.skill_id == "calc1.a")
-    assert "procedural-error" in a.top_misconceptions
 
 
 def test_overview_exposes_origin_keywords_and_recency(session):

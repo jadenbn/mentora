@@ -33,8 +33,4 @@ class Attempt(SQLModel, table=True):
     partial: bool = Field(default=False)
     hints_used: int = Field(default=0)
     total_time_ms: int | None = Field(default=None)
-    # Only errors that survived the expected_skills guard. See
-    # student_model_service.record_attempt for why unvalidated errors from
-    # grading are dropped rather than stored.
-    errors: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow)

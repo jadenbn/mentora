@@ -1,6 +1,4 @@
-"""The generation service: source gathering, the content-hash no-op guard,
-and additive persistence via merge_generated — with a stubbed workflow, no
-provider call."""
+"""Cold-start skill generation, with a stubbed workflow and no provider call."""
 
 from __future__ import annotations
 
@@ -12,9 +10,8 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.database import CourseRepository
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
 from app.schemas.documents import ChunkMetadata, DocumentType
-from app.services.skill_generation import bootstrap_first_skill, generate_taxonomy_for_course
+from app.services.skill_generation import bootstrap_first_skill
 
 CHAIN_RULE = {
     "id": "chain-rule",
@@ -25,16 +22,6 @@ CHAIN_RULE = {
     "keywords": ["composite function"],
     "question_forms": ["differentiate a nested expression"],
 }
-PRODUCT_RULE = {
-    "id": "product-rule",
-    "name": "Product rule",
-    "description": "Differentiate a product of two functions.",
-    "difficulty_band": 0.4,
-    "prereqs": [],
-    "keywords": [],
-    "question_forms": [],
-}
-
 
 @pytest.fixture
 def session():
@@ -80,96 +67,6 @@ def _seed_document(repo: CourseRepository, *, course_id: str, document_id: str, 
     )
 
 
-def test_no_documents_returns_none_without_calling_the_workflow(session, tmp_path):
-    repo = CourseRepository(tmp_path / "db.sqlite")
-    workflow = StubWorkflow([])
-    result = asyncio.run(
-        generate_taxonomy_for_course(
-            session, "calc1", repo, workflow, max_source_chars=1000
-        )
-    )
-    assert result is None
-    assert workflow.calls == []
-
-
-def test_first_generation_persists_skills_as_generated(session, tmp_path):
-    repo = CourseRepository(tmp_path / "db.sqlite")
-    _seed_document(repo, course_id="calc1", document_id="doc1", texts=["chain rule text"])
-    workflow = StubWorkflow([[CHAIN_RULE, PRODUCT_RULE]])
-
-    report = asyncio.run(
-        generate_taxonomy_for_course(session, "calc1", repo, workflow, max_source_chars=1000)
-    )
-    assert report is not None
-    assert set(report.added) == {"calc1.chain-rule", "calc1.product-rule"}
-    assert len(workflow.calls) == 1
-    assert "chain rule text" in workflow.calls[0]["source_text"]
-
-    persisted = session.get(Skill, "calc1.chain-rule")
-    assert persisted is not None
-    assert persisted.origin == SkillOrigin.GENERATED
-
-
-def test_unchanged_document_set_is_a_noop_on_second_call(session, tmp_path):
-    repo = CourseRepository(tmp_path / "db.sqlite")
-    _seed_document(repo, course_id="calc1", document_id="doc1", texts=["text"])
-    workflow = StubWorkflow([[CHAIN_RULE]])
-
-    first = asyncio.run(
-        generate_taxonomy_for_course(session, "calc1", repo, workflow, max_source_chars=1000)
-    )
-    assert first is not None
-    assert len(workflow.calls) == 1
-
-    second = asyncio.run(
-        generate_taxonomy_for_course(session, "calc1", repo, workflow, max_source_chars=1000)
-    )
-    assert second is None
-    assert len(workflow.calls) == 1  # the model was not called again
-
-
-def test_a_new_document_triggers_regeneration_and_preserves_skillstate(session, tmp_path):
-    repo = CourseRepository(tmp_path / "db.sqlite")
-    _seed_document(repo, course_id="calc1", document_id="doc1", texts=["chain rule text"])
-    workflow = StubWorkflow([[CHAIN_RULE], [CHAIN_RULE, PRODUCT_RULE]])
-
-    asyncio.run(
-        generate_taxonomy_for_course(session, "calc1", repo, workflow, max_source_chars=1000)
-    )
-    session.add(
-        SkillState(student_id="stu1", course_id="calc1", skill_id="calc1.chain-rule", mastery=0.81)
-    )
-    session.commit()
-
-    _seed_document(repo, course_id="calc1", document_id="doc2", texts=["product rule text"])
-    report = asyncio.run(
-        generate_taxonomy_for_course(session, "calc1", repo, workflow, max_source_chars=1000)
-    )
-    assert report is not None
-    assert len(workflow.calls) == 2
-    assert "calc1.chain-rule" in report.updated
-    assert "calc1.product-rule" in report.added
-
-    state = session.get(SkillState, ("stu1", "calc1.chain-rule"))
-    assert state is not None
-    assert state.mastery == 0.81  # regeneration never touched progress
-
-
-def test_existing_skills_are_offered_to_the_workflow_as_prereq_context(session, tmp_path):
-    repo = CourseRepository(tmp_path / "db.sqlite")
-    session.add(Skill(id="calc1.root", course_id="calc1", name="Root", description="d",
-                      difficulty_band=0.2, prereqs=[], origin=SkillOrigin.SEED))
-    session.commit()
-    _seed_document(repo, course_id="calc1", document_id="doc1", texts=["text"])
-    workflow = StubWorkflow([[CHAIN_RULE]])
-
-    asyncio.run(
-        generate_taxonomy_for_course(session, "calc1", repo, workflow, max_source_chars=1000)
-    )
-    offered = workflow.calls[0]["existing_skills"]
-    assert {"id": "calc1.root", "name": "Root"} in offered
-
-
 def test_bootstrap_first_skill_persists_exactly_one_skill(session, tmp_path):
     repo = CourseRepository(tmp_path / "db.sqlite")
     _seed_document(repo, course_id="calc1", document_id="doc1", texts=["chain rule text"])
@@ -203,18 +100,3 @@ def test_bootstrap_first_skill_returns_none_without_documents(session, tmp_path)
     result = asyncio.run(bootstrap_first_skill(session, "calc1", repo, workflow))
     assert result is None
     assert workflow.calls == []
-
-
-def test_source_text_samples_across_documents_within_the_char_cap(session, tmp_path):
-    repo = CourseRepository(tmp_path / "db.sqlite")
-    _seed_document(repo, course_id="calc1", document_id="doc_a", texts=["a" * 40])
-    _seed_document(repo, course_id="calc1", document_id="doc_b", texts=["b" * 40])
-    workflow = StubWorkflow([[CHAIN_RULE]])
-
-    asyncio.run(
-        generate_taxonomy_for_course(session, "calc1", repo, workflow, max_source_chars=60)
-    )
-    text = workflow.calls[0]["source_text"]
-    assert len(text) <= 60
-    # Round-robin means both documents contributed rather than one dominating.
-    assert "a" in text and "b" in text

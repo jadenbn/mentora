@@ -112,10 +112,6 @@ def _render_question_request(spec: GenerationSpec) -> str:
     ]
     if spec.is_review:
         parts.append("This is a review of previously covered material.")
-    if spec.target_misconception is not None:
-        parts.append(
-            f"Probe the common misconception: {spec.target_misconception.value}."
-        )
     if spec.avoid_forms:
         parts.append("Avoid these question forms: " + "; ".join(spec.avoid_forms) + ".")
     return " ".join(parts)

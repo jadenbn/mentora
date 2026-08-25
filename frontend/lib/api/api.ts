@@ -303,7 +303,6 @@ export async function recordAttempt(args: {
       correct: args.correct,
       partial: args.partial,
       hints_used: args.hintsUsed,
-      errors: [],
     }),
   });
   const data = await courseResponse<{ attempt_id: string; updated_skills: Record<string, number> }>(

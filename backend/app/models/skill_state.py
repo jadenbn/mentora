@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
-from sqlmodel import SQLModel, Field, Column, JSON
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+from sqlmodel import SQLModel, Field
 
 
 class SkillState(SQLModel, table=True):
@@ -19,5 +15,7 @@ class SkillState(SQLModel, table=True):
     attempts: int = Field(default=0)
     correct_unassisted: int = Field(default=0)
     streak: int = Field(default=0)
-    misconception_counts: dict[str, int] = Field(default_factory=dict, sa_column=Column(JSON))
-    last_seen: datetime = Field(default_factory=_utcnow)
+    # Null until the skill is actually practised. A state created by
+    # prerequisite bleed has a mastery estimate but no last-seen moment, and
+    # stamping it with "now" would reset its staleness and decay clock.
+    last_seen: datetime | None = Field(default=None)

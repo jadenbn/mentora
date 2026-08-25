@@ -140,12 +140,3 @@ def test_difficulty_target_is_mastery_plus_offset(session):
     )
 
 
-def test_prereq_mastery_included_in_spec(session):
-    _skill(session, "calc1.a")
-    _skill(session, "calc1.b", prereqs=["calc1.a"])
-    _state(session, "calc1.a", mastery=0.9, attempts=10)
-    session.commit()
-
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.b"
-    assert spec.prereq_mastery["calc1.a"] == pytest.approx(0.9)

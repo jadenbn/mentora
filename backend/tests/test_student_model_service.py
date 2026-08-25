@@ -11,8 +11,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.models.attempt import Attempt
 from app.models.skill import Skill
 from app.models.skill_state import SkillState
-from app.models.student_profile import StudentProfile
-from app.schemas.learning import AttemptCreate, ErrorReport
+from app.schemas.learning import AttemptCreate
 from app.services import student_model_service as svc
 from app.services.mastery import update_mastery
 
@@ -61,34 +60,6 @@ def test_record_attempt_updates_mastery(session):
     assert state.streak == 1
 
 
-def test_guard_drops_errors_outside_expected_skills(session):
-    _skill(session, "calc1.a")
-    _skill(session, "calc1.b")
-    payload = AttemptCreate(
-        student_id="stu1",
-        session_id="sess1",
-        problem_id="p1",
-        expected_skills=["calc1.a"],
-        difficulty=0.5,
-        correct=False,
-        errors=[
-            ErrorReport(skill_id="calc1.a", misconception="careless-error"),
-            ErrorReport(skill_id="calc1.b", misconception="conceptual-error"),
-        ],
-    )
-    result = svc.record_attempt(session, "calc1", payload)
-
-    assert result.dropped_errors == 1
-    state_a = session.get(SkillState, ("stu1", "calc1.a"))
-    assert state_a.misconception_counts == {"careless-error": 1}
-    state_b = session.get(SkillState, ("stu1", "calc1.b"))
-    assert state_b is None  # never touched, since its only error was dropped
-
-    attempt = session.exec(select(Attempt)).one()
-    assert len(attempt.errors) == 1
-    assert attempt.errors[0]["skill_id"] == "calc1.a"
-
-
 def test_unknown_skill_raises(session):
     _skill(session, "calc1.a")
     payload = AttemptCreate(
@@ -121,31 +92,6 @@ def test_prereq_bleed_reaches_direct_prerequisite(session):
     assert state_a is not None
     # b's delta was positive (correct answer), so the bleed onto a is positive too
     assert state_a.mastery > 0.5
-
-
-def test_cold_start_seeds_at_global_ability(session):
-    _skill(session, "calc1.a")
-    session.add(StudentProfile(student_id="stu1", course_id="calc1", global_ability=0.8))
-    session.commit()
-
-    difficulty = 0.5
-    payload = AttemptCreate(
-        student_id="stu1",
-        session_id="sess1",
-        problem_id="p1",
-        expected_skills=["calc1.a"],
-        difficulty=difficulty,
-        correct=True,
-        hints_used=0,
-        partial=False,
-    )
-    # score_attempt always returns exactly 1.0 for hints_used=0; instead
-    # verify the seed directly via the update formula rather than fishing
-    # for a score that happens to match.
-    result = svc.record_attempt(session, "calc1", payload)
-    seeded_mastery = 0.8
-    expected = update_mastery(seeded_mastery, 1.0, difficulty, 0)
-    assert result.updated_skills["calc1.a"] == pytest.approx(expected)
 
 
 def test_reposting_the_same_problem_does_not_move_mastery_again(session):

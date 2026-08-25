@@ -18,9 +18,7 @@ from app.models.skill_state import SkillState
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import QuestionPlan
 from app.services import selection, student_model_service
-from app.services.attempt_grading import to_attempt_grading
 from app.schemas.learning import AttemptCreate
-from app.schemas.tutor import WorkStatus
 from app.services.question_service import QuestionService
 
 
@@ -129,17 +127,13 @@ async def test_select_generate_tag_grade_record_moves_the_selected_skill(
 
     # 5. Grade a correct attempt. The client lies about which skill it was;
     #    the server must ignore that and use problem_skills.
-    grading = to_attempt_grading(WorkStatus.correct, repo.get_problem_skills(problem.id))
-    assert grading is not None
     payload = AttemptCreate(
         student_id="stu1",
         session_id="sess1",
         problem_id=problem.id,
         expected_skills=["calc1.some.other.skill"],  # a lie
         difficulty=spec.target_difficulty,
-        correct=grading.correct,
-        partial=grading.partial,
-        errors=grading.errors,
+        correct=True,
     )
     result = student_model_service.record_attempt(
         session, "calc1", payload, repository=repo
