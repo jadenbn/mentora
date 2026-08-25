@@ -59,9 +59,6 @@ export function TutorControls({
         Clear feedback
       </button>
 
-      <p className="col-span-2 pt-1 text-[11px] leading-4 text-slate-400">
-        More canvas tools are coming soon.
-      </p>
     </div>
   );
 }

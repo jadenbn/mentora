@@ -187,19 +187,7 @@ function CanvasPanel({
         id="canvas-panel"
       >
         <section>
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-950">Tutor</h3>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-              Canvas feedback
-            </span>
-          </div>
-          <p className="mt-1 text-xs leading-4 text-slate-500">
-            {hasStudentWork
-              ? "Feedback will appear beside your work."
-              : hasProblem
-                ? "Start here if you’re unsure where to begin."
-                : "Load a problem to ask the tutor."}
-          </p>
+          <h3 className="text-sm font-semibold text-slate-950">Tutor</h3>
           <div className="mt-2">
             <TutorControls
               busyMode={busyMode}
