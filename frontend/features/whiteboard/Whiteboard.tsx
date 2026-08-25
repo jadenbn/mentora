@@ -127,11 +127,11 @@ function CanvasToolbar() {
           type="button"
         />
       ) : null}
-      <div
-        className={`absolute left-16 top-1/2 z-50 -translate-y-1/2 transition-[opacity,transform] duration-150 ${paletteOpen ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-2 opacity-0"}`}
-      >
-        <PaletteOptions />
-      </div>
+      {paletteOpen ? (
+        <div className="absolute left-16 top-1/2 z-50 -translate-y-1/2">
+          <PaletteOptions />
+        </div>
+      ) : null}
     </>
   );
 }
