@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -15,6 +17,7 @@ from app.services.taxonomy import (
     load_taxonomy,
     merge_generated,
     normalize_slug,
+    seed_all_courses,
     validate_taxonomy,
 )
 
@@ -281,3 +284,49 @@ def test_merge_generated_rejects_a_cycle_spanning_old_and_new_skills(session) ->
         merge_generated(session, "calc1", produced)
     # Rejected atomically: the colliding update never landed.
     assert session.get(Skill, "calc1.b") is None
+
+
+def _write_course_json(directory, course_id: str, skills: list[dict]) -> None:
+    (directory / f"{course_id}.json").write_text(
+        json.dumps({"course_id": course_id, "skills": skills}), encoding="utf-8"
+    )
+
+
+def test_seed_all_courses_reseed_never_deletes_generated_skills(session, tmp_path) -> None:
+    _write_course_json(tmp_path, "calc1", [
+        {"id": "root", "name": "Root", "description": "v1", "difficulty_band": 0.2},
+    ])
+    seed_all_courses(session, data_dir=tmp_path)
+    assert session.get(Skill, "calc1.root").description == "v1"
+
+    # A skill generated after seeding — the scenario the origin=SEED scoping protects.
+    session.add(Skill(id="calc1.emergent", course_id="calc1", name="Emergent",
+                      description="d", difficulty_band=0.4, prereqs=[],
+                      origin=SkillOrigin.GENERATED))
+    session.commit()
+
+    # Change the seed file so its content hash differs, forcing a re-seed pass.
+    _write_course_json(tmp_path, "calc1", [
+        {"id": "root", "name": "Root", "description": "v2", "difficulty_band": 0.2},
+    ])
+    seed_all_courses(session, data_dir=tmp_path)
+
+    assert session.get(Skill, "calc1.root").description == "v2"  # seed content refreshed
+    generated = session.get(Skill, "calc1.emergent")
+    assert generated is not None  # survived the re-seed untouched
+    assert generated.origin == SkillOrigin.GENERATED
+
+
+def test_seed_all_courses_unchanged_file_is_a_noop_for_generated_skills_too(session, tmp_path) -> None:
+    _write_course_json(tmp_path, "calc1", [
+        {"id": "root", "name": "Root", "description": "d", "difficulty_band": 0.2},
+    ])
+    seed_all_courses(session, data_dir=tmp_path)
+    session.add(Skill(id="calc1.emergent", course_id="calc1", name="Emergent",
+                      description="d", difficulty_band=0.4, prereqs=[],
+                      origin=SkillOrigin.GENERATED))
+    session.commit()
+
+    seed_all_courses(session, data_dir=tmp_path)  # file unchanged -> should skip entirely
+    assert session.get(Skill, "calc1.emergent") is not None
+    assert session.get(Skill, "calc1.root") is not None

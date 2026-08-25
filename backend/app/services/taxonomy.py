@@ -177,10 +177,17 @@ def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
     Editing a course file and restarting therefore takes effect, instead of
     being silently ignored because rows already exist.
 
-    Re-seeding deletes and reinserts that course's Skill rows. SkillState is
-    keyed by skill_id and is left untouched, so per-student progress survives;
-    but a skill renamed or removed in the edit orphans its SkillState, which
-    is logged rather than dropped quietly.
+    Re-seeding deletes and reinserts only that course's origin=SEED rows.
+    Generated skills (origin=GENERATED — from bootstrap_first_skill or any
+    future generation path) are never touched by this function: a course
+    that has both hand-authored and generated skills must survive a restart
+    with its generated skills intact, not have them wiped because the seed
+    file happened to change (or even because it didn't — deleting "every
+    Skill row for this course" was the trap this scoping fixes).
+
+    SkillState is keyed by skill_id and is left untouched regardless, so
+    per-student progress survives; but a seed skill renamed or removed in the
+    edit orphans its SkillState, which is logged rather than dropped quietly.
     """
     directory = data_dir or DATA_DIR
     for path in sorted(directory.glob("*.json")):
@@ -188,16 +195,18 @@ def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
         content_hash = _course_content_hash(path)
 
         version = session.get(CourseTaxonomyVersion, course_id)
-        existing = session.exec(
-            select(Skill).where(Skill.course_id == course_id)
+        existing_seed = session.exec(
+            select(Skill).where(
+                Skill.course_id == course_id, Skill.origin == SkillOrigin.SEED
+            )
         ).all()
-        if version is not None and version.content_hash == content_hash and existing:
+        if version is not None and version.content_hash == content_hash and existing_seed:
             continue
 
         loaded = load_taxonomy(course_id, data_dir=directory)
 
-        if existing:
-            old_ids = {s.id for s in existing}
+        if existing_seed:
+            old_ids = {s.id for s in existing_seed}
             new_ids = {s.id for s in loaded}
             orphaned = sorted(old_ids - new_ids)
             if orphaned:
@@ -216,7 +225,7 @@ def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
                         course_id,
                         stranded,
                     )
-            for skill in existing:
+            for skill in existing_seed:
                 session.delete(skill)
             session.flush()
 
