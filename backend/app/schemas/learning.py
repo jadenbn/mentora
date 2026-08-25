@@ -84,7 +84,11 @@ class GenerationSpec(StrictModel):
     skill_name: str
     skill_description: str
     target_difficulty: float
-    avoid_forms: list[str] = []
+    # The shapes a question on this skill typically takes -- passed to the
+    # generator as examples, not as things to avoid. It used to be
+    # avoid_forms, built from exactly this field, which told the generator to
+    # steer away from every canonical form of the skill it was asked to test.
+    question_forms: list[str] = []
     retrieval_query: str = ""
     is_review: bool = False
 

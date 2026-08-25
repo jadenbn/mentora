@@ -20,9 +20,19 @@ from app.models.attempt import Attempt
 from app.models.skill import Skill
 from app.models.skill_state import SkillState
 from app.schemas.learning import GenerationSpec
-from app.services.mastery import apply_decay, clamp
+from app.services.mastery import apply_decay, clamp, confidence
 
+# Urgency is scaled by confidence, so an estimate with no evidence behind it
+# carries no urgency at all. Wanting to practise a weak skill is only
+# meaningful once we have reason to believe it IS weak.
 W_URGENCY = 0.60
+# Coverage is what pulls in a skill nobody has attempted. It used to be
+# smuggled in through staleness -- `last_seen is None` scored a full 1.0 on a
+# term that means "decayed since practice" -- which made a never-attempted
+# skill (0.550) outrank a skill the student was failing at 0.20 mastery
+# (0.480). Separating the two makes reaching for new material an explicit,
+# tunable choice, and deliberately a smaller one than remediation.
+W_COVERAGE = 0.20
 W_STALENESS = 0.25
 W_RECENCY_PENALTY = 0.40
 UNLOCK_THRESHOLD = 0.60
@@ -128,14 +138,26 @@ def select_next(session: Session, course_id: str, student_id: str) -> Generation
 
     def priority(skill: Skill) -> float:
         p = progress[skill.id]
-        urgency = 1.0 - p.mastery
-        staleness = (
-            1.0
-            if p.last_seen is None
-            else min(days_since(p.last_seen, now) / STALENESS_CAP_DAYS, 1.0)
-        )
-        recency_penalty = W_RECENCY_PENALTY if skill.id in recent else 0.0
-        return W_URGENCY * urgency + W_STALENESS * staleness - recency_penalty
+        if p.attempts == 0:
+            # Nothing observed: no urgency to claim, no practice to have
+            # decayed from. Only the coverage term applies.
+            base = W_COVERAGE
+        else:
+            urgency = W_URGENCY * (1.0 - p.mastery) * confidence(p.attempts)
+            staleness = (
+                0.0
+                if p.last_seen is None
+                else min(days_since(p.last_seen, now) / STALENESS_CAP_DAYS, 1.0)
+            )
+            base = urgency + W_STALENESS * staleness
+        return base - (W_RECENCY_PENALTY if skill.id in recent else 0.0)
+
+    def rank(skill: Skill) -> tuple[float, float]:
+        # Ties break toward the easier skill. On a student's first problem
+        # every skill scores exactly W_COVERAGE, and starting at the root of
+        # the prerequisite graph beats starting wherever the list happened to
+        # be ordered.
+        return (priority(skill), -skill.difficulty_band)
 
     last_picks = _recent_primary_skills(session, course_id, student_id, REVIEW_LOOKBACK)
     forced_review = len(last_picks) == REVIEW_LOOKBACK and all(
@@ -146,14 +168,14 @@ def select_next(session: Session, course_id: str, student_id: str) -> Generation
     review_candidates = [s for s in unlocked if progress[s.id].mastery >= REVIEW_MASTERY_MIN]
 
     is_review = bool(forced_review and review_candidates)
-    chosen = max(review_candidates if is_review else unlocked, key=priority)
+    chosen = max(review_candidates if is_review else unlocked, key=rank)
 
     return GenerationSpec(
         skill_id=chosen.id,
         skill_name=chosen.name,
         skill_description=chosen.description,
         target_difficulty=clamp(progress[chosen.id].mastery + DIFFICULTY_OFFSET, 0.1, 0.9),
-        avoid_forms=list(chosen.question_forms),
+        question_forms=list(chosen.question_forms),
         retrieval_query=retrieval_query(chosen),
         is_review=is_review,
     )

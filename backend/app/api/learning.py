@@ -112,8 +112,12 @@ def _render_question_request(spec: GenerationSpec) -> str:
     ]
     if spec.is_review:
         parts.append("This is a review of previously covered material.")
-    if spec.avoid_forms:
-        parts.append("Avoid these question forms: " + "; ".join(spec.avoid_forms) + ".")
+    if spec.question_forms:
+        parts.append(
+            "Questions on this skill typically take these shapes: "
+            + "; ".join(spec.question_forms)
+            + ". Vary the specifics rather than reusing a worked example."
+        )
     return " ".join(parts)
 
 

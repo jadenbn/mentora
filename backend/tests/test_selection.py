@@ -140,3 +140,77 @@ def test_difficulty_target_is_mastery_plus_offset(session):
     )
 
 
+
+
+def test_a_failing_skill_outranks_an_untouched_one(session):
+    """The bug this formula exists to fix.
+
+    Staleness used to score `last_seen is None` at a full 1.0, so a skill
+    nobody had attempted (0.60*0.5 + 0.25*1.0 = 0.550) beat a skill the
+    student was failing (0.60*0.80 = 0.480). Every generated skill then
+    outranked real remediation.
+    """
+    _skill(session, "calc1.failing")
+    _skill(session, "calc1.untouched")
+    _state(session, "calc1.failing", mastery=0.20, attempts=6, days_ago=0)
+    session.commit()
+
+    spec = selection.select_next(session, "calc1", "stu1")
+    assert spec.skill_id == "calc1.failing"
+
+
+def test_an_untouched_skill_outranks_a_mastered_one(session):
+    """Coverage still has to pull in new material -- just not over remediation."""
+    _skill(session, "calc1.mastered")
+    _skill(session, "calc1.untouched")
+    _state(session, "calc1.mastered", mastery=0.92, attempts=10, days_ago=0)
+    session.commit()
+
+    spec = selection.select_next(session, "calc1", "stu1")
+    assert spec.skill_id == "calc1.untouched"
+
+
+def test_a_single_observation_carries_little_urgency(session):
+    """confidence(1) is 0.22, so one bad attempt is not yet evidence of weakness.
+
+    A skill seen once and failed should not outrank unexplored material; the
+    student gets breadth before the engine commits to drilling.
+    """
+    _skill(session, "calc1.seen-once")
+    _skill(session, "calc1.untouched")
+    _state(session, "calc1.seen-once", mastery=0.30, attempts=1, days_ago=0)
+    session.commit()
+
+    spec = selection.select_next(session, "calc1", "stu1")
+    assert spec.skill_id == "calc1.untouched"
+
+
+def test_a_cold_student_starts_at_the_easiest_skill(session):
+    """Every skill ties at W_COVERAGE, so the tie-break decides -- and it
+    should be the foundational end of the graph, not list order."""
+    _skill(session, "calc1.advanced")
+    session.add(
+        Skill(id="calc1.basic", course_id="calc1", name="basic", description="d",
+              difficulty_band=0.1, prereqs=[])
+    )
+    session.commit()
+
+    spec = selection.select_next(session, "calc1", "stu1")
+    assert spec.skill_id == "calc1.basic"
+
+
+def test_prereq_bleed_does_not_reset_a_skills_staleness(session):
+    """A state created by bleed has no last_seen, so it cannot read as
+    freshly practised and cannot restart its decay clock."""
+    _skill(session, "calc1.a")
+    session.add(
+        SkillState(student_id="stu1", course_id="calc1", skill_id="calc1.a",
+                   mastery=0.4, attempts=0, last_seen=None)
+    )
+    session.commit()
+
+    progress = selection.decayed_progress(
+        session.get(SkillState, ("stu1", "calc1.a")), datetime.now(timezone.utc)
+    )
+    assert progress.last_seen is None
+    assert progress.mastery == pytest.approx(0.4)  # undecayed, not re-stamped
