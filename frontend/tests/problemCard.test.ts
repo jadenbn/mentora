@@ -9,7 +9,19 @@ describe("ProblemBody", () => {
       createElement(ProblemBody, { prompt: "Use $x^2$ and then $$\\sum_{n=1}^{\\infty} n^{-2}.$$" }),
     );
     expect(html).toContain('class="katex"');
-    expect(html).toContain('class="katex-display"');
+    expect(html).toContain('displaystyle="true"');
+  });
+
+  it("renders natural-language prose inside the same KaTeX document", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProblemBody, {
+        prompt: "Find the derivative of f(x) = e^{3x} \\cos(x^2).",
+      }),
+    );
+    expect(html).toContain('class="katex"');
+    expect(html).toContain("<mtext>Find the derivative of </mtext>");
+    expect(html).toContain("<mi>f</mi>");
+    expect(html).toContain("<mi>x</mi>");
   });
 
   it("falls back to readable source when LaTeX is malformed", () => {

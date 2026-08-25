@@ -32,6 +32,22 @@ function readableText(value: string): string {
   return value.replace(/\\\$/g, "$");
 }
 
+function escapeLatexText(value: string): string {
+  const escaped = value.replace(/[\\{}#$%&_~^]/g, (character) => {
+    switch (character) {
+      case "\\":
+        return "\\textbackslash{}";
+      case "~":
+        return "\\textasciitilde{}";
+      case "^":
+        return "\\^{}";
+      default:
+        return `\\${character}`;
+    }
+  });
+  return escaped.split("\n").join("} \\\\ \\text{");
+}
+
 function parseDelimitedPrompt(prompt: string): ProblemSegment[] {
   const segments: ProblemSegment[] = [];
   let cursor = 0;
@@ -105,6 +121,19 @@ export function parseProblemPrompt(prompt: string): ProblemSegment[] {
   return parseRawMathPrompt(prompt) ?? delimited;
 }
 
+function promptAsLatex(segments: ProblemSegment[]): string {
+  return segments
+    .map((segment) => {
+      if (segment.kind === "text") {
+        return segment.value ? `\\text{${escapeLatexText(segment.value)}}` : "";
+      }
+      return segment.display
+        ? `{\\displaystyle ${segment.value}}`
+        : segment.value;
+    })
+    .join("");
+}
+
 function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "math" }> }) {
   let markup: string | null = null;
   try {
@@ -137,9 +166,31 @@ function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "ma
 }
 
 export function ProblemBody({ prompt }: { prompt: string }) {
+  const segments = parseProblemPrompt(prompt);
+  let markup: string | null = null;
+  try {
+    markup = katex.renderToString(promptAsLatex(segments), {
+      displayMode: false,
+      throwOnError: true,
+      trust: false,
+      strict: "warn",
+    });
+  } catch {
+    // Preserve the readable per-segment fallback for malformed provider math.
+  }
+
+  if (markup !== null) {
+    return (
+      <div
+        className="problem-katex whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]"
+        dangerouslySetInnerHTML={{ __html: markup }}
+      />
+    );
+  }
+
   return (
     <div className="whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]">
-      {parseProblemPrompt(prompt).map((segment, index) =>
+      {segments.map((segment, index) =>
         segment.kind === "math" ? (
           <MathSegment key={`${index}-${segment.source}`} segment={segment} />
         ) : (
