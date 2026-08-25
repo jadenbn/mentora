@@ -41,3 +41,7 @@ button:disabled { cursor: not-allowed; }
 .sidebar-style-panel .tlui-slider__container {
   margin-block: 4px;
 }
+
+.tlui-toolbar .tlui-button:hover {
+  cursor: grab;
+}

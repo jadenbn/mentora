@@ -37,7 +37,7 @@ export function TutorControls({
   };
 
   return (
-    <div className="pointer-events-none absolute right-0 top-1/2 z-40 h-0 w-0">
+    <div className="pointer-events-none absolute right-6 top-1/2 z-40 h-0 w-0">
       {open ? (
         <button
           aria-label="Close tutor actions"
@@ -65,12 +65,17 @@ export function TutorControls({
           <button
             key={mode}
             aria-label={label}
-            className={`pointer-events-auto absolute left-0 top-0 z-10 flex h-11 min-w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border px-3 text-xs font-semibold shadow-md transition-[opacity,transform,background-color,border-color] duration-200 ease-out disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${open ? "opacity-100" : "pointer-events-none opacity-0"} ${open ? "" : "!translate-x-0 !translate-y-0"} ${isPrimary ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"}`}
+            className={`pointer-events-auto absolute left-0 top-0 z-10 flex h-11 min-w-20 items-center justify-center rounded-full border px-3 text-xs font-semibold shadow-md transition-[opacity,transform,background-color,border-color] duration-300 ease-out hover:cursor-grab disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${open ? "opacity-100" : "pointer-events-none opacity-0"} ${isPrimary ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"}`}
             disabled={disabledMode}
             onClick={() => handleAnalyze(mode)}
             style={{
-              left: position.x,
-              top: position.y,
+              transitionDelay: open
+                ? `${index * 45}ms`
+                : `${(MODE_ACTIONS.length - index) * 30}ms`,
+              transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+              transform: open
+                ? `translate(${position.x}px, ${position.y}px) translate(-50%, -50%) scale(1)`
+                : "translate(-50%, -50%) scale(0.72)",
             }}
             title={
               !hasStudentWork && (mode !== "stuck" || !hasProblem)
@@ -87,13 +92,20 @@ export function TutorControls({
       {hasFeedback ? (
         <button
           aria-label="Clear tutor feedback"
-          className="pointer-events-auto absolute left-0 z-20 flex h-8 min-w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-500 shadow-md transition-[top] duration-200 hover:bg-slate-50 hover:text-slate-900"
+          className={`pointer-events-auto absolute left-0 z-20 flex h-8 min-w-8 items-center justify-center rounded-full border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-500 shadow-md transition-[opacity,transform,top] duration-300 ease-out hover:cursor-grab hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
           disabled={disabled || busy}
           onClick={() => {
             setOpen(false);
             onClear();
           }}
-          style={{ top: open ? 126 : 48 }}
+          style={{
+            top: 126,
+            transitionDelay: open ? `${MODE_ACTIONS.length * 45}ms` : "0ms",
+            transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+            transform: open
+              ? "translate(-50%, -50%) scale(1)"
+              : "translate(-50%, -50%) scale(0.72)",
+          }}
           type="button"
         >
           Clear
@@ -103,7 +115,7 @@ export function TutorControls({
       <button
         aria-expanded={open}
         aria-label={open ? "Close tutor actions" : "Open tutor actions"}
-        className={`pointer-events-auto absolute left-0 top-0 z-30 flex h-14 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-l-full border border-r-0 border-slate-200 bg-white text-slate-950 shadow-md transition-[transform,background-color] duration-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 ${open ? "-translate-x-[calc(50%+4px)] bg-slate-50" : ""}`}
+        className={`pointer-events-auto absolute left-0 top-0 z-30 flex h-14 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-l-full border border-r-0 border-slate-200 bg-white text-slate-950 shadow-md transition-[transform,background-color] duration-200 hover:cursor-grab hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 ${open ? "-translate-x-[calc(50%+4px)] bg-slate-50" : ""}`}
         disabled={disabled || busy}
         onClick={() => setOpen((current) => !current)}
         type="button"

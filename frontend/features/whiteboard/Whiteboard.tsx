@@ -108,6 +108,7 @@ function CanvasToolbar() {
           <RectangleToolbarItem />
           <EraserToolbarItem />
           <TldrawUiToolbarButton
+            className="hover:cursor-grab"
             isActive={paletteOpen}
             onClick={() => setPaletteOpen((current) => !current)}
             title={paletteOpen ? "Close palette" : "Open palette"}

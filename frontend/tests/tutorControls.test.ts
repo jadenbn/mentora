@@ -49,6 +49,6 @@ describe("TutorControls", () => {
 
   it("only shows clear feedback when tutor marks exist", () => {
     expect(renderControls(true, true)).not.toContain(">Clear<");
-    expect(renderControls(true, true, true)).toContain(">Clear<");
+    expect(renderControls(true, true, true)).toMatch(/opacity-0[^>]*>Clear<\/button>/);
   });
 });
