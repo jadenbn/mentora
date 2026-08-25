@@ -885,4 +885,82 @@ uncertain. This flattens the `MisconceptionTag` vocabulary and limits what
 `selection.target_misconception` can surface. Closing it means having the
 tutor's single model call emit a misconception directly (extending
 `TutorPlan`, its response schema, and the prompt) — a change owned by the
-tutor path, deferred as the most prompt-delicate work in the repo.
+tutor path, deferred as the most prompt-delicate work in the repo. §47.5
+below leans on this same schema-extension idea for skill discovery, not just
+misconception tagging.
+
+### 47.5 Skill generation: cold-start bootstrap, deferred piggyback growth
+
+A course only has skills where someone put them: `data/courses/*.json` for
+the four built-in courses, or generation for an uploaded one. Two things
+worth naming: how a skill gets proposed, and how that proposal gets merged
+in without disturbing anything a student has already touched.
+
+**`app.services.taxonomy.build_taxonomy(course_id, raw_skills, origin)`** is
+the single builder every taxonomy source uses — hand-authored course JSON
+(`origin=SEED`) and LLM output (`origin=GENERATED`) both normalize ids,
+resolve prereqs, and validate through the exact same `validate_taxonomy`, so
+a generated skill is held to the same rules a seeded one is. `load_taxonomy`
+is just `build_taxonomy(..., SEED)` over a file's raw dicts.
+
+**`app.services.taxonomy.merge_generated(session, course_id, produced)`** is
+how a generated batch lands: upsert by id (an existing `GENERATED` skill's
+describing fields update; its `SkillState` is never touched, since mastery
+is keyed by `skill_id` in a different table), a `SEED` skill id is read-only
+(a collision is skipped and logged, never overwritten), and **nothing is
+ever deleted** — removal is a separate, out-of-scope operation. It validates
+the graph the merge would *produce* (untouched existing skills + the batch)
+as one unit, so a new skill's prereq on an existing skill resolves and a
+cycle spanning old and new skills is caught, not just one within the batch.
+`seed_all_courses`'s own re-seed delete is scoped to `origin=SEED` for the
+same reason: a course restart must never wipe a generated skill.
+
+**`agents.taxonomy_workflow.GeminiTaxonomyWorkflow`** is the LLM adapter —
+same shape as `question_workflow.py` (structured output, one repair retry,
+a hard timeout). Its own retry loop checks batch-local structural problems
+(duplicate ids, unresolved prereqs, same-batch cycles) so the model gets a
+repair pass before the caller ever sees them; graph-wide checks against the
+*existing* course are `merge_generated`'s job, run downstream. An
+`emergent=True` flag swaps in a prompt asking for exactly one new skill
+given the existing graph, instead of a full-course taxonomy.
+
+**Where a call is actually spent — and where it deliberately isn't.** An
+early design auto-fired a whole-course generation call on every document
+upload. That was dropped: it doesn't scale to large course material (a
+char-capped sample is either costly or lossy) and it spends provider quota
+on courses that may never be used. The generation service supporting that
+mode (`skill_generation.generate_taxonomy_for_course`, content-hash-guarded
+via `CourseTaxonomyVersion`'s sibling `CourseGenerationVersion`) remains as
+tested infrastructure nothing currently calls automatically — available for
+a manual "regenerate this course" action, or a future switch back if usage
+data favors it.
+
+What *does* fire automatically is narrower: **`skill_generation.
+bootstrap_first_skill`**, called from `next_problem` only when a course has
+ingested documents but zero `Skill` rows — the one situation where there is
+no prior question-generation call to piggyback skill discovery onto, because
+`selection.select_next()` has nothing to select yet. It reads a handful of
+chunks from one document (not course-wide sampling) and proposes exactly one
+skill via the `emergent=True` path. After it succeeds, selection always has
+something to work with and this path never fires again for that course.
+
+**Deferred: continuous growth by piggybacking on calls that already
+happen.** Beyond that first skill, the intended mechanism is not another
+standalone generation call — it's extending `QuestionPlan` (question
+generation) and `TutorPlan` (grading, alongside §47.4's granularity fix) so
+skill discovery rides on calls the system makes anyway, at zero marginal
+LLM spend. This is real, valuable work not implemented yet: it touches the
+tutor's own response schema and prompt, which the codebase already treats
+as its most delicate surface, and deserves its own focused pass rather than
+being rushed alongside the rest of this section. `build_taxonomy` and
+`merge_generated` are already the right shape to receive whatever it
+proposes — nothing about the persistence layer needs to change when it
+lands.
+
+**Dev visibility.** `GET .../skills-overview` exposes `origin`, `keywords`,
+`question_forms`, and `created_at`/`is_recent` (created in the last 15
+minutes) per skill — not just mastery. `POST /dev/courses/{id}/skills/import`
+(dev-only) runs a pasted raw taxonomy through the same `build_taxonomy ->
+merge_generated` path real generation uses, so the dashboard at
+`/dev/dashboard` can be exercised against any graph shape with no model
+call.
