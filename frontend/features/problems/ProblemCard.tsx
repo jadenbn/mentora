@@ -32,7 +32,7 @@ function readableText(value: string): string {
   return value.replace(/\\\$/g, "$");
 }
 
-export function parseProblemPrompt(prompt: string): ProblemSegment[] {
+function parseDelimitedPrompt(prompt: string): ProblemSegment[] {
   const segments: ProblemSegment[] = [];
   let cursor = 0;
   while (cursor < prompt.length) {
@@ -61,7 +61,42 @@ export function parseProblemPrompt(prompt: string): ProblemSegment[] {
     );
     cursor = closing + delimiterLength;
   }
-  return segments.length > 0 ? segments : [{ kind: "text", value: "" }];
+  return segments;
+}
+
+/** Accept raw TeX from providers that omit dollar delimiters. */
+function parseRawMathPrompt(prompt: string): ProblemSegment[] | null {
+  const marker = /\\[a-zA-Z]+|[A-Za-z0-9)\]}][_^]/g;
+  const match = marker.exec(prompt);
+  if (!match) return null;
+
+  // In a sentence such as "f(x) = e^{3x} \\cos(x^2).", the equals sign is
+  // the safest boundary: keep the prose and render the expression after it.
+  const equals = prompt.lastIndexOf("=", match.index);
+  const start = equals >= 0 ? equals + 1 : match.index;
+  let end = prompt.length;
+  for (const punctuation of [".", "?", "!"]) {
+    const candidate = prompt.indexOf(punctuation, match.index);
+    if (candidate >= 0) end = Math.min(end, candidate);
+  }
+  const math = prompt.slice(start, end).trim();
+  if (!math) return null;
+  const prefixEnd = start + prompt.slice(start).search(/\S/);
+  const prefix = prompt.slice(0, prefixEnd);
+  const suffixStart = start + prompt.slice(start).indexOf(math) + math.length;
+  return [
+    ...(prefix ? [{ kind: "text", value: readableText(prefix) } as const] : []),
+    { kind: "math", value: math, display: false, source: math },
+    ...(suffixStart < prompt.length
+      ? [{ kind: "text", value: readableText(prompt.slice(suffixStart)) } as const]
+      : []),
+  ];
+}
+
+export function parseProblemPrompt(prompt: string): ProblemSegment[] {
+  const delimited = parseDelimitedPrompt(prompt);
+  if (delimited.some((segment) => segment.kind === "math")) return delimited;
+  return parseRawMathPrompt(prompt) ?? delimited;
 }
 
 function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "math" }> }) {
@@ -110,9 +145,5 @@ export function ProblemBody({ prompt }: { prompt: string }) {
 }
 
 export function ProblemCard({ problem }: { problem: ProblemContext }) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4">
-      <ProblemBody prompt={problem.prompt} />
-    </section>
-  );
+  return <ProblemBody prompt={problem.prompt} />;
 }

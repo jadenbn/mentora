@@ -26,6 +26,16 @@ describe("ProblemBody", () => {
     );
     expect(html).not.toContain("<img");
   });
+
+  it("renders raw TeX when the provider omitted dollar delimiters", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProblemBody, {
+        prompt: "Find the derivative of f(x) = e^{3x} \\cos(x^2).",
+      }),
+    );
+    expect(html).toContain('class="katex"');
+    expect(html).toContain("e^{3x}");
+  });
 });
 
 it("keeps escaped dollars as text", () => {

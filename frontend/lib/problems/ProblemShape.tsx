@@ -57,9 +57,9 @@ function ProblemShapeContent({ shape }: { shape: ProblemShape }) {
 
   return (
     <HTMLContainer
-      className="pointer-events-none overflow-hidden rounded-xl border border-slate-300 bg-white p-5 shadow-sm"
+      className="pointer-events-none overflow-visible"
       data-problem-shape={shape.id}
-      style={{ width: shape.props.w, minHeight: shape.props.h }}
+      style={{ width: shape.props.w }}
     >
       {problem?.id === shape.props.problemId ? (
         <ProblemBody prompt={problem.prompt} />
