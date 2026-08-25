@@ -189,6 +189,7 @@ export function Whiteboard({
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
+  const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasStudentCanvasWork, setHasStudentCanvasWork] = useState(false);
   const [hasAiCanvasFeedback, setHasAiCanvasFeedback] = useState(false);
@@ -200,6 +201,7 @@ export function Whiteboard({
       context: RenderContext,
     ): Promise<void> => {
       animation.current?.cancel();
+      setIsThinking(false);
       const next = animateCanvasActions(currentEditor, actions, context);
       animation.current = next;
       return next.done.then(() => {
@@ -219,6 +221,7 @@ export function Whiteboard({
       }
 
       setBusyMode(mode);
+      setIsThinking(true);
       setError(null);
 
       try {
@@ -237,6 +240,7 @@ export function Whiteboard({
         );
       } finally {
         animation.current = null;
+        setIsThinking(false);
         setBusyMode(null);
       }
     },
@@ -250,6 +254,7 @@ export function Whiteboard({
       clearAiShapes(editor.current);
     }
     setHasAiCanvasFeedback(false);
+    setIsThinking(false);
     setError(null);
   }, []);
 
@@ -262,6 +267,7 @@ export function Whiteboard({
       disposeWorkListener.current = null;
       animation.current?.cancel();
       animation.current = null;
+      setIsThinking(false);
       if (savedTimer.current !== null) {
         clearTimeout(savedTimer.current);
         savedTimer.current = null;
@@ -323,7 +329,7 @@ export function Whiteboard({
         >
           <CanvasToolbar />
           <SaveIndicator visible={justSaved} />
-          <ThinkingIndicator busy={busyMode !== null} error={error} />
+          <ThinkingIndicator busy={isThinking} error={error} />
           <TutorControls
             busyMode={busyMode}
             hasFeedback={hasAiCanvasFeedback}
