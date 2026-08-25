@@ -28,7 +28,7 @@ import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { ProblemCard } from "@/features/problems/ProblemCard";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
-import { recordAttempt, type AttemptOutcome } from "@/lib/api/api";
+import { type AttemptOutcome } from "@/lib/api/api";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
 import { saveCanvas } from "@/lib/canvas/persistence";
 import { removeLegacyProblemShape } from "@/lib/problems/renderProblem";
@@ -251,40 +251,25 @@ export function Whiteboard({
       setError(null);
 
       try {
-        const result = await runTutorAnalysis({
+        // The server grades and records in one call for a skill-attributed
+        // problem; `attempt` comes back null when nothing was recorded (a
+        // hint, an unreadable canvas, or a problem already marked).
+        const { response: result, attempt } = await runTutorAnalysis({
           editor: current,
           mode,
           courseId,
           problem,
+          studentId: getStudentId(),
+          sessionId: spaceId,
+          hintsUsed: hintCount.current,
         });
         setResponse(result);
 
         if (mode === "hint") {
           hintCount.current += 1;
         }
-
-        // Only a graded check-in on a skill-attributed problem moves mastery.
-        // "uncertain" means the tutor never actually read the canvas, so
-        // there is nothing to record — matches attempt_grading.py's
-        // to_attempt_grading, which returns None for that status.
-        if (mode === "mark" && result.status !== "uncertain" && problem?.skill) {
-          try {
-            const outcome = await recordAttempt({
-              courseId,
-              studentId: getStudentId(),
-              sessionId: spaceId,
-              problemId: problem.id,
-              expectedSkills: [problem.skill.skillId],
-              difficulty: problem.skill.targetDifficulty,
-              correct: result.status === "correct",
-              partial: result.status === "partial",
-              hintsUsed: hintCount.current,
-            });
-            setAttemptOutcome(outcome);
-          } catch {
-            // Grading already succeeded and rendered; a failed attempt post
-            // must not surface as a tutor error, only skip the mastery readout.
-          }
+        if (attempt) {
+          setAttemptOutcome(attempt);
         }
       } catch (caught) {
         setResponse(null);

@@ -4,21 +4,28 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session, select
 
-from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
+from app.agents.workflow_errors import (
+    QuestionWorkflowError,
+    QuestionWorkflowTimeout,
+    TutorWorkflowError,
+    TutorWorkflowTimeout,
+)
 from app.api.dependencies import get_course_repository, get_session
 from app.config import TutorSettings, missing_settings
 from app.database import CourseRepository
 from app.models.skill import Skill
 from app.schemas.learning import (
     AttemptCreate,
-    AttemptResult,
     GenerationSpec,
     NextProblemResponse,
     SkillsOverviewResponse,
     StudentModelResponse,
+    WorkResponse,
 )
 from app.services import selection, student_model_service
 from app.services.question_service import (
@@ -27,7 +34,10 @@ from app.services.question_service import (
     DocumentNotFoundError,
     QuestionService,
 )
+from app.api.tutor import get_tutor_service, parse_prior_annotations, read_canvas_image
+from app.schemas.tutor import TutorMode, WorkStatus
 from app.services.retrieval import search_course
+from app.services.tutor_service import TutorService
 from app.services.skill_generation import bootstrap_first_skill
 from app.services.student_model_service import UnknownSkillError
 
@@ -36,26 +46,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/courses/{course_id}", tags=["learning"])
 
 _RETRIEVAL_TOP_K = 12
-
-
-@router.post("/attempts", response_model=AttemptResult)
-def create_attempt(
-    course_id: str,
-    payload: AttemptCreate,
-    session: Session = Depends(get_session),
-    repository: CourseRepository = Depends(get_course_repository),
-):
-    """Record an attempt, update the involved skills' mastery, and return the deltas.
-
-    When the attempt names a problem we generated, the skills it exercised come
-    from problem_skills, not the client payload.
-    """
-    try:
-        return student_model_service.record_attempt(
-            session, course_id, payload, repository=repository
-        )
-    except UnknownSkillError as exc:
-        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/student-model", response_model=StudentModelResponse)
@@ -259,7 +249,94 @@ async def next_problem(
     except QuestionWorkflowError as exc:
         raise HTTPException(502, "Question generation is temporarily unavailable") from exc
 
-    # Skill attribution (including spec.skill_id) already happened inside
-    # service.generate() via QuestionPlan.skills -> build_taxonomy ->
-    # merge_generated -> set_problem_skills.
+    # Skill attribution already happened inside service.generate(). Record the
+    # difficulty selection asked for alongside it, so grading reads it back
+    # server-side instead of trusting the client to restate it.
+    repository.set_problem_difficulty(
+        problem_id=problem.id, target_difficulty=spec.target_difficulty
+    )
     return NextProblemResponse(problem=problem, spec=spec)
+
+
+@router.post("/work", response_model=WorkResponse)
+async def submit_work(
+    course_id: str,
+    student_id: str,
+    session_id: Annotated[str, Form(min_length=1)],
+    mode: Annotated[TutorMode, Form()],
+    canvas_image: Annotated[UploadFile, File()],
+    problem_id: Annotated[str, Form(min_length=1)],
+    hints_used: Annotated[int, Form(ge=0)] = 0,
+    prior_annotations: Annotated[str, Form()] = "[]",
+    session: Session = Depends(get_session),
+    repository: CourseRepository = Depends(get_course_repository),
+    tutor: TutorService = Depends(get_tutor_service),
+) -> WorkResponse:
+    """Grade a canvas and record the attempt, in one round trip.
+
+    The product path for finishing a problem. POST /attempts used to take
+    `correct`, `partial`, `hints_used` and `difficulty` straight from the
+    browser: the server chose which skill an attempt moved, but the client
+    decided whether it went up or down, on an API with no authentication. A
+    one-line curl could set any student's mastery to the ceiling.
+
+    Here the tutor's own reading of the canvas decides the outcome, and the
+    difficulty comes from what selection asked for at generation time. The
+    client supplies the canvas and nothing that scores it.
+
+    Only mode="mark" records. A hint request is not a graded attempt, and
+    "uncertain" means the tutor never actually read the canvas -- there is
+    nothing to feed the student model in either case.
+    """
+    grounded = repository.get_grounded_problem(course_id=course_id, problem_id=problem_id)
+    if grounded is None:
+        raise HTTPException(404, "Problem was not found in this course")
+
+    image, mime_type = await read_canvas_image(canvas_image)
+    try:
+        response = await tutor.analyze(
+            course_id=course_id,
+            mode=mode,
+            canvas_image=image,
+            canvas_mime_type=mime_type,
+            prior_annotations=parse_prior_annotations(prior_annotations),
+            problem_context=grounded.problem,
+        )
+    except TutorWorkflowTimeout as exc:
+        raise HTTPException(504, "The tutor took too long to respond") from exc
+    except TutorWorkflowError as exc:
+        raise HTTPException(502, "The tutor is temporarily unavailable") from exc
+
+    attempt = None
+    if mode == TutorMode.mark and response.status != WorkStatus.uncertain:
+        skills = repository.get_problem_skills(problem_id)
+        difficulty = repository.get_problem_difficulty(problem_id)
+        if skills and difficulty is not None:
+            try:
+                attempt = student_model_service.record_attempt(
+                    session,
+                    course_id,
+                    AttemptCreate(
+                        student_id=student_id,
+                        session_id=session_id,
+                        problem_id=problem_id,
+                        expected_skills=skills,
+                        difficulty=difficulty,
+                        correct=response.status == WorkStatus.correct,
+                        partial=response.status == WorkStatus.partial,
+                        hints_used=hints_used,
+                    ),
+                    repository=repository,
+                )
+            except UnknownSkillError:
+                # The problem names a skill the taxonomy no longer has (a
+                # re-seed removed it, say). The grading still stands; only the
+                # mastery update is lost.
+                logger.exception("could not record attempt for problem %s", problem_id)
+        else:
+            logger.info(
+                "problem %s has no skills or no recorded difficulty; graded but not recorded",
+                problem_id,
+            )
+
+    return WorkResponse(tutor=response, attempt=attempt)

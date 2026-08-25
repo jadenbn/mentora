@@ -75,7 +75,7 @@ def _sniff(data: bytes) -> str | None:
     return None
 
 
-async def _read_image(upload: UploadFile) -> tuple[bytes, str]:
+async def read_canvas_image(upload: UploadFile) -> tuple[bytes, str]:
     data = await upload.read(MAX_IMAGE_BYTES + 1)
     if not data:
         raise HTTPException(400, "canvas_image cannot be empty")
@@ -91,7 +91,7 @@ async def _read_image(upload: UploadFile) -> tuple[bytes, str]:
     return data, detected
 
 
-def _parse_prior_annotations(raw: str) -> list[NormalizedBounds]:
+def parse_prior_annotations(raw: str) -> list[NormalizedBounds]:
     try:
         return _PRIOR_ANNOTATIONS.validate_python(json.loads(raw))
     except (json.JSONDecodeError, ValidationError, TypeError) as exc:
@@ -119,14 +119,14 @@ async def analyze(
     problem_context: Annotated[str | None, Form()] = None,
     service: TutorService = Depends(get_tutor_service),
 ) -> TutorResponse:
-    image, mime_type = await _read_image(canvas_image)
+    image, mime_type = await read_canvas_image(canvas_image)
     try:
         return await service.analyze(
             course_id=course_id,
             mode=mode,
             canvas_image=image,
             canvas_mime_type=mime_type,
-            prior_annotations=_parse_prior_annotations(prior_annotations),
+            prior_annotations=parse_prior_annotations(prior_annotations),
             problem_context=_parse_problem_context(problem_context, course_id),
         )
     except TutorWorkflowTimeout as exc:

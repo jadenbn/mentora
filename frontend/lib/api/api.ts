@@ -274,40 +274,63 @@ export interface AttemptOutcome {
 }
 
 /**
- * POST /api/courses/{course_id}/attempts
+ * POST /api/courses/{course_id}/work
  *
- * The skills this attempt actually moves are resolved server-side from the
- * problem's own record when the problem came from next-problem — expectedSkills
- * here is only a hint the server cross-checks, never the final say.
+ * Submit the canvas for a graded check-in. The tutor's own reading of the
+ * work decides the outcome and the server records the attempt in the same
+ * round trip; the difficulty comes from what selection asked for at
+ * generation time. Nothing the browser sends scores the student's work — it
+ * used to send `correct`, which meant anyone could set their own mastery.
+ *
+ * `attempt` comes back null when nothing was recorded: a hint rather than a
+ * mark, a canvas the tutor could not read, or a problem already attempted.
  */
-export async function recordAttempt(args: {
+export async function submitWork(args: {
   courseId: string;
   studentId: string;
   sessionId: string;
   problemId: string;
-  expectedSkills: string[];
-  difficulty: number;
-  correct: boolean;
-  partial: boolean;
+  mode: TutorMode;
+  canvasImage: Blob;
+  priorAnnotations: NormalizedBounds[];
   hintsUsed: number;
-}): Promise<AttemptOutcome> {
-  const response = await fetch(`${apiBaseUrl()}/api/courses/${args.courseId}/attempts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      student_id: args.studentId,
-      session_id: args.sessionId,
-      problem_id: args.problemId,
-      expected_skills: args.expectedSkills,
-      difficulty: args.difficulty,
-      correct: args.correct,
-      partial: args.partial,
-      hints_used: args.hintsUsed,
-    }),
-  });
-  const data = await courseResponse<{ attempt_id: string; updated_skills: Record<string, number> }>(
-    response,
-    "Recording the attempt",
-  );
-  return { attemptId: data.attempt_id, updatedSkills: data.updated_skills };
+  signal?: AbortSignal;
+}): Promise<{ tutor: TutorResponse; attempt: AttemptOutcome | null }> {
+  const form = new FormData();
+  form.append("session_id", args.sessionId);
+  form.append("mode", args.mode);
+  form.append("problem_id", args.problemId);
+  form.append("hints_used", String(args.hintsUsed));
+  form.append("canvas_image", args.canvasImage, "canvas.png");
+  form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
+
+  const url =
+    `${apiBaseUrl()}/api/courses/${args.courseId}/work` +
+    `?student_id=${encodeURIComponent(args.studentId)}`;
+  const response = await fetch(url, { method: "POST", body: form, signal: args.signal });
+
+  if (!response.ok) {
+    let detail: unknown = null;
+    try {
+      detail = (await response.json())?.detail ?? null;
+    } catch {
+      // Non-JSON error body; the status alone has to carry the meaning.
+    }
+    throw new TutorApiError(
+      messageForStatus(response.status, detail),
+      response.status,
+      detail,
+    );
+  }
+
+  const data = (await response.json()) as {
+    tutor: TutorResponse;
+    attempt: { attempt_id: string; updated_skills: Record<string, number> } | null;
+  };
+  return {
+    tutor: data.tutor,
+    attempt: data.attempt
+      ? { attemptId: data.attempt.attempt_id, updatedSkills: data.attempt.updated_skills }
+      : null,
+  };
 }

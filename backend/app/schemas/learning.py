@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import SkillOrigin
 from app.schemas.problems import GeneratedProblem
+from app.schemas.tutor import TutorResponse
 
 
 class StrictModel(BaseModel):
@@ -91,6 +92,18 @@ class GenerationSpec(StrictModel):
     question_forms: list[str] = []
     retrieval_query: str = ""
     is_review: bool = False
+
+
+class WorkResponse(StrictModel):
+    """What POST /work returns: the tutor's reading, and what it recorded.
+
+    `attempt` is null when nothing was recorded -- a hint request rather than
+    a mark, a canvas the tutor could not read, a problem with no skills, or a
+    repeat of a problem already attempted.
+    """
+
+    tutor: TutorResponse
+    attempt: AttemptResult | None = None
 
 
 class NextProblemResponse(StrictModel):

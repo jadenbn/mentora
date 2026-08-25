@@ -15,12 +15,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
-from app.api.dependencies import get_session
+from app.api.dependencies import get_course_repository, get_session
+from app.database import CourseRepository
 from app.config import missing_indexing_settings
 from app.models.enums import SkillOrigin
 from app.models.skill_proposal import ProposalStatus, SkillProposal
 from app.schemas.taxonomy import TaxonomyPlan
-from app.services import proposals
+from app.schemas.learning import AttemptCreate, AttemptResult
+from app.services import proposals, student_model_service
+from app.services.student_model_service import UnknownSkillError
 from app.services.taxonomy import TaxonomyError, build_taxonomy, merge_generated
 
 router = APIRouter(prefix="/dev", tags=["dev"])
@@ -53,6 +56,30 @@ def import_skills(
         "updated": report.updated,
         "blocked_seed_collisions": report.blocked_seed_collisions,
     }
+
+
+@router.post("/courses/{course_id}/attempts", response_model=AttemptResult,
+             include_in_schema=False)
+def create_synthetic_attempt(
+    course_id: str,
+    payload: AttemptCreate,
+    session: Session = Depends(get_session),
+    repository: CourseRepository = Depends(get_course_repository),
+):
+    """Record an attempt from an explicitly stated outcome. Dev only.
+
+    This route takes `correct` from its caller, which is exactly why it is not
+    on the product API: a client that states its own grade can set any
+    student's mastery to the ceiling. Real work goes through POST
+    /api/courses/{id}/work, where the tutor decides. This exists so the
+    dashboard can drive the loop without a canvas and a model call.
+    """
+    try:
+        return student_model_service.record_attempt(
+            session, course_id, payload, repository=repository
+        )
+    except UnknownSkillError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/courses/{course_id}/proposals", include_in_schema=False)

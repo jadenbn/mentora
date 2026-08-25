@@ -60,7 +60,7 @@ describe("the happy path", () => {
   it("returns the tutor's verdict to the caller", async () => {
     const fake = makeEditor({ shapes: [student("s1")] });
     mockFetch();
-    const response = await run(fake.editor);
+    const { response } = await run(fake.editor);
     expect(response).toMatchObject({ status: "partial", summary: "You dropped the coefficient." });
   });
 

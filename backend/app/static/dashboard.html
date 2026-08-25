@@ -326,7 +326,7 @@ async function attempt(kind) {
     partial: kind === 'partial',
   };
   try {
-    const r = await fetch(api('attempts'), {
+    const r = await fetch(devApi('attempts') + `?student_id=${encodeURIComponent($('#student').value.trim())}`, {
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body),
     });
     if (!r.ok) throw new Error(await r.text());
