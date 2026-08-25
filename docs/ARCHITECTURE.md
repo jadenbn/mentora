@@ -334,7 +334,11 @@ tldraw operations
 The renderer creates controlled text, circles, checks, and crosses — the four
 implemented actions. `TutorAnnotation` was an earlier name for this and no
 longer exists.
-This boundary also enables future handwriting animation without changing tutor reasoning.
+The whiteboard uses a progressive renderer for tutor feedback: text is revealed
+as a typewriter sequence, while circles, checks, and crosses are emitted as
+freehand draw-shape points at a capped rate. Animation is presentation-only,
+ignores the undo history, can be cancelled on teardown, and does not change the
+validated tutor contract or ownership metadata.
 
 ## 20. Canvas Capture
 Expose a clean frontend boundary conceptually like:

@@ -46,11 +46,7 @@ export function renderCanvasActions(
   // Re-rendering one interaction replaces its shapes rather than stacking
   // duplicates. Feedback from other interactions is left alone, so a follow-up
   // does not wipe the conversation it is continuing.
-  deleteWhere(
-    editor,
-    (meta) =>
-      meta.owner === AI_SHAPE_OWNER && meta.interactionId === context.interactionId,
-  );
+  clearAiShapesForInteraction(editor, context.interactionId);
 
   const partials = actions
     .map((action) => buildShape(action, context))
@@ -59,6 +55,18 @@ export function renderCanvasActions(
   if (partials.length > 0) {
     editor.createShapes(partials);
   }
+}
+
+/** Remove one interaction's marks before replacing them, animated or not. */
+export function clearAiShapesForInteraction(
+  editor: Editor,
+  interactionId: string,
+): void {
+  deleteWhere(
+    editor,
+    (meta) =>
+      meta.owner === AI_SHAPE_OWNER && meta.interactionId === interactionId,
+  );
 }
 
 /** Remove every tutor-authored shape from the current page. */

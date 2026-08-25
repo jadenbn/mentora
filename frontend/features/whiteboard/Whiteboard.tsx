@@ -25,6 +25,8 @@ import {
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
+import { animateCanvasActions } from "@/lib/annotations/animateActions";
+import type { AnimationHandle } from "@/lib/annotations/animate";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
 import { hasStudentWork as getHasStudentCanvasWork } from "@/lib/canvas/capture";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
@@ -34,7 +36,12 @@ import { ensureProblemShape } from "@/lib/problems/renderProblem";
 import { touchSpace } from "@/lib/spaces/store";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import type { ProblemContext } from "@/types/domain";
-import type { TutorMode, TutorResponse } from "@/types/tutor";
+import type {
+  CanvasAction,
+  TutorMode,
+  TutorResponse,
+} from "@/types/tutor";
+import type { RenderContext } from "@/lib/annotations/renderCanvasActions";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
@@ -182,12 +189,31 @@ export function Whiteboard({
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
   const disposeWorkListener = useRef<(() => void) | null>(null);
+  const animation = useRef<AnimationHandle | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasStudentCanvasWork, setHasStudentCanvasWork] = useState(false);
+
+  const renderTutorActions = useCallback(
+    (
+      currentEditor: Editor,
+      actions: CanvasAction[],
+      context: RenderContext,
+    ): Promise<void> => {
+      animation.current?.cancel();
+      const next = animateCanvasActions(currentEditor, actions, context);
+      animation.current = next;
+      return next.done.then(() => {
+        if (animation.current === next) {
+          animation.current = null;
+        }
+      });
+    },
+    [],
+  );
 
   const handleAnalyze = useCallback(
     async (mode: TutorMode) => {
@@ -205,6 +231,7 @@ export function Whiteboard({
           mode,
           courseId,
           problem,
+          renderActions: renderTutorActions,
         });
         setResponse(result);
       } catch (caught) {
@@ -215,13 +242,16 @@ export function Whiteboard({
             : "The tutor request failed.",
         );
       } finally {
+        animation.current = null;
         setBusyMode(null);
       }
     },
-    [busyMode, courseId, problem],
+    [busyMode, courseId, problem, renderTutorActions],
   );
 
   const handleClear = useCallback(() => {
+    animation.current?.cancel();
+    animation.current = null;
     if (editor.current) {
       clearAiShapes(editor.current);
     }
@@ -236,6 +266,8 @@ export function Whiteboard({
       disposeAutosave.current = null;
       disposeWorkListener.current?.();
       disposeWorkListener.current = null;
+      animation.current?.cancel();
+      animation.current = null;
       if (savedTimer.current !== null) {
         clearTimeout(savedTimer.current);
         savedTimer.current = null;

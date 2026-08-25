@@ -10,7 +10,10 @@ import {
   collectPriorAnnotations,
   hasStudentWork,
 } from "@/lib/canvas/capture";
-import { renderCanvasActions } from "@/lib/annotations/renderCanvasActions";
+import {
+  renderCanvasActions,
+  type RenderContext,
+} from "@/lib/annotations/renderCanvasActions";
 import type { TutorMode, TutorResponse } from "@/types/tutor";
 import type { ProblemContext } from "@/types/domain";
 
@@ -27,12 +30,19 @@ export interface TutorAnalysisOptions {
   courseId: string;
   problem?: ProblemContext;
   signal?: AbortSignal;
+  /** Whiteboard supplies the progressive renderer; tests and other callers may render immediately. */
+  renderActions?: (
+    editor: Editor,
+    actions: TutorResponse["canvas_actions"],
+    context: RenderContext,
+  ) => void | Promise<void>;
 }
 
 export async function runTutorAnalysis(
   options: TutorAnalysisOptions,
 ): Promise<TutorResponse> {
   const { editor } = options;
+  const renderActions = options.renderActions ?? renderCanvasActions;
 
   // A canvas holding only the tutor's own earlier feedback has nothing of the
   // student's left to analyze, even though the page is not empty.
@@ -52,7 +62,7 @@ export async function runTutorAnalysis(
       problem: options.problem,
       signal: options.signal,
     });
-    renderCanvasActions(editor, response.canvas_actions, {
+    await renderActions(editor, response.canvas_actions, {
       bounds,
       interactionId: response.interaction_id,
     });
@@ -68,7 +78,7 @@ export async function runTutorAnalysis(
     signal: options.signal,
   });
 
-  renderCanvasActions(editor, response.canvas_actions, {
+  await renderActions(editor, response.canvas_actions, {
     bounds: capture.bounds,
     interactionId: response.interaction_id,
   });
