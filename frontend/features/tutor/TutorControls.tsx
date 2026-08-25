@@ -18,11 +18,15 @@ export function TutorControls({
   onClear,
   busyMode,
   disabled = false,
+  hasStudentWork = false,
+  hasProblem = false,
 }: {
   onAnalyze: (mode: TutorMode) => void;
   onClear: () => void;
   busyMode: TutorMode | null;
   disabled?: boolean;
+  hasStudentWork?: boolean;
+  hasProblem?: boolean;
 }) {
   const busy = busyMode !== null;
 
@@ -32,8 +36,17 @@ export function TutorControls({
         <button
           key={mode}
           className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-          disabled={disabled || busy}
+          disabled={
+            disabled ||
+            busy ||
+            (!hasStudentWork && (mode !== "stuck" || !hasProblem))
+          }
           onClick={() => onAnalyze(mode)}
+          title={
+            !hasStudentWork && (mode !== "stuck" || !hasProblem)
+              ? "Draw on the board before using this action."
+              : undefined
+          }
           type="button"
         >
           {busyMode === mode ? "Thinking…" : label}

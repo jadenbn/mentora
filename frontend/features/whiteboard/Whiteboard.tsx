@@ -26,6 +26,7 @@ import {
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
+import { hasStudentWork as getHasStudentCanvasWork } from "@/lib/canvas/capture";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
 import { saveCanvas } from "@/lib/canvas/persistence";
 import { ProblemShapeProvider, ProblemShapeUtil } from "@/lib/problems/ProblemShape";
@@ -99,12 +100,16 @@ function CanvasPanel({
   onAnalyze,
   onClear,
   busyMode,
+  hasStudentWork,
+  hasProblem,
   response,
   error,
 }: {
   onAnalyze: (mode: TutorMode) => void;
   onClear: () => void;
   busyMode: TutorMode | null;
+  hasStudentWork: boolean;
+  hasProblem: boolean;
   response: TutorResponse | null;
   error: string | null;
 }) {
@@ -151,6 +156,8 @@ function CanvasPanel({
           <div className="mt-2">
             <TutorControls
               busyMode={busyMode}
+              hasProblem={hasProblem}
+              hasStudentWork={hasStudentWork}
               onAnalyze={onAnalyze}
               onClear={onClear}
             />
@@ -174,11 +181,13 @@ export function Whiteboard({
 }) {
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
+  const disposeWorkListener = useRef<(() => void) | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasStudentCanvasWork, setHasStudentCanvasWork] = useState(false);
 
   const handleAnalyze = useCallback(
     async (mode: TutorMode) => {
@@ -225,6 +234,8 @@ export function Whiteboard({
     return () => {
       disposeAutosave.current?.();
       disposeAutosave.current = null;
+      disposeWorkListener.current?.();
+      disposeWorkListener.current = null;
       if (savedTimer.current !== null) {
         clearTimeout(savedTimer.current);
         savedTimer.current = null;
@@ -250,6 +261,13 @@ export function Whiteboard({
       // Restore before the student can draw, so their work is never briefly
       // absent and then overwritten by an autosave of an empty canvas.
       loadCanvas(mountedEditor, spaceId);
+      const updateStudentWork = () => {
+        const next = getHasStudentCanvasWork(mountedEditor);
+        setHasStudentCanvasWork((current) => (current === next ? current : next));
+      };
+      updateStudentWork();
+      disposeWorkListener.current?.();
+      disposeWorkListener.current = mountedEditor.store.listen(updateStudentWork);
       if (problem && ensureProblemShape(mountedEditor, problem)) {
         saveCanvas(mountedEditor, spaceId);
       }
@@ -273,15 +291,17 @@ export function Whiteboard({
           options={{ maxPages: 1 }}
           shapeUtils={[ProblemShapeUtil]}
         >
-        <CanvasToolbar />
-        <SaveIndicator visible={justSaved} />
-        <CanvasPanel
-          busyMode={busyMode}
-          error={error}
-          onAnalyze={handleAnalyze}
-          onClear={handleClear}
-          response={response}
-        />
+          <CanvasToolbar />
+          <SaveIndicator visible={justSaved} />
+          <CanvasPanel
+            busyMode={busyMode}
+            error={error}
+            hasProblem={problem !== undefined}
+            hasStudentWork={hasStudentCanvasWork}
+            onAnalyze={handleAnalyze}
+            onClear={handleClear}
+            response={response}
+          />
         </Tldraw>
       </ProblemShapeProvider>
     </div>
