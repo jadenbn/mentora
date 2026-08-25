@@ -290,6 +290,7 @@ export function Whiteboard({
   const handleMount = useCallback(
     (mountedEditor: Editor) => {
       editor.current = mountedEditor;
+      mountedEditor.updateInstanceState({ isGridMode: true });
       // Restore before the student can draw, so their work is never briefly
       // absent and then overwritten by an autosave of an empty canvas.
       loadCanvas(mountedEditor, spaceId);
