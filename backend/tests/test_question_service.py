@@ -269,3 +269,28 @@ def test_generation_never_overwrites_a_seed_skill(tmp_path, session):
     untouched = session.get(Skill, "course_1.chain-rule")
     assert untouched.name == "Authored"
     assert untouched.origin == SkillOrigin.SEED
+
+
+def test_a_malformed_skill_batch_does_not_fail_the_problem_request(tmp_path, session):
+    """A taxonomy write is a side effect of generation, not the request.
+
+    The student asked for a problem. A model returning an unusable skill
+    batch -- here a prereq that resolves nowhere -- must cost them the skill
+    attribution the model proposed, not the problem itself.
+    """
+    repo = seeded_repo(tmp_path)
+    broken = {**VALID_SKILL, "prereqs": ["nothing-defines-this"]}
+    workflow = StubQuestionWorkflow(skills=[broken])
+
+    generated = asyncio.run(
+        service(repo, workflow, StubRetriever(), 10_000, session).generate(
+            course_id="course_1",
+            document_id="doc_1",
+            question_request="Conceptual",
+            required_skill_id="course_1.seeded",
+        )
+    )
+
+    assert generated.prompt
+    assert repo.get_problem_skills(generated.id) == ["course_1.seeded"]
+    assert session.get(Skill, "course_1.chain-rule") is None

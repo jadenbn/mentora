@@ -15,7 +15,7 @@ from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.schemas.problems import GeneratedProblem, GroundingChunk, ProblemContext, QuestionPlan
 from app.schemas.taxonomy import RawSkillEntry
-from app.services.taxonomy import build_taxonomy, merge_generated
+from app.services.taxonomy import TaxonomyError, build_taxonomy, merge_generated
 
 logger = logging.getLogger(__name__)
 RETRIEVAL_TOP_K = 12
@@ -174,8 +174,17 @@ class QuestionService:
         seed skill's fields, it doesn't invalidate the id.
         """
         raw_dicts = [entry.model_dump() for entry in raw_skills]
-        produced = build_taxonomy(course_id, raw_dicts, SkillOrigin.GENERATED)
-        merge_generated(self.session, course_id, produced)
+        try:
+            produced = build_taxonomy(course_id, raw_dicts, SkillOrigin.GENERATED)
+            merge_generated(self.session, course_id, produced)
+        except TaxonomyError:
+            # A malformed or over-budget skill batch must never fail the
+            # student's problem request. The taxonomy write is a side effect
+            # of generation, not the thing that was asked for -- so log it and
+            # attribute to the skill selection already chose.
+            logger.exception("skill attribution failed for course %s", course_id)
+            self.session.rollback()
+            return [required_skill_id] if required_skill_id else []
         skill_ids = [skill.id for skill in produced]
         if required_skill_id and required_skill_id not in skill_ids:
             skill_ids.append(required_skill_id)

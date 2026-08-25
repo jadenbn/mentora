@@ -93,6 +93,35 @@ def record_attempt(
     # cross-check. A client can no longer attribute an attempt to any skill it
     # names. Problems with no row (e.g. legacy or externally authored) fall
     # back to the client's list, and that fallback is logged.
+    # One problem, one attempt. Without this the client can post the same
+    # graded problem repeatedly -- the whiteboard posts on every "mark" -- and
+    # each repeat moves mastery again, so ten marks on one correct canvas
+    # drive the estimate to its ceiling and collapse the learning rate to its
+    # floor. Repeats are answered with the original attempt rather than an
+    # error: re-marking is a legitimate thing for a student to do, it just
+    # must not count twice.
+    existing = session.exec(
+        select(Attempt).where(
+            Attempt.student_id == payload.student_id,
+            Attempt.problem_id == payload.problem_id,
+        )
+    ).first()
+    if existing is not None:
+        logger.info(
+            "attempt for problem %s by %s already recorded; returning it unchanged",
+            payload.problem_id,
+            payload.student_id,
+        )
+        return AttemptResult(
+            attempt_id=existing.id,
+            updated_skills={
+                skill_id: state.mastery
+                for skill_id in existing.expected_skills
+                if (state := session.get(SkillState, (payload.student_id, skill_id)))
+            },
+            dropped_errors=0,
+        )
+
     expected_skills = payload.expected_skills
     if repository is not None:
         server_skills = repository.get_problem_skills(payload.problem_id)

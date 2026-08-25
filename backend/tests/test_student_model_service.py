@@ -148,7 +148,12 @@ def test_cold_start_seeds_at_global_ability(session):
     assert result.updated_skills["calc1.a"] == pytest.approx(expected)
 
 
-def test_posting_twice_creates_two_attempt_rows_no_dedup(session):
+def test_reposting_the_same_problem_does_not_move_mastery_again(session):
+    """The whiteboard posts on every "mark", so repeats are expected traffic.
+
+    They must be answered with the original attempt, not counted twice --
+    otherwise ten marks on one correct canvas saturate mastery.
+    """
     _skill(session, "calc1.a")
     payload = AttemptCreate(
         student_id="stu1",
@@ -158,13 +163,37 @@ def test_posting_twice_creates_two_attempt_rows_no_dedup(session):
         difficulty=0.5,
         correct=True,
     )
-    svc.record_attempt(session, "calc1", payload)
-    svc.record_attempt(session, "calc1", payload)
+    first = svc.record_attempt(session, "calc1", payload)
+    mastery_after_first = session.get(SkillState, ("stu1", "calc1.a")).mastery
 
-    attempts = session.exec(select(Attempt)).all()
-    assert len(attempts) == 2
+    repeat = svc.record_attempt(session, "calc1", payload)
+
+    assert repeat.attempt_id == first.attempt_id
+    assert repeat.updated_skills["calc1.a"] == pytest.approx(mastery_after_first)
+    assert len(session.exec(select(Attempt)).all()) == 1
     state = session.get(SkillState, ("stu1", "calc1.a"))
-    assert state.attempts == 2
+    assert state.attempts == 1
+    assert state.mastery == pytest.approx(mastery_after_first)
+
+
+def test_a_different_problem_is_still_a_new_attempt(session):
+    _skill(session, "calc1.a")
+
+    def post(problem_id):
+        return svc.record_attempt(
+            session,
+            "calc1",
+            AttemptCreate(
+                student_id="stu1", session_id="sess1", problem_id=problem_id,
+                expected_skills=["calc1.a"], difficulty=0.5, correct=True,
+            ),
+        )
+
+    post("p1")
+    post("p2")
+
+    assert len(session.exec(select(Attempt)).all()) == 2
+    assert session.get(SkillState, ("stu1", "calc1.a")).attempts == 2
 
 
 def test_get_student_model_applies_decay_on_read(session):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -41,11 +42,17 @@ def _state(session, skill_id, student_id="stu1", course_id="calc1",
     )
 
 
+_problem_counter = itertools.count()
+
+
 def _attempt(session, skill_id, student_id="stu1", course_id="calc1", minutes_ago=0):
+    # Distinct problem ids: Attempt is unique on (student_id, problem_id),
+    # since one problem may only be attempted once.
     session.add(
         Attempt(
             student_id=student_id, course_id=course_id, session_id="s",
-            problem_id="p", expected_skills=[skill_id], difficulty=0.5,
+            problem_id=f"p{next(_problem_counter)}",
+            expected_skills=[skill_id], difficulty=0.5,
             correct=True,
             created_at=datetime.now(timezone.utc) - timedelta(minutes=minutes_ago),
         )
