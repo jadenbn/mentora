@@ -33,6 +33,13 @@ const aiShape = (id: string, bounds = box(300, 600, 100, 200)) => ({
   pageBounds: bounds,
 });
 
+const systemShape = (id: string) => ({
+  id,
+  type: "mentora-problem",
+  meta: { owner: "system", problemId: "problem_1" },
+  pageBounds: box(120, 220, 600, 160),
+});
+
 describe("toNormalizedBounds", () => {
   it("maps a world box onto the unit square of its frame", () => {
     expect(toNormalizedBounds(box(200, 400, 200, 400), FRAME)).toEqual({
@@ -94,6 +101,14 @@ describe("captureCanvasForAnalysis", () => {
     // than by asking the prompt nicely.
     const { editor, toImageCalls } = makeEditor({
       shapes: [studentShape("s1"), aiShape("ai1")],
+    });
+    await captureCanvasForAnalysis(editor);
+    expect(toImageCalls[0].ids).toEqual(["s1"]);
+  });
+
+  it("excludes the system problem from the student image", async () => {
+    const { editor, toImageCalls } = makeEditor({
+      shapes: [studentShape("s1"), systemShape("problem")],
     });
     await captureCanvasForAnalysis(editor);
     expect(toImageCalls[0].ids).toEqual(["s1"]);

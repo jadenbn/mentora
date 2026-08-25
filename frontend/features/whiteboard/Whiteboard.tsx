@@ -27,6 +27,9 @@ import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
+import { saveCanvas } from "@/lib/canvas/persistence";
+import { ProblemShapeProvider, ProblemShapeUtil } from "@/lib/problems/ProblemShape";
+import { ensureProblemShape } from "@/lib/problems/renderProblem";
 import { touchSpace } from "@/lib/spaces/store";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import type { ProblemContext } from "@/types/domain";
@@ -247,6 +250,9 @@ export function Whiteboard({
       // Restore before the student can draw, so their work is never briefly
       // absent and then overwritten by an autosave of an empty canvas.
       loadCanvas(mountedEditor, spaceId);
+      if (problem && ensureProblemShape(mountedEditor, problem)) {
+        saveCanvas(mountedEditor, spaceId);
+      }
       disposeAutosave.current?.();
       disposeAutosave.current = startAutosave(mountedEditor, spaceId, {
         onSave: () => {
@@ -255,16 +261,18 @@ export function Whiteboard({
         },
       });
     },
-    [flashSaved, spaceId],
+    [flashSaved, problem, spaceId],
   );
 
   return (
     <div className="relative h-full">
-      <Tldraw
-        hideUi
-        onMount={handleMount}
-        options={{ maxPages: 1 }}
-      >
+      <ProblemShapeProvider problem={problem}>
+        <Tldraw
+          hideUi
+          onMount={handleMount}
+          options={{ maxPages: 1 }}
+          shapeUtils={[ProblemShapeUtil]}
+        >
         <CanvasToolbar />
         <SaveIndicator visible={justSaved} />
         <CanvasPanel
@@ -274,7 +282,8 @@ export function Whiteboard({
           onClear={handleClear}
           response={response}
         />
-      </Tldraw>
+        </Tldraw>
+      </ProblemShapeProvider>
     </div>
   );
 }
