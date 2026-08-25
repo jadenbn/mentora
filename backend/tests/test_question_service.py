@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.database import CourseRepository
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
+from app.models.skill_proposal import ProposalStatus, SkillProposal
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import GroundingChunk, QuestionPlan
 from app.services.question_service import (
@@ -173,7 +174,16 @@ def test_generation_rejects_a_document_from_another_course(tmp_path, session):
         )
 
 
-def test_generation_attributes_the_problem_to_the_returned_skill(tmp_path, session):
+def _existing_skill(session, skill_id, name="Existing"):
+    session.add(
+        Skill(id=skill_id, course_id="course_1", name=name, description="d",
+              difficulty_band=0.5, prereqs=[], origin=SkillOrigin.GENERATED)
+    )
+    session.commit()
+
+
+def test_generation_attributes_the_problem_to_an_existing_skill(tmp_path, session):
+    _existing_skill(session, "course_1.chain-rule", name="Chain rule")
     repo = seeded_repo(tmp_path)
     workflow = StubQuestionWorkflow(skills=[VALID_SKILL])
     generated = asyncio.run(
@@ -184,12 +194,59 @@ def test_generation_attributes_the_problem_to_the_returned_skill(tmp_path, sessi
         )
     )
     assert repo.get_problem_skills(generated.id) == ["course_1.chain-rule"]
-    persisted = session.get(Skill, "course_1.chain-rule")
-    assert persisted is not None
-    assert persisted.origin == SkillOrigin.GENERATED
 
 
-def test_generation_attributes_multiple_skills(tmp_path, session):
+def test_generation_never_creates_a_skill(tmp_path, session):
+    """The read path may read the taxonomy. It may not write one.
+
+    A generator that can add skills makes the taxonomy an append-only log of
+    names it invented -- and selection then prefers those, because a
+    never-attempted skill outranks a weak one.
+    """
+    repo = seeded_repo(tmp_path)
+    workflow = StubQuestionWorkflow(skills=[VALID_SKILL])
+    generated = asyncio.run(
+        service(repo, workflow, StubRetriever(), 10_000, session).generate(
+            course_id="course_1",
+            document_id="doc_1",
+            question_request="Conceptual",
+            required_skill_id=None,
+        )
+    )
+
+    assert session.get(Skill, "course_1.chain-rule") is None
+    assert repo.get_problem_skills(generated.id) == []
+
+    proposal = session.exec(
+        select(SkillProposal).where(SkillProposal.slug == "course_1.chain-rule")
+    ).first()
+    assert proposal is not None
+    assert proposal.status == ProposalStatus.PENDING
+    assert proposal.observations == 1
+
+
+def test_repeated_proposals_of_the_same_skill_accumulate(tmp_path, session):
+    repo = seeded_repo(tmp_path)
+    for _ in range(3):
+        asyncio.run(
+            service(
+                repo, StubQuestionWorkflow(skills=[VALID_SKILL]), StubRetriever(),
+                10_000, session,
+            ).generate(
+                course_id="course_1", document_id="doc_1", question_request="Conceptual",
+            )
+        )
+
+    proposal = session.exec(
+        select(SkillProposal).where(SkillProposal.slug == "course_1.chain-rule")
+    ).first()
+    assert proposal.observations == 3
+    assert session.get(Skill, "course_1.chain-rule") is None
+
+
+def test_generation_attributes_every_existing_skill_the_model_names(tmp_path, session):
+    _existing_skill(session, "course_1.chain-rule", name="Chain rule")
+    _existing_skill(session, "course_1.product-rule", name="Product rule")
     repo = seeded_repo(tmp_path)
     second = {**VALID_SKILL, "id": "product-rule", "name": "Product rule"}
     workflow = StubQuestionWorkflow(skills=[VALID_SKILL, second])
@@ -209,13 +266,10 @@ def test_generation_attributes_multiple_skills(tmp_path, session):
 def test_generation_always_includes_the_required_skill_even_if_the_model_misses_it(
     tmp_path, session
 ):
+    _existing_skill(session, "course_1.selected", name="Selected")
     repo = seeded_repo(tmp_path)
-    session.add(
-        Skill(id="course_1.selected", course_id="course_1", name="Selected",
-              description="d", difficulty_band=0.5, prereqs=[], origin=SkillOrigin.GENERATED)
-    )
-    session.commit()
-    # The model names a different skill than the one selection asked for.
+    # The model names a skill the course doesn't have; only the selected one
+    # is real, so only it is attributed.
     workflow = StubQuestionWorkflow(skills=[VALID_SKILL])
     generated = asyncio.run(
         service(repo, workflow, StubRetriever(), 10_000, session).generate(
@@ -225,9 +279,7 @@ def test_generation_always_includes_the_required_skill_even_if_the_model_misses_
             required_skill_id="course_1.selected",
         )
     )
-    attributed = set(repo.get_problem_skills(generated.id))
-    assert "course_1.selected" in attributed
-    assert "course_1.chain-rule" in attributed
+    assert repo.get_problem_skills(generated.id) == ["course_1.selected"]
 
 
 def test_generation_offers_existing_skills_to_the_workflow(tmp_path, session):

@@ -119,6 +119,27 @@
   </div>
 
   <div class="panel">
+    <h2>Skill proposals — quarantine</h2>
+    <p class="sub" style="margin-bottom:8px">
+      Skills the generator named that this course doesn't have. Question
+      generation counts them; it can't create them. Review promotes the ones
+      named often enough and folds near-duplicates into the skill they
+      already match.
+    </p>
+    <div class="row">
+      <button class="ghost" id="bReview">Review proposals →</button>
+      <span class="sub" id="proposalSummary">—</span>
+    </div>
+    <table style="margin-top:10px">
+      <thead><tr>
+        <th>Proposed skill</th><th>Seen</th><th>Status</th><th>Resolved to</th>
+      </tr></thead>
+      <tbody id="proposalRows"></tbody>
+    </table>
+    <div id="proposalLog"></div>
+  </div>
+
+  <div class="panel">
     <h2>Import skills (dev)</h2>
     <p class="sub" style="margin-bottom:8px">
       Paste a raw taxonomy batch and post it straight into the selected course —
@@ -153,6 +174,10 @@ function api(path) {
   const s = encodeURIComponent($('#student').value.trim());
   return `/api/courses/${c}/${path}${path.includes('?') ? '&' : '?'}student_id=${s}`;
 }
+function devApi(path) {
+  const c = encodeURIComponent($('#course').value.trim());
+  return `/dev/courses/${c}/${path}`;
+}
 function log(msg, isErr, target) {
   const el = $(target || '#log');
   const line = document.createElement('div');
@@ -165,6 +190,53 @@ function masteryColor(m) {
   if (m >= 0.6) return 'var(--accent)';
   if (m >= 0.4) return 'var(--warn)';
   return 'var(--bad)';
+}
+
+async function loadProposals() {
+  let data;
+  try {
+    const r = await fetch(devApi('proposals'));
+    if (!r.ok) throw new Error(await r.text());
+    data = await r.json();
+  } catch (e) {
+    $('#proposalSummary').textContent = 'could not load proposals';
+    return;
+  }
+  const rows = data.proposals;
+  const pending = rows.filter(p => p.status === 'pending');
+  const ready = pending.filter(p => p.observations >= data.min_observations);
+  $('#proposalSummary').textContent =
+    `${rows.length} total · ${pending.length} pending · ${ready.length} ready to promote ` +
+    `(threshold ${data.min_observations})`;
+  $('#proposalRows').innerHTML = rows.length ? rows.map(p => `
+    <tr>
+      <td><div class="name">${p.name}</div><div class="id">${p.slug}</div></td>
+      <td class="pct">${p.observations}</td>
+      <td><span class="pill ${p.status === 'pending' ? 'locked' : 'unlocked'}">${p.status}</span></td>
+      <td class="id">${p.resolved_skill_id || '·'}</td>
+    </tr>`).join('') : '<tr><td colspan="4" class="sub">No proposals yet.</td></tr>';
+}
+
+async function reviewProposals() {
+  $('#bReview').disabled = true;
+  try {
+    const r = await fetch(devApi('proposals/review'), { method: 'POST' });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    const parts = [];
+    if (res.promoted.length) parts.push(`promoted ${res.promoted.join(', ')}`);
+    const merged = Object.entries(res.merged);
+    if (merged.length) parts.push(merged.map(([a, b]) => `${a} → ${b}`).join(', '));
+    if (res.still_pending.length) parts.push(`${res.still_pending.length} still pending`);
+    if (res.skipped_semantic_check) parts.push('(no embedder: promoted on count alone)');
+    log(parts.length ? parts.join(' · ') : 'nothing to review', false, '#proposalLog');
+  } catch (e) {
+    log('review failed: ' + e.message, true, '#proposalLog');
+  } finally {
+    $('#bReview').disabled = false;
+  }
+  await load();
+  await loadProposals();
 }
 
 async function load() {
@@ -293,7 +365,7 @@ async function importSkills() {
   await load();
 }
 
-$('#reload').onclick = load;
+$('#reload').onclick = () => { load(); loadProposals(); };
 $('#course').onchange = load;
 $('#student').onchange = load;
 $('#bCorrect').onclick = () => attempt('correct');
@@ -301,7 +373,9 @@ $('#bPartial').onclick = () => attempt('partial');
 $('#bIncorrect').onclick = () => attempt('incorrect');
 $('#bPickNext').onclick = () => { if (data && data.next_skill_id) { selected = data.next_skill_id; render(); renderSelected(); } };
 $('#bImport').onclick = importSkills;
+$('#bReview').onclick = reviewProposals;
 load();
+loadProposals();
 </script>
 </body>
 </html>

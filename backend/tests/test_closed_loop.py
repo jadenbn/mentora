@@ -9,11 +9,12 @@ skills came from the server, not the client payload.
 from __future__ import annotations
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.api.learning import _render_question_request
 from app.database import CourseRepository
 from app.models.skill import Skill
+from app.models.skill_proposal import ProposalStatus, SkillProposal
 from app.models.skill_state import SkillState
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import QuestionPlan
@@ -120,10 +121,15 @@ async def test_select_generate_tag_grade_record_moves_the_selected_skill(
         required_skill_id=spec.skill_id,
     )
 
-    # 4. Attribution already happened inside generate(), server-side.
+    # 4. Attribution already happened inside generate(), server-side. The
+    #    stub names a skill the course doesn't have; that becomes a proposal,
+    #    not an attribution, so only the selected skill counts.
     attributed = repo.get_problem_skills(problem.id)
-    assert "calc1.derivatives.chain-rule" in attributed
-    assert "calc1.unrelated-skill" in attributed
+    assert attributed == ["calc1.derivatives.chain-rule"]
+    proposal = session.exec(
+        select(SkillProposal).where(SkillProposal.slug == "calc1.unrelated-skill")
+    ).first()
+    assert proposal is not None and proposal.status == ProposalStatus.PENDING
 
     # 5. Grade a correct attempt. The client lies about which skill it was;
     #    the server must ignore that and use problem_skills.

@@ -11,11 +11,10 @@ from uuid import uuid4
 from sqlmodel import Session, select
 
 from app.database import CourseRepository
-from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.schemas.problems import GeneratedProblem, GroundingChunk, ProblemContext, QuestionPlan
 from app.schemas.taxonomy import RawSkillEntry
-from app.services.taxonomy import TaxonomyError, build_taxonomy, merge_generated
+from app.services import proposals
 
 logger = logging.getLogger(__name__)
 RETRIEVAL_TOP_K = 12
@@ -162,30 +161,41 @@ class QuestionService:
         raw_skills: list[RawSkillEntry],
         required_skill_id: str | None,
     ) -> list[str]:
-        """Persist the model's skill analysis and return the ids to attribute
-        this problem to.
+        """Which skills this problem counts toward.
 
-        Reuses the exact same build_taxonomy + merge_generated path every
-        other skill source goes through: a returned skill matching an
-        existing id updates (or, for a seed skill, is safely ignored); one
-        with no match is inserted as newly generated. Either way, the id is
-        valid to attribute to regardless of whether the merge actually wrote
-        anything — merge_generated blocking a seed-id collision protects the
-        seed skill's fields, it doesn't invalidate the id.
+        Only skills the course already has. The model's read of the material
+        is useful, but it runs on the read path, and a generator that can
+        write the taxonomy makes the taxonomy an append-only log of names it
+        invented -- which selection then chases, because a never-attempted
+        skill outranks a weak one. Anything the model names that the course
+        doesn't have is counted as a proposal instead (services/proposals.py)
+        and decided later, off this path.
         """
-        raw_dicts = [entry.model_dump() for entry in raw_skills]
-        try:
-            produced = build_taxonomy(course_id, raw_dicts, SkillOrigin.GENERATED)
-            merge_generated(self.session, course_id, produced)
-        except TaxonomyError:
-            # A malformed or over-budget skill batch must never fail the
-            # student's problem request. The taxonomy write is a side effect
-            # of generation, not the thing that was asked for -- so log it and
-            # attribute to the skill selection already chose.
-            logger.exception("skill attribution failed for course %s", course_id)
-            self.session.rollback()
-            return [required_skill_id] if required_skill_id else []
-        skill_ids = [skill.id for skill in produced]
+        existing = {
+            s.id
+            for s in self.session.exec(
+                select(Skill).where(Skill.course_id == course_id)
+            ).all()
+        }
+        skill_ids = proposals.resolve_to_existing(self.session, course_id, raw_skills)
+
+        unknown = [e for e in raw_skills if e.id and proposals.normalize_slug(course_id, e.id) not in existing]
+        if unknown:
+            try:
+                recorded = proposals.record_proposals(
+                    self.session, course_id, raw_skills, existing
+                )
+                if recorded:
+                    logger.info(
+                        "recorded %d skill proposal(s) for %s: %s",
+                        len(recorded), course_id, recorded,
+                    )
+            except Exception:
+                # Counting a proposal is bookkeeping. It must never cost the
+                # student the problem they asked for.
+                logger.exception("recording skill proposals failed for %s", course_id)
+                self.session.rollback()
+
         if required_skill_id and required_skill_id not in skill_ids:
             skill_ids.append(required_skill_id)
         return skill_ids

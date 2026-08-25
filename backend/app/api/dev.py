@@ -13,11 +13,14 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.api.dependencies import get_session
+from app.config import missing_indexing_settings
 from app.models.enums import SkillOrigin
+from app.models.skill_proposal import ProposalStatus, SkillProposal
 from app.schemas.taxonomy import TaxonomyPlan
+from app.services import proposals
 from app.services.taxonomy import TaxonomyError, build_taxonomy, merge_generated
 
 router = APIRouter(prefix="/dev", tags=["dev"])
@@ -49,6 +52,58 @@ def import_skills(
         "added": report.added,
         "updated": report.updated,
         "blocked_seed_collisions": report.blocked_seed_collisions,
+    }
+
+
+@router.get("/courses/{course_id}/proposals", include_in_schema=False)
+def list_proposals(course_id: str, session: Session = Depends(get_session)) -> dict:
+    """Skills the generator keeps naming that this course doesn't have."""
+    rows = session.exec(
+        select(SkillProposal)
+        .where(SkillProposal.course_id == course_id)
+        .order_by(SkillProposal.observations.desc())
+    ).all()
+    return {
+        "proposals": [
+            {
+                "slug": p.slug,
+                "name": p.name,
+                "description": p.description,
+                "observations": p.observations,
+                "status": p.status.value,
+                "resolved_skill_id": p.resolved_skill_id,
+                "last_seen": p.last_seen.isoformat(),
+            }
+            for p in rows
+        ],
+        "min_observations": proposals.PROMOTION_MIN_OBSERVATIONS,
+    }
+
+
+@router.post("/courses/{course_id}/proposals/review", include_in_schema=False)
+def review_course_proposals(
+    course_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Promote or merge the proposals that have been named often enough.
+
+    The only place outside seeding and cold-start bootstrap where a course's
+    skill count grows. Uses embeddings to fold proposals that are an existing
+    skill under another name; without an embedding provider configured it
+    promotes on observation count alone and says so.
+    """
+    embed = None
+    if not missing_indexing_settings():
+        from app.services.embeddings import embed_texts
+
+        embed = embed_texts
+
+    report = proposals.review_proposals(session, course_id, embed=embed)
+    return {
+        "promoted": report.promoted,
+        "merged": report.merged,
+        "still_pending": report.still_pending,
+        "skipped_semantic_check": report.skipped_semantic_check,
     }
 
 
