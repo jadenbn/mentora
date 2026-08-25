@@ -265,13 +265,15 @@ When changing a shared schema:
 ```text
 course_id          retrieval scope (carried; retrieval is deferred)
 mode               mark | hint | explain | stuck
-canvas_image       PNG, JPEG, or WebP; maximum 10 MB
+canvas_image       optional PNG/JPEG/WebP; maximum 10 MB when present
 prior_annotations  JSON array of normalized bounds; defaults to []
 problem_context    optional validated ProblemContext JSON
 ```
 
-Five fields at most, no JSON request body. The browser sends an image, three
-scalars, and the exact structured problem separately from the image.
+Five fields at most, no JSON request body. Normal work-analysis requests send
+an image, three scalars, and optionally the exact structured problem separately
+from the image. An `stuck` request with `problem_context` may omit the image;
+the tutor then reasons from the structured question and course grounding alone.
 
 Tutor-authored shapes are excluded from the exported image and their positions
 are sent as `prior_annotations` instead, so the model cannot read its own

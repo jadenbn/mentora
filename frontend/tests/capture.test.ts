@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   captureCanvasForAnalysis,
   collectPriorAnnotations,
-  emptyCanvasForAnalysis,
+  hasStudentWork,
   toNormalizedBounds,
 } from "@/lib/canvas/capture";
 import { box, makeEditor } from "./fakeEditor";
@@ -151,13 +151,11 @@ describe("captureCanvasForAnalysis", () => {
   });
 });
 
-describe("emptyCanvasForAnalysis", () => {
-  it("provides a valid blank PNG frame for a problem-only request", async () => {
-    const { editor } = makeEditor({ shapes: [] });
-    const capture = emptyCanvasForAnalysis(editor);
-    expect(capture?.blob.type).toBe("image/png");
-    expect((await capture!.blob.arrayBuffer()).byteLength).toBe(67);
-    expect(capture?.bounds).toEqual(box(0, 0, 1000, 800));
+describe("hasStudentWork", () => {
+  it("ignores system and tutor-owned shapes", () => {
+    const { editor } = makeEditor({ shapes: [aiShape("ai1"), systemShape("problem")] });
+    expect(hasStudentWork(editor)).toBe(false);
+    expect(hasStudentWork(makeEditor({ shapes: [studentShape("s1")] }).editor)).toBe(true);
   });
 });
 

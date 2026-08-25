@@ -74,7 +74,7 @@ function messageForStatus(status: number, detail: unknown): string {
 export async function analyzeCanvas(args: {
   courseId: string;
   mode: TutorMode;
-  canvasImage: Blob;
+  canvasImage?: Blob;
   priorAnnotations: NormalizedBounds[];
   problem?: ProblemContext;
   signal?: AbortSignal;
@@ -82,7 +82,9 @@ export async function analyzeCanvas(args: {
   const form = new FormData();
   form.append("course_id", args.courseId);
   form.append("mode", args.mode);
-  form.append("canvas_image", args.canvasImage, "canvas.png");
+  if (args.canvasImage) {
+    form.append("canvas_image", args.canvasImage, "canvas.png");
+  }
   form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
   if (args.problem) {
     form.append("problem_context", JSON.stringify(args.problem));

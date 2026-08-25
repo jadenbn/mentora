@@ -8,7 +8,7 @@ import { analyzeCanvas } from "@/lib/api/api";
 import {
   captureCanvasForAnalysis,
   collectPriorAnnotations,
-  emptyCanvasForAnalysis,
+  hasStudentWork,
 } from "@/lib/canvas/capture";
 import { renderCanvasActions } from "@/lib/annotations/renderCanvasActions";
 import type { TutorMode, TutorResponse } from "@/types/tutor";
@@ -36,18 +36,27 @@ export async function runTutorAnalysis(
 
   // A canvas holding only the tutor's own earlier feedback has nothing of the
   // student's left to analyze, even though the page is not empty.
-  let capture = await captureCanvasForAnalysis(editor);
+  const capture = await captureCanvasForAnalysis(editor);
   if (!capture) {
-    // "I'm stuck" is useful before the first stroke. Keep the problem out of
-    // the student-work image, send a valid blank image, and provide the full
-    // structured problem separately through problem_context.
-    capture =
-      options.mode === "stuck" && options.problem
-        ? emptyCanvasForAnalysis(editor)
-        : null;
-    if (!capture) {
+    if (options.mode !== "stuck" || !options.problem || hasStudentWork(editor)) {
       throw new EmptyCanvasError();
     }
+
+    // A problem-only stuck request has no student image by design. Send the
+    // structured problem without fabricating a provider image.
+    const bounds = editor.getCurrentPageBounds() ?? editor.getViewportPageBounds();
+    const response = await analyzeCanvas({
+      courseId: options.courseId,
+      mode: options.mode,
+      priorAnnotations: collectPriorAnnotations(editor, bounds),
+      problem: options.problem,
+      signal: options.signal,
+    });
+    renderCanvasActions(editor, response.canvas_actions, {
+      bounds,
+      interactionId: response.interaction_id,
+    });
+    return response;
   }
 
   const response = await analyzeCanvas({

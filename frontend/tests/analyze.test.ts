@@ -120,7 +120,7 @@ describe("when there is nothing to analyze", () => {
     const spy = mockFetch();
     await run(fake.editor, { mode: "stuck", problem: PROBLEM });
     const body = spy.mock.calls[0][1].body as FormData;
-    expect(body.get("canvas_image")).toBeInstanceOf(Blob);
+    expect(body.get("canvas_image")).toBeNull();
     expect(JSON.parse(body.get("problem_context") as string)).toEqual(PROBLEM);
   });
 
@@ -128,6 +128,15 @@ describe("when there is nothing to analyze", () => {
     const fake = makeEditor({ shapes: [] });
     const spy = mockFetch();
     await expect(run(fake.editor, { mode: "hint", problem: PROBLEM })).rejects.toBeInstanceOf(
+      EmptyCanvasError,
+    );
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("does not hide a student export failure behind the problem-only path", async () => {
+    const fake = makeEditor({ shapes: [student("s1")], image: null });
+    const spy = mockFetch();
+    await expect(run(fake.editor, { mode: "stuck", problem: PROBLEM })).rejects.toBeInstanceOf(
       EmptyCanvasError,
     );
     expect(spy).not.toHaveBeenCalled();

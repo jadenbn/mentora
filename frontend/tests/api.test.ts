@@ -88,6 +88,23 @@ describe("request construction", () => {
     expect(JSON.parse(bodyOf(spy).get("prior_annotations") as string)).toEqual([]);
   });
 
+  it("can omit the image for a problem-only stuck request", async () => {
+    const spy = mockFetch(ok());
+    await analyzeCanvas({
+      courseId: "course_demo",
+      mode: "stuck",
+      priorAnnotations: [],
+      problem: {
+        id: "problem_1",
+        course_id: "course_demo",
+        document_id: "doc_1",
+        source: "generated",
+        prompt: "Solve $x=1$.",
+      },
+    });
+    expect((spy.mock.calls[0][1].body as FormData).get("canvas_image")).toBeNull();
+  });
+
   it("sends the exact structured problem context when present", async () => {
     const spy = mockFetch(ok());
     const problem: ProblemContext = {

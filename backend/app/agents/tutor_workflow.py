@@ -132,8 +132,8 @@ class GeminiTutorWorkflow:
         self,
         *,
         mode: TutorMode,
-        canvas_image: bytes,
-        canvas_mime_type: str,
+        canvas_image: bytes | None,
+        canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
         problem: ProblemContext | None = None,
         course_context: list[GroundingChunk] | None = None,
@@ -191,8 +191,8 @@ class GeminiTutorWorkflow:
         *,
         client: Any,
         mode: TutorMode,
-        canvas_image: bytes,
-        canvas_mime_type: str,
+        canvas_image: bytes | None,
+        canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
         problem: ProblemContext | None,
         course_context: list[GroundingChunk],
@@ -217,13 +217,12 @@ class GeminiTutorWorkflow:
             prompt += "No recorded course excerpts were available."
         prompt += "\n</course-reference-data>"
 
-        message = types.Content(
-            role="user",
-            parts=[
-                types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type),
-                types.Part.from_text(text=prompt),
-            ],
-        )
+        parts = [types.Part.from_text(text=prompt)]
+        if canvas_image is not None:
+            if canvas_mime_type is None:
+                raise ValueError("canvas_mime_type is required with canvas_image")
+            parts.insert(0, types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type))
+        message = types.Content(role="user", parts=parts)
         async with asyncio.timeout(self.timeout_seconds):
             response = await client.models.generate_content(
                 model=self.model,
