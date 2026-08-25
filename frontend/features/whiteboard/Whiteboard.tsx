@@ -24,6 +24,7 @@ import {
   TldrawUiToolbar,
   TldrawUiToolbarButton,
   useEditor,
+  useValue,
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
@@ -88,7 +89,15 @@ function PaletteOptions() {
 }
 
 function CanvasToolbar() {
+  const editor = useEditor();
+  const currentTool = useValue(
+    "canvas-toolbar-tool",
+    () => editor.getCurrentToolId(),
+    [editor],
+  );
+  const paletteAvailable = currentTool !== "eraser";
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const showPalette = paletteOpen && paletteAvailable;
 
   return (
     <>
@@ -109,17 +118,18 @@ function CanvasToolbar() {
           <EraserToolbarItem />
           <TldrawUiToolbarButton
             className="hover:cursor-grab"
-            isActive={paletteOpen}
+            disabled={!paletteAvailable}
+            isActive={showPalette}
             onClick={() => setPaletteOpen((current) => !current)}
-            title={paletteOpen ? "Close palette" : "Open palette"}
+            title={showPalette ? "Close palette" : "Open palette"}
             type="tool"
-            tooltip={paletteOpen ? "Close palette" : "Open palette"}
+            tooltip={showPalette ? "Close palette" : "Open palette"}
           >
             <PaletteIcon aria-hidden="true" className="size-4" />
           </TldrawUiToolbarButton>
         </TldrawUiMenuContextProvider>
       </TldrawUiToolbar>
-      {paletteOpen ? (
+      {showPalette ? (
         <button
           aria-label="Close palette"
           className="fixed inset-0 z-30 cursor-default"
@@ -127,7 +137,7 @@ function CanvasToolbar() {
           type="button"
         />
       ) : null}
-      {paletteOpen ? (
+      {showPalette ? (
         <div className="absolute left-16 top-1/2 z-50 -translate-y-1/2">
           <PaletteOptions />
         </div>
