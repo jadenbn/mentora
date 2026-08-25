@@ -69,6 +69,13 @@ export function clearAiShapesForInteraction(
   );
 }
 
+export function hasAiShapes(editor: Editor): boolean {
+  return [...editor.getCurrentPageShapeIds()].some((id) => {
+    const shape = editor.getShape(id);
+    return shape?.meta?.owner === AI_SHAPE_OWNER;
+  });
+}
+
 /** Remove every tutor-authored shape from the current page. */
 export function clearAiShapes(editor: Editor): void {
   deleteWhere(editor, (meta) => meta.owner === AI_SHAPE_OWNER);

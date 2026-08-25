@@ -3,11 +3,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TutorControls } from "@/features/tutor/TutorControls";
 
-function renderControls(hasStudentWork: boolean, hasProblem: boolean): string {
+function renderControls(
+  hasStudentWork: boolean,
+  hasProblem: boolean,
+  hasFeedback = false,
+): string {
   return renderToStaticMarkup(
     createElement(TutorControls, {
       busyMode: null,
       hasProblem,
+      hasFeedback,
       hasStudentWork,
       onAnalyze: () => undefined,
       onClear: () => undefined,
@@ -40,5 +45,10 @@ describe("TutorControls", () => {
     expect(html).not.toMatch(/disabled=""[^>]*>Explain<\/button>/);
     expect(html).not.toMatch(/disabled=""[^>]*>I’m Stuck<\/button>/);
     expect(html).not.toContain("bg-blue-600");
+  });
+
+  it("only shows clear feedback when tutor marks exist", () => {
+    expect(renderControls(true, true)).not.toContain(">Clear<");
+    expect(renderControls(true, true, true)).toContain(">Clear<");
   });
 });

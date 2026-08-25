@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { ChevronLeft } from "lucide-react";
+import { Palette as PaletteIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowToolbarItem,
@@ -22,13 +22,17 @@ import {
   TextToolbarItem,
   TldrawUiMenuContextProvider,
   TldrawUiToolbar,
+  TldrawUiToolbarButton,
   useEditor,
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { animateCanvasActions } from "@/lib/annotations/animateActions";
 import type { AnimationHandle } from "@/lib/annotations/animate";
-import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
+import {
+  clearAiShapes,
+  hasAiShapes as getHasAiCanvasFeedback,
+} from "@/lib/annotations/renderCanvasActions";
 import { hasStudentWork as getHasStudentCanvasWork } from "@/lib/canvas/capture";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
 import { saveCanvas } from "@/lib/canvas/persistence";
@@ -40,7 +44,6 @@ import type { ProblemContext } from "@/types/domain";
 import type {
   CanvasAction,
   TutorMode,
-  TutorResponse,
 } from "@/types/tutor";
 import type { RenderContext } from "@/lib/annotations/renderCanvasActions";
 
@@ -48,63 +51,7 @@ const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
 
-function CanvasToolbar() {
-  return (
-    <TldrawUiToolbar
-      className="absolute! left-4! top-1/2! z-20! -translate-y-1/2!"
-      label="Drawing tools"
-      orientation="vertical"
-      tooltipSide="right"
-    >
-      <TldrawUiMenuContextProvider sourceId="toolbar" type="toolbar">
-        <SelectToolbarItem />
-        <HandToolbarItem />
-        <DrawToolbarItem />
-        <HighlightToolbarItem />
-        <TextToolbarItem />
-        <ArrowToolbarItem />
-        <RectangleToolbarItem />
-        <EraserToolbarItem />
-      </TldrawUiMenuContextProvider>
-    </TldrawUiToolbar>
-  );
-}
-
-function TutorResult({
-  response,
-  error,
-}: {
-  response: TutorResponse | null;
-  error: string | null;
-}) {
-  if (error) {
-    return (
-      <p className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
-        {error}
-      </p>
-    );
-  }
-
-  if (!response) {
-    return null;
-  }
-
-  return (
-    <div className="mt-3 space-y-2 text-xs text-slate-700">
-      <p>
-        <span className="font-semibold capitalize text-slate-950">
-          {response.status}
-        </span>{" "}
-        · {response.canvas_actions.length} annotation
-        {response.canvas_actions.length === 1 ? "" : "s"}
-      </p>
-
-      {response.summary ? <p>{response.summary}</p> : null}
-    </div>
-  );
-}
-
-function Palette() {
+function PaletteOptions() {
   const editor = useEditor();
   const [hasSelection, setHasSelection] = useState(
     () => editor.getSelectedShapeIds().length > 0,
@@ -120,7 +67,7 @@ function Palette() {
   }, [editor]);
 
   return (
-    <div className="sidebar-style-panel mt-2">
+    <div className="sidebar-style-panel w-52 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
       <DefaultStylePanel isMobile>
         <StylePanelSection>
           <StylePanelColorPicker />
@@ -140,83 +87,89 @@ function Palette() {
   );
 }
 
-function CanvasPanel({
-  onAnalyze,
-  onClear,
-  busyMode,
-  hasStudentWork,
-  hasProblem,
-  response,
-  error,
-}: {
-  onAnalyze: (mode: TutorMode) => void;
-  onClear: () => void;
-  busyMode: TutorMode | null;
-  hasStudentWork: boolean;
-  hasProblem: boolean;
-  response: TutorResponse | null;
-  error: string | null;
-}) {
-  const [open, setOpen] = useState(false);
+function CanvasToolbar() {
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   return (
     <>
-      {open ? (
+      <TldrawUiToolbar
+        className="absolute! left-4! top-1/2! z-40! -translate-y-1/2!"
+        label="Drawing tools"
+        orientation="vertical"
+        tooltipSide="right"
+      >
+        <TldrawUiMenuContextProvider sourceId="toolbar" type="toolbar">
+          <SelectToolbarItem />
+          <HandToolbarItem />
+          <DrawToolbarItem />
+          <HighlightToolbarItem />
+          <TextToolbarItem />
+          <ArrowToolbarItem />
+          <RectangleToolbarItem />
+          <EraserToolbarItem />
+          <TldrawUiToolbarButton
+            isActive={paletteOpen}
+            onClick={() => setPaletteOpen((current) => !current)}
+            title={paletteOpen ? "Close palette" : "Open palette"}
+            type="tool"
+            tooltip={paletteOpen ? "Close palette" : "Open palette"}
+          >
+            <PaletteIcon aria-hidden="true" className="size-4" />
+          </TldrawUiToolbarButton>
+        </TldrawUiMenuContextProvider>
+      </TldrawUiToolbar>
+      {paletteOpen ? (
         <button
-          aria-label="Close draw options"
-          className="fixed inset-0 z-20 bg-slate-950/10"
-          onClick={() => setOpen(false)}
+          aria-label="Close palette"
+          className="fixed inset-0 z-30 cursor-default"
+          onClick={() => setPaletteOpen(false)}
           type="button"
         />
       ) : null}
-      <button
-        aria-controls="canvas-panel"
-        aria-expanded={open}
-        aria-label={open ? "Close canvas controls" : "Open canvas controls"}
-        className={`absolute top-1/2 z-40 flex h-14 w-10 -translate-y-1/2 items-center justify-center rounded-l-full border border-r-0 border-slate-200 bg-white text-slate-950 shadow-md transition-[right] duration-300 ease-out hover:cursor-grab ${open ? "right-72" : "right-0"}`}
-        onClick={() => setOpen((isOpen) => !isOpen)}
+      <div
+        className={`absolute left-16 top-1/2 z-50 -translate-y-1/2 transition-[opacity,transform] duration-150 ${paletteOpen ? "translate-x-0 opacity-100" : "pointer-events-none -translate-x-2 opacity-0"}`}
       >
-        <ChevronLeft
-          aria-hidden="true"
-          className={`size-6 transition-transform duration-300 ease-out ${open ? "rotate-180" : ""}`}
-          strokeWidth={2}
-        />
-      </button>
-      <aside
-        className={`absolute inset-y-0 right-0 z-30 w-72 overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
-        id="canvas-panel"
-      >
-        <section>
-          <h3 className="text-sm font-semibold text-slate-950">Tutor</h3>
-          <div className="mt-2">
-            <TutorControls
-              busyMode={busyMode}
-              hasProblem={hasProblem}
-              hasStudentWork={hasStudentWork}
-              onAnalyze={onAnalyze}
-              onClear={onClear}
-            />
-          </div>
-          <TutorResult error={error} response={response} />
-        </section>
-
-        <section className="mt-5 border-t border-slate-200 pt-4">
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-950">Palette</h3>
-            {!hasStudentWork ? (
-              <span className="text-[10px] text-slate-400">For drawing</span>
-            ) : null}
-          </div>
-          <Palette />
-          {!hasStudentWork ? (
-            <p className="mt-2 text-[11px] leading-4 text-slate-400">
-              Select a shape to adjust fill and dash.
-            </p>
-          ) : null}
-        </section>
-      </aside>
+        <PaletteOptions />
+      </div>
     </>
   );
+}
+
+function ThinkingIndicator({ busy, error }: { busy: boolean; error: string | null }) {
+  if (busy) {
+    return (
+      <div
+        aria-live="polite"
+        className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+        role="status"
+      >
+        Thinking
+        <span aria-hidden="true" className="ml-1 inline-flex gap-0.5">
+          <span className="animate-bounce [animation-delay:-0.2s] motion-reduce:animate-none">
+            .
+          </span>
+          <span className="animate-bounce [animation-delay:-0.1s] motion-reduce:animate-none">
+            .
+          </span>
+          <span className="animate-bounce motion-reduce:animate-none">.</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        aria-live="assertive"
+        className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 shadow-sm"
+        role="alert"
+      >
+        {error}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 export function Whiteboard({
@@ -235,9 +188,9 @@ export function Whiteboard({
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
-  const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasStudentCanvasWork, setHasStudentCanvasWork] = useState(false);
+  const [hasAiCanvasFeedback, setHasAiCanvasFeedback] = useState(false);
 
   const renderTutorActions = useCallback(
     (
@@ -268,16 +221,14 @@ export function Whiteboard({
       setError(null);
 
       try {
-        const result = await runTutorAnalysis({
+        await runTutorAnalysis({
           editor: current,
           mode,
           courseId,
           problem,
           renderActions: renderTutorActions,
         });
-        setResponse(result);
       } catch (caught) {
-        setResponse(null);
         setError(
           caught instanceof EmptyCanvasError || caught instanceof Error
             ? caught.message
@@ -297,7 +248,7 @@ export function Whiteboard({
     if (editor.current) {
       clearAiShapes(editor.current);
     }
-    setResponse(null);
+    setHasAiCanvasFeedback(false);
     setError(null);
   }, []);
 
@@ -338,6 +289,10 @@ export function Whiteboard({
       const updateStudentWork = () => {
         const next = getHasStudentCanvasWork(mountedEditor);
         setHasStudentCanvasWork((current) => (current === next ? current : next));
+        const hasAiFeedback = getHasAiCanvasFeedback(mountedEditor);
+        setHasAiCanvasFeedback((current) =>
+          current === hasAiFeedback ? current : hasAiFeedback,
+        );
       };
       updateStudentWork();
       disposeWorkListener.current?.();
@@ -367,14 +322,14 @@ export function Whiteboard({
         >
           <CanvasToolbar />
           <SaveIndicator visible={justSaved} />
-          <CanvasPanel
+          <ThinkingIndicator busy={busyMode !== null} error={error} />
+          <TutorControls
             busyMode={busyMode}
-            error={error}
+            hasFeedback={hasAiCanvasFeedback}
             hasProblem={problem !== undefined}
             hasStudentWork={hasStudentCanvasWork}
             onAnalyze={handleAnalyze}
             onClear={handleClear}
-            response={response}
           />
         </Tldraw>
       </ProblemShapeProvider>

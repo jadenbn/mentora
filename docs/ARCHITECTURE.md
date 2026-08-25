@@ -193,6 +193,12 @@ Frontend owns:
 Keep backend access behind a small API/client layer.
 Do not call private AI-provider APIs directly from browser code.
 
+Whiteboard controls remain canvas-adjacent rather than becoming a second
+workspace: drawing styles open from a palette button in the left tool rail, and
+tutor actions fan out from the right-edge control. Starting a tutor request
+collapses the action fan and exposes only a transient top-of-canvas status;
+feedback itself remains on the canvas.
+
 ## 11. Backend Responsibilities
 Backend owns:
 - provider credentials
