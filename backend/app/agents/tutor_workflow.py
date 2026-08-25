@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from app.agents.gemini import create_client, response_object
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
+from app.schemas.problems import GroundingChunk, ProblemContext
 from app.schemas.tutor import NormalizedBounds, TutorMode, TutorPlan
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,8 @@ class GeminiTutorWorkflow:
         canvas_image: bytes,
         canvas_mime_type: str,
         prior_annotations: list[NormalizedBounds],
+        problem: ProblemContext | None = None,
+        course_context: list[GroundingChunk] | None = None,
     ) -> TutorPlan:
         malformed: Exception | None = None
         # One repair attempt. Transient HTTP retries belong to the SDK; this
@@ -148,6 +151,8 @@ class GeminiTutorWorkflow:
                             canvas_image=canvas_image,
                             canvas_mime_type=canvas_mime_type,
                             prior_annotations=prior_annotations,
+                            problem=problem,
+                            course_context=course_context or [],
                             repair=attempt == 1,
                         )
                         return TutorPlan.model_validate(normalize_provider_output(raw))
@@ -189,6 +194,8 @@ class GeminiTutorWorkflow:
         canvas_image: bytes,
         canvas_mime_type: str,
         prior_annotations: list[NormalizedBounds],
+        problem: ProblemContext | None,
+        course_context: list[GroundingChunk],
         repair: bool,
     ) -> dict:
         """One provider round trip, returning raw structured output."""
@@ -196,6 +203,19 @@ class GeminiTutorWorkflow:
         prompt += f"<tutor-mode>{mode.value}</tutor-mode>\n\n"
         prompt += "Regions you have already annotated (do not grade them):\n"
         prompt += json.dumps([b.model_dump() for b in prior_annotations])
+        prompt += "\n\n<current-problem>\n"
+        prompt += (
+            problem.prompt if problem is not None else "No structured problem was supplied."
+        )
+        prompt += "\n</current-problem>\n\n<course-reference-data>\n"
+        if course_context:
+            prompt += "\n\n".join(
+                f"[source {chunk.chunk_id}, page {chunk.page}]\n{chunk.text}"
+                for chunk in course_context
+            )
+        else:
+            prompt += "No recorded course excerpts were available."
+        prompt += "\n</course-reference-data>"
 
         message = types.Content(
             role="user",

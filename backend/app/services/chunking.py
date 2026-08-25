@@ -29,18 +29,22 @@ def chunk_pages(
     """Split pages into chunks and attach metadata to each one."""
     chunks: list[ChunkMetadata] = []
 
+    chunk_index = 0
     for page in pages:
         splits = splitter.split_text(page.text)
         for split in splits:
             chunks.append(
                 ChunkMetadata(
+                    chunk_id=f"chunk_{document_id}_{chunk_index:05d}",
                     course_id=course_id,
                     document_id=document_id,
+                    chunk_index=chunk_index,
                     filename=filename,
                     page=page.page_number,
                     document_type=document_type,
                     text=split,
                 )
             )
+            chunk_index += 1
 
     return chunks
