@@ -49,7 +49,7 @@ export function TutorFeedbackBar({
         <>
           <button
             aria-label="Previous tutor feedback"
-            className="rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
             disabled={busy || atStart}
             onClick={onPrevious}
             title="Previous feedback"
@@ -58,7 +58,7 @@ export function TutorFeedbackBar({
             <ChevronLeft aria-hidden="true" className="size-4" />
           </button>
           <span
-            className={`min-w-0 max-w-4xl flex-1 text-left ${visible ? "text-slate-950" : "text-slate-400"}`}
+            className={`min-w-0 max-w-4xl flex-1 text-center ${visible ? "text-slate-950" : "text-slate-400"}`}
             title={visible ? layer.response.summary : "Feedback hidden"}
           >
             <ProblemBody
@@ -68,7 +68,7 @@ export function TutorFeedbackBar({
           </span>
           <button
             aria-label="Next tutor feedback"
-            className="rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
             disabled={busy || atEnd}
             onClick={onNext}
             title="Next feedback"
@@ -81,7 +81,7 @@ export function TutorFeedbackBar({
           </span>
           <button
             aria-label={visible ? "Hide tutor feedback" : "Show tutor feedback"}
-            className="shrink-0 rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="shrink-0 rounded-full p-1 text-slate-500 hover:cursor-grab hover:bg-slate-100 hover:text-slate-900"
             onClick={onToggle}
             title={visible ? "Hide feedback" : "Show feedback"}
             type="button"
