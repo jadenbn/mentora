@@ -34,13 +34,7 @@ export function TutorFeedbackBar({
   const atEnd = activeIndex < 0 || activeIndex >= layerCount - 1;
 
   return (
-    <div
-      className={
-        hasLayer
-          ? "mx-auto grid w-full max-w-6xl min-w-0 grid-cols-[1.75rem,minmax(0,1fr),1.75rem,auto,1.75rem] items-start gap-2 text-sm"
-          : "mx-auto flex w-full min-w-0 items-center justify-center gap-2 text-sm"
-      }
-    >
+    <div className="mx-auto flex w-full max-w-6xl min-w-0 flex-col items-center gap-1 text-sm">
       {error ? (
         <span aria-live="assertive" className="text-xs font-semibold text-red-700" role="alert">
           {error}
@@ -53,51 +47,54 @@ export function TutorFeedbackBar({
 
       {hasLayer ? (
         <>
-          <button
-            aria-label="Previous tutor feedback"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
-            disabled={busy || atStart}
-            onClick={onPrevious}
-            title="Previous feedback"
-            type="button"
-          >
-            <ChevronLeft aria-hidden="true" className="size-4" />
-          </button>
-          <span
-            className={`min-w-0 overflow-hidden text-center ${visible ? "text-slate-950" : "text-slate-400"}`}
+          <div className="flex items-center justify-center gap-2">
+            <button
+              aria-label="Previous tutor feedback"
+              className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+              disabled={busy || atStart}
+              onClick={onPrevious}
+              title="Previous feedback"
+              type="button"
+            >
+              <ChevronLeft aria-hidden="true" className="size-4" />
+            </button>
+            <span className="shrink-0 text-xs tabular-nums text-slate-400">
+              {activeIndex + 1} / {layerCount}
+            </span>
+            <button
+              aria-label="Next tutor feedback"
+              className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+              disabled={busy || atEnd}
+              onClick={onNext}
+              title="Next feedback"
+              type="button"
+            >
+              <ChevronRight aria-hidden="true" className="size-4" />
+            </button>
+            <button
+              aria-label={visible ? "Hide tutor feedback" : "Show tutor feedback"}
+              aria-pressed={visible}
+              className="flex size-7 shrink-0 items-center justify-center rounded-full p-1 text-slate-500 hover:cursor-grab hover:bg-slate-100 hover:text-slate-900"
+              onClick={onToggle}
+              title={visible ? "Hide feedback" : "Show feedback"}
+              type="button"
+            >
+              {visible ? (
+                <Eye aria-hidden="true" className="size-4" />
+              ) : (
+                <EyeOff aria-hidden="true" className="size-4" />
+              )}
+            </button>
+          </div>
+          <div
+            className={`min-w-0 max-w-full overflow-hidden text-center ${visible ? "text-slate-950" : "text-slate-400"}`}
             title={visible ? layer.response.summary : "Feedback hidden"}
           >
             <ProblemBody
               className="problem-katex max-w-full whitespace-pre-wrap text-[clamp(1rem,1.5vw,1.25rem)] leading-relaxed text-inherit"
               prompt={visible ? layer.response.summary : "Feedback hidden"}
             />
-          </span>
-          <button
-            aria-label="Next tutor feedback"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
-            disabled={busy || atEnd}
-            onClick={onNext}
-            title="Next feedback"
-            type="button"
-          >
-            <ChevronRight aria-hidden="true" className="size-4" />
-          </button>
-          <span className="shrink-0 text-xs tabular-nums text-slate-400">
-            {activeIndex + 1} / {layerCount}
-          </span>
-          <button
-            aria-label={visible ? "Hide tutor feedback" : "Show tutor feedback"}
-            className="shrink-0 rounded-full p-1 text-slate-500 hover:cursor-grab hover:bg-slate-100 hover:text-slate-900"
-            onClick={onToggle}
-            title={visible ? "Hide feedback" : "Show feedback"}
-            type="button"
-          >
-            {visible ? (
-              <Eye aria-hidden="true" className="size-4" />
-            ) : (
-              <EyeOff aria-hidden="true" className="size-4" />
-            )}
-          </button>
+          </div>
         </>
       ) : null}
     </div>
