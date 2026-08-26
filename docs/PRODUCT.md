@@ -305,16 +305,17 @@ Do not tightly couple reasoning to one visual style.
 Implemented today — the authoritative list is `backend/app/schemas/tutor.py`:
 
 ```text
-highlight point at a region with a translucent yellow mark
+highlight point at a region with a translucent yellow mark when useful
 circle   point at a region
 check    mark a region right
 cross    mark a region wrong
 ```
 
 Prose belongs in the required, concise `summary` field and is shown in the
-navbar. `math`, `arrow`, and `underline` are not built. Add one back only if
-the tutor demonstrably cannot express something; the renderer and prompt must
-change together.
+navbar. Highlights are optional and may target multiple separate regions in
+one response. `math`, `arrow`, and `underline` are not built. Add one back only
+if the tutor demonstrably cannot express something; the renderer and prompt
+must change together.
 Model output must be validated before rendering.
 The model should not directly call arbitrary canvas methods.
 

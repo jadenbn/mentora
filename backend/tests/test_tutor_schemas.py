@@ -87,6 +87,16 @@ class TestCanvasActions:
             assert isinstance(action.target, NormalizedBounds)
             assert not hasattr(action, "position")
 
+    def test_a_plan_can_highlight_multiple_regions(self):
+        plan = TutorPlan.model_validate(
+            {
+                "status": "partial",
+                "summary": "Compare both terms.",
+                "canvas_actions": [f.highlight_action(), f.highlight_action()],
+            }
+        )
+        assert [action.type for action in plan.canvas_actions] == ["highlight", "highlight"]
+
     def test_a_marking_action_cannot_omit_its_target(self):
         with pytest.raises(ValidationError):
             TutorPlan.model_validate(

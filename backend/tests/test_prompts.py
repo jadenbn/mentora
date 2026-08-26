@@ -45,6 +45,12 @@ def test_hint_mode_asks_for_the_smallest_nudge():
     assert "smallest" in tutor_instruction(TutorMode.hint).lower()
 
 
+def test_highlights_are_optional_and_can_be_multiple():
+    instruction = tutor_instruction(TutorMode.hint).lower()
+    assert "do not emit one by default" in instruction
+    assert "multiple" in instruction and "highlight" in instruction
+
+
 def test_every_instruction_forbids_grading_prior_ai_marks():
     # Follow-up tutoring depends on this: the model sees its own earlier
     # annotations in the image and must not treat them as student work.

@@ -46,7 +46,12 @@ describe("animateCanvasActions", () => {
 
     await vi.advanceTimersByTimeAsync(1);
     expect(fake.created).toHaveLength(1);
-    expect(fake.created[0]).toMatchObject({ type: "geo", meta: { owner: "ai" }, props: { fill: "semi" } });
+    expect(fake.created[0]).toMatchObject({
+      type: "geo",
+      opacity: 0.28,
+      meta: { owner: "ai" },
+      props: { fill: "solid", color: "yellow" },
+    });
     await handle.done;
   });
 

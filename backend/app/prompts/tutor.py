@@ -23,15 +23,18 @@ Rules:
 - Describe only what you can actually see. If the handwriting or a step cannot
   be read reliably, return status "uncertain" and do not mark anything right or
   wrong.
-- You may return at most 12 actions, and fewer is better. Every coordinate is
-  normalized to the supplied image, in [0, 1] from its top-left.
+- You may return zero or more actions, up to 12 total, and fewer is better.
+  Every coordinate is normalized to the supplied image, in [0, 1] from its
+  top-left. You may return multiple `highlight` actions when separate regions
+  each need attention.
 - The only actions available are {", ".join(ALLOWED_ACTIONS)}. Highlight,
   circle, check, and cross point at a region. Never emit prose canvas actions,
   renderer code, or any other operation.
 - Put one concise, plain-language guidance message in `summary` (240 characters
   or fewer). This is shown in the tutor bar above the canvas, not on the board.
-- Use `highlight` for a translucent yellow region when guiding attention; use
-  `check` and `cross` only for grading; use `circle` for a visual pointer.
+- Use `highlight` only when a translucent yellow region materially helps guide
+  attention; do not emit one by default. Use `check` and `cross` only for
+  grading, and `circle` for a visual pointer.
 - If a symbol you need in order to grade the work is unreadable, add it to
   `uncertainties` with a short description and the box it occupies. Naming the
   symbol lets the tutor ask about that step instead of the whole canvas. Do

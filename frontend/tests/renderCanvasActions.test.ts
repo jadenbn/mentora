@@ -38,7 +38,8 @@ describe("coordinate conversion", () => {
   it("places a highlight at the world rectangle its normalized target names", () => {
     const { created } = render([highlight()]);
     expect(created[0]).toMatchObject({ x: 200, y: 600 });
-    expect(created[0].props).toMatchObject({ w: 80, h: 80 });
+    expect(created[0]).toMatchObject({ opacity: 0.28 });
+    expect(created[0].props).toMatchObject({ w: 80, h: 80, color: "yellow", fill: "solid" });
   });
 
   it("sizes a circle to the world rectangle its target names", () => {
@@ -57,6 +58,10 @@ describe("coordinate conversion", () => {
 describe("action coverage", () => {
   it("renders a highlight", () => {
     expect(render([highlight()]).created).toHaveLength(1);
+  });
+
+  it("renders multiple independent highlights", () => {
+    expect(render([highlight(), highlight({ target: { x: 0.7, y: 0.1, width: 0.1, height: 0.1 } })]).created).toHaveLength(2);
   });
 
   it("renders a circle as an outline, not a filled blob over the work", () => {
