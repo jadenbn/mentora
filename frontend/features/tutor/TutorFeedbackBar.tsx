@@ -48,29 +48,33 @@ export function TutorFeedbackBar({
       {hasLayer ? (
         <>
           <div className="pointer-events-auto flex items-center justify-center gap-2">
-            <button
-              aria-label="Previous tutor feedback"
-              className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={busy || atStart}
-              onClick={onPrevious}
-              title="Previous feedback"
-              type="button"
-            >
-              <ChevronLeft aria-hidden="true" className="size-4" />
-            </button>
-            <span className="shrink-0 text-xs tabular-nums text-slate-400">
-              {activeIndex + 1} / {layerCount}
-            </span>
-            <button
-              aria-label="Next tutor feedback"
-              className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
-              disabled={busy || atEnd}
-              onClick={onNext}
-              title="Next feedback"
-              type="button"
-            >
-              <ChevronRight aria-hidden="true" className="size-4" />
-            </button>
+            {visible ? (
+              <>
+                <button
+                  aria-label="Previous tutor feedback"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+                  disabled={busy || atStart}
+                  onClick={onPrevious}
+                  title="Previous feedback"
+                  type="button"
+                >
+                  <ChevronLeft aria-hidden="true" className="size-4" />
+                </button>
+                <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                  {activeIndex + 1} / {layerCount}
+                </span>
+                <button
+                  aria-label="Next tutor feedback"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/80 p-1 text-slate-500 shadow-sm hover:cursor-grab hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+                  disabled={busy || atEnd}
+                  onClick={onNext}
+                  title="Next feedback"
+                  type="button"
+                >
+                  <ChevronRight aria-hidden="true" className="size-4" />
+                </button>
+              </>
+            ) : null}
             <button
               aria-label={visible ? "Hide tutor feedback" : "Show tutor feedback"}
               aria-pressed={visible}
@@ -86,15 +90,17 @@ export function TutorFeedbackBar({
               )}
             </button>
           </div>
-          <div
-            className={`pointer-events-auto min-w-0 max-w-full overflow-hidden text-center ${visible ? "text-slate-950" : "text-slate-400"}`}
-            title={visible ? layer.response.summary : "Feedback hidden"}
-          >
-            <ProblemBody
-              className="problem-katex feedback-katex max-w-full whitespace-pre-wrap text-[clamp(1rem,1.5vw,1.25rem)] leading-relaxed text-inherit"
-              prompt={visible ? layer.response.summary : "Feedback hidden"}
-            />
-          </div>
+          {visible ? (
+            <div
+              className="pointer-events-auto min-w-0 max-w-full overflow-hidden text-center text-slate-950"
+              title={layer.response.summary}
+            >
+              <ProblemBody
+                className="problem-katex feedback-katex max-w-full whitespace-pre-wrap text-[clamp(1rem,1.5vw,1.25rem)] leading-relaxed text-inherit"
+                prompt={layer.response.summary}
+              />
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>

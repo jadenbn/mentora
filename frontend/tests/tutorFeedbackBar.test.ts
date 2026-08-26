@@ -50,9 +50,12 @@ describe("TutorFeedbackBar", () => {
     expect(html).toBe("");
   });
 
-  it("keeps the summary in the bar when the layer is hidden", () => {
+  it("hides the summary and navigation when the layer is hidden", () => {
     const html = render({ visible: false });
-    expect(html).toContain("Feedback hidden");
     expect(html).toContain("Show tutor feedback");
+    expect(html).not.toContain("Look at the inner function.");
+    expect(html).not.toContain("1 / 2");
+    expect(html).not.toContain("Previous tutor feedback");
+    expect(html).not.toContain("Next tutor feedback");
   });
 });
