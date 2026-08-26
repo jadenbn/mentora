@@ -45,7 +45,17 @@ function escapeLatexText(value: string): string {
         return `\\${character}`;
     }
   });
-  return escaped.split("\n").join("} \\\\ \\text{");
+  return escaped
+    .split("\n")
+    .map((line) =>
+      line
+        .split(/([ \t]+)/)
+        .map((part) =>
+          /^[ \t]+$/.test(part) ? `}\\allowbreak\\text{${part}` : part,
+        )
+        .join(""),
+    )
+    .join("} \\\\ \\text{");
 }
 
 function parseDelimitedPrompt(prompt: string): ProblemSegment[] {
