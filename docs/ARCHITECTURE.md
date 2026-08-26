@@ -307,8 +307,9 @@ summary          short plain-language explanation
 
 `canvas_actions` contains target actions: `highlight`, `circle`, `check`, or
 `cross`, each pointing at a normalized box. Prose is never a canvas action; the
-required, concise `summary` is shown in the navbar instead. Highlights are
-optional and the array may contain multiple independent highlight targets.
+required, concise `summary` is shown in the navbar instead and rendered as a
+single KaTeX document, including its prose. Highlights are optional and the
+array may contain multiple independent highlight targets.
 
 Gemini output is schema-constrained, then validated independently with
 Pydantic, then passed through a deterministic safety policy. The renderer never

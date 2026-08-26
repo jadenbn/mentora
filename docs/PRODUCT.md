@@ -71,7 +71,8 @@ AI circles the relevant sign
 The navbar says "Check this sign"
 ```
 Keep prose out of the student's working area. Feedback is chronological: the
-current concise guidance appears in the navbar while its spatial marks appear
+current concise guidance appears in the transparent navbar, rendered in the
+same KaTeX document as its mathematical notation, while spatial marks appear
 on the canvas. Previous layers can be revisited with navbar arrows without
 changing student work.
 

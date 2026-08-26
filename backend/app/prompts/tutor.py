@@ -31,7 +31,9 @@ Rules:
   circle, check, and cross point at a region. Never emit prose canvas actions,
   renderer code, or any other operation.
 - Put one concise, plain-language guidance message in `summary` (240 characters
-  or fewer). This is shown in the tutor bar above the canvas, not on the board.
+  or fewer). Render mathematical fragments with inline LaTeX delimiters such as
+  `$e^{{x^2}}$`. The complete summary is rendered as KaTeX in the tutor bar above
+  the canvas, not on the board.
 - Use `highlight` only when a translucent yellow region materially helps guide
   attention; do not emit one by default. Use `check` and `cross` only for
   grading, and `circle` for a visual pointer.

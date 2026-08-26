@@ -90,6 +90,9 @@ keep the model from grading its own handwriting:
 
 `status` is `correct`, `incorrect`, `partial`, or `uncertain`.
 
+The summary is rendered as one KaTeX document in the transparent tutor navbar;
+use `$...$` delimiters for inline mathematical fragments.
+
 ### Actions
 
 The tutor can target a region in one of four visual ways. Prose stays in the

@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { ProblemBody } from "@/features/problems/ProblemCard";
 import type { FeedbackLayer } from "@/lib/tutor/feedbackHistory";
 
 export function TutorFeedbackBar({
@@ -57,10 +58,13 @@ export function TutorFeedbackBar({
             <ChevronLeft aria-hidden="true" className="size-4" />
           </button>
           <span
-            className={`min-w-0 max-w-full flex-1 text-center font-medium ${visible ? "text-slate-800" : "text-slate-400"}`}
+            className={`min-w-0 max-w-full flex-1 text-center ${visible ? "text-slate-800" : "text-slate-400"}`}
             title={visible ? layer.response.summary : "Feedback hidden"}
           >
-            {visible ? layer.response.summary : "Feedback hidden"}
+            <ProblemBody
+              className="problem-katex max-w-full whitespace-pre-wrap text-[clamp(0.9rem,1.4vw,1.1rem)] leading-snug text-inherit"
+              prompt={visible ? layer.response.summary : "Feedback hidden"}
+            />
           </span>
           <button
             aria-label="Next tutor feedback"

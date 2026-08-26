@@ -62,7 +62,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
 
   return (
     <main className="flex h-dvh flex-col bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 sm:px-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 bg-transparent px-3 py-2 sm:px-5">
         <div className="min-w-0">
           <Link
             className="text-sm font-semibold text-blue-700"

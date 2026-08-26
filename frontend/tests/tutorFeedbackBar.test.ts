@@ -38,6 +38,7 @@ describe("TutorFeedbackBar", () => {
   it("shows navigation, summary, count, and visibility control", () => {
     const html = render();
     expect(html).toContain("Look at the inner function.");
+    expect(html).toContain("katex");
     expect(html).toContain("1 / 2");
     expect(html).toContain("Previous tutor feedback");
     expect(html).toContain("Next tutor feedback");

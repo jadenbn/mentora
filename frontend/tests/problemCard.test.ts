@@ -49,6 +49,16 @@ describe("ProblemBody", () => {
     expect(html).toContain("e^{3x}");
   });
 
+  it("renders compact exponent notation inside prose as math", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProblemBody, {
+        prompt: "Use the chain rule for e^(x^2) before simplifying.",
+      }),
+    );
+    expect(html).toContain('class="katex"');
+    expect(html).not.toContain("data-math-error");
+  });
+
   it("keeps the complete function clause in the math font", () => {
     expect(
       parseProblemPrompt("Find the derivative of f(x) = e^{3x} \\cos(x^2)."),
