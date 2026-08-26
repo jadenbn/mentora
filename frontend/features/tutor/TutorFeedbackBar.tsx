@@ -91,7 +91,7 @@ export function TutorFeedbackBar({
             title={visible ? layer.response.summary : "Feedback hidden"}
           >
             <ProblemBody
-              className="problem-katex max-w-full whitespace-pre-wrap text-[clamp(1rem,1.5vw,1.25rem)] leading-relaxed text-inherit"
+              className="problem-katex feedback-katex max-w-full whitespace-pre-wrap text-[clamp(1rem,1.5vw,1.25rem)] leading-relaxed text-inherit"
               prompt={visible ? layer.response.summary : "Feedback hidden"}
             />
           </div>

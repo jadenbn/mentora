@@ -15,16 +15,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* KaTeX keeps each generated math run on one line by default. Prose is still
-   rendered inside KaTeX, but explicit break opportunities let long feedback
-   and problem statements wrap instead of being clipped at the viewport edge. */
-.problem-katex > .katex,
-.problem-katex > .katex > .katex-html,
-.problem-katex > .katex > .katex-html > .katex-base {
+/* Only the feedback summary needs prose wrapping. Keep KaTeX's native
+   unbreakable math runs everywhere else, especially on the problem shape. */
+.feedback-katex > .katex,
+.feedback-katex > .katex > .katex-html {
   white-space: normal;
 }
 
-.problem-katex > .katex {
+.feedback-katex > .katex {
   display: block;
 }
 
