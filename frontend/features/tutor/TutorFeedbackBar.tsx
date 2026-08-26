@@ -34,7 +34,7 @@ export function TutorFeedbackBar({
   const atEnd = activeIndex < 0 || activeIndex >= layerCount - 1;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-wrap items-center justify-center gap-2 text-sm">
+    <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-nowrap items-center justify-center gap-2 text-sm">
       {error ? (
         <span aria-live="assertive" className="text-xs font-semibold text-red-700" role="alert">
           {error}
