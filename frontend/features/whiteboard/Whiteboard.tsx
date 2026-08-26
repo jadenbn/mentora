@@ -159,6 +159,23 @@ function CanvasToolbar() {
   );
 }
 
+function ThinkingPill() {
+  return (
+    <div
+      aria-live="polite"
+      className="pointer-events-none absolute left-1/2 top-3 z-50 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+      role="status"
+    >
+      Thinking
+      <span aria-hidden="true" className="ml-1 inline-flex gap-0.5">
+        <span className="animate-bounce [animation-delay:-0.2s] motion-reduce:animate-none">.</span>
+        <span className="animate-bounce [animation-delay:-0.1s] motion-reduce:animate-none">.</span>
+        <span className="animate-bounce motion-reduce:animate-none">.</span>
+      </span>
+    </div>
+  );
+}
+
 export function Whiteboard({
   spaceId,
   courseId,
@@ -389,6 +406,7 @@ export function Whiteboard({
 
   return (
     <div className="relative h-full">
+      {isThinking ? <ThinkingPill /> : null}
       {feedbackHost
         ? createPortal(
             <TutorFeedbackBar

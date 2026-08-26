@@ -44,10 +44,9 @@ describe("TutorFeedbackBar", () => {
     expect(html).toContain("Hide tutor feedback");
   });
 
-  it("shows thinking without requiring a feedback layer", () => {
+  it("leaves thinking presentation to the canvas pill", () => {
     const html = render({ busy: true, layer: null, layerCount: 0, activeIndex: -1 });
-    expect(html).toContain("Thinking");
-    expect(html).not.toContain("Previous tutor feedback");
+    expect(html).toBe("");
   });
 
   it("keeps the summary in the bar when the layer is hidden", () => {

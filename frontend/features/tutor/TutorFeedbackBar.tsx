@@ -26,7 +26,7 @@ export function TutorFeedbackBar({
   onNext: () => void;
   onToggle: () => void;
 }) {
-  if (!busy && !layer && !warning && !error) return null;
+  if (!layer && !warning && !error) return null;
 
   const hasLayer = layer !== null;
   const atStart = activeIndex <= 0;
@@ -34,16 +34,7 @@ export function TutorFeedbackBar({
 
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-center gap-1.5 text-sm">
-      {busy ? (
-        <span aria-live="polite" className="font-semibold text-slate-600" role="status">
-          Thinking
-          <span aria-hidden="true" className="ml-1 inline-flex gap-0.5">
-            <span className="animate-bounce [animation-delay:-0.2s] motion-reduce:animate-none">.</span>
-            <span className="animate-bounce [animation-delay:-0.1s] motion-reduce:animate-none">.</span>
-            <span className="animate-bounce motion-reduce:animate-none">.</span>
-          </span>
-        </span>
-      ) : error ? (
+      {error ? (
         <span aria-live="assertive" className="text-xs font-semibold text-red-700" role="alert">
           {error}
         </span>
