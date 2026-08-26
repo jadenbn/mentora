@@ -2,10 +2,9 @@
 
 Also attributes the question to the skill(s) it exercises, in the same call
 — no second round trip. A skill entry either names an existing course skill
-by id or proposes a new one; either way it is the exact same shape
-taxonomy_workflow.py emits, held to the exact same batch-local structural
-checks in services/taxonomy.py, so an inline proposal here is not a
-lesser-validated shortcut.
+by id or names a new one; either way, app.services.question_service resolves
+it against the course's topic list (existing, name-similarity match, or
+newly appended) -- see QuestionService._attribute_skills.
 """
 
 from __future__ import annotations

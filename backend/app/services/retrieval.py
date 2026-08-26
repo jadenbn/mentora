@@ -30,29 +30,3 @@ def search_document(
         and chunk.document_id == document_id
     ]
 
-
-def search_course(
-    *,
-    query: str,
-    course_id: str,
-    repository: CourseRepository,
-    top_k: int = 12,
-) -> list[GroundingChunk]:
-    """Rank chunks across every document in one course.
-
-    Same shape as search_document: Pinecone ranks, SQLite hydrates the text,
-    and any chunk whose stored row disagrees about course_id is dropped so a
-    cross-course leak in the index can never surface.
-    """
-    ranked = query_similar(
-        query=query,
-        course_id=course_id,
-        top_k=top_k,
-    )
-    chunks = repository.get_chunks_by_ids([chunk_id for chunk_id, _ in ranked])
-    return [
-        GroundingChunk(chunk_id=chunk.chunk_id, page=chunk.page, text=chunk.text)
-        for chunk_id, _score in ranked
-        if (chunk := chunks.get(chunk_id)) is not None
-        and chunk.course_id == course_id
-    ]

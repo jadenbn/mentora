@@ -4,7 +4,7 @@
  */
 
 import type { Editor } from "tldraw";
-import { analyzeCanvas, submitWork, type AttemptOutcome } from "@/lib/api/api";
+import { analyzeCanvas, submitWork } from "@/lib/api/api";
 import {
   captureCanvasForAnalysis,
   collectPriorAnnotations,
@@ -32,15 +32,9 @@ export interface TutorAnalysisOptions {
   hintsUsed?: number;
 }
 
-export interface TutorAnalysisResult {
-  response: TutorResponse;
-  /** Non-null only when the server recorded a graded attempt. */
-  attempt: AttemptOutcome | null;
-}
-
 export async function runTutorAnalysis(
   options: TutorAnalysisOptions,
-): Promise<TutorAnalysisResult> {
+): Promise<TutorResponse> {
   const { editor, problem, studentId, sessionId } = options;
 
   // A canvas holding only the tutor's own earlier feedback has nothing of the
@@ -53,38 +47,36 @@ export async function runTutorAnalysis(
 
   // A skill-attributed problem goes through /work: the tutor grades and the
   // server records the attempt in one round trip. The browser deciding
-  // `correct` for itself was the reason mastery could be forged.
-  let response: TutorResponse;
-  let attempt: AttemptOutcome | null = null;
-  if (problem?.skill && studentId && sessionId) {
-    const result = await submitWork({
-      courseId: options.courseId,
-      studentId,
-      sessionId,
-      problemId: problem.id,
-      mode: options.mode,
-      canvasImage: capture.blob,
-      priorAnnotations,
-      hintsUsed: options.hintsUsed ?? 0,
-      signal: options.signal,
-    });
-    response = result.tutor;
-    attempt = result.attempt;
-  } else {
-    response = await analyzeCanvas({
-      courseId: options.courseId,
-      mode: options.mode,
-      canvasImage: capture.blob,
-      priorAnnotations,
-      problem,
-      signal: options.signal,
-    });
-  }
+  // `correct` for itself was the reason mastery could be forged. What the
+  // server recorded is not surfaced here -- the engine has no UI.
+  const response =
+    problem?.skill && studentId && sessionId
+      ? (
+          await submitWork({
+            courseId: options.courseId,
+            studentId,
+            sessionId,
+            problemId: problem.id,
+            mode: options.mode,
+            canvasImage: capture.blob,
+            priorAnnotations,
+            hintsUsed: options.hintsUsed ?? 0,
+            signal: options.signal,
+          })
+        ).tutor
+      : await analyzeCanvas({
+          courseId: options.courseId,
+          mode: options.mode,
+          canvasImage: capture.blob,
+          priorAnnotations,
+          problem,
+          signal: options.signal,
+        });
 
   renderCanvasActions(editor, response.canvas_actions, {
     bounds: capture.bounds,
     interactionId: response.interaction_id,
   });
 
-  return { response, attempt };
+  return response;
 }

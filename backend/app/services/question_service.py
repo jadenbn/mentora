@@ -11,10 +11,18 @@ from uuid import uuid4
 from sqlmodel import Session, select
 
 from app.database import CourseRepository
+from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.schemas.problems import GeneratedProblem, GroundingChunk, ProblemContext, QuestionPlan
 from app.schemas.taxonomy import RawSkillEntry
-from app.services import attribution, proposals
+from app.services import attribution
+from app.services.taxonomy import (
+    TaxonomyError,
+    append_skills,
+    build_taxonomy,
+    canonical_key,
+    normalize_slug,
+)
 
 logger = logging.getLogger(__name__)
 RETRIEVAL_TOP_K = 12
@@ -83,12 +91,13 @@ class QuestionService:
         question_request: str,
         required_skill_id: str | None = None,
     ) -> GeneratedProblem:
-        """required_skill_id: a skill this problem must be attributed to
-        regardless of what the model's own skill analysis returns — set by
-        next_problem to the skill selection actually chose, so a generated
-        question always counts toward the skill it was asked for even if the
-        model's independent read of the material lands somewhere adjacent.
-        The model's own skills are additive on top of it, not a replacement.
+        """required_skill_id: a topic this problem must be attributed to
+        regardless of what the model's own reading returns -- set when a
+        topic was picked for the student (services/selection.py) rather than
+        named by them, so a generated question always counts toward the
+        topic it was asked for even if the model's own read of the material
+        lands somewhere adjacent. The model's own topics are additive on top
+        of it, not a replacement.
         """
         started = perf_counter()
         document = self.repository.get_document(course_id=course_id, document_id=document_id)
@@ -161,41 +170,45 @@ class QuestionService:
         raw_skills: list[RawSkillEntry],
         required_skill_id: str | None,
     ) -> list[str]:
-        """Which skills this problem counts toward.
+        """Which topics this problem counts toward -- the piggyback.
 
-        Only skills the course already has. The model's read of the material
-        is useful, but it runs on the read path, and a generator that can
-        write the taxonomy makes the taxonomy an append-only log of names it
-        invented -- which selection then chases, because a never-attempted
-        skill outranks a weak one. Anything the model names that the course
-        doesn't have is counted as a proposal instead (services/proposals.py)
-        and decided later, off this path.
+        Each topic the model names either matches an existing one (by
+        normalized id, or by a name-similarity key when the model described
+        it in different words) or is genuinely new, in which case it is
+        appended to the course's skills file and inserted. This is the only
+        place a course's topic list grows outside seeding.
         """
-        existing = {
-            s.id
-            for s in self.session.exec(
-                select(Skill).where(Skill.course_id == course_id)
-            ).all()
-        }
-        skill_ids = proposals.resolve_to_existing(self.session, course_id, raw_skills)
+        existing = self.session.exec(
+            select(Skill).where(Skill.course_id == course_id)
+        ).all()
+        by_slug = {s.id: s for s in existing}
+        by_key = {canonical_key(s.name): s for s in existing}
 
-        unknown = [e for e in raw_skills if e.id and proposals.normalize_slug(course_id, e.id) not in existing]
-        if unknown:
+        skill_ids: list[str] = []
+        to_create: list[RawSkillEntry] = []
+        for entry in raw_skills:
+            slug = normalize_slug(course_id, entry.id)
+            matched = by_slug.get(slug) or by_key.get(canonical_key(entry.name))
+            if matched is not None:
+                skill_ids.append(matched.id)
+            else:
+                to_create.append(entry)
+
+        if to_create:
             try:
-                recorded = proposals.record_proposals(
-                    self.session, course_id, raw_skills, existing
+                produced = build_taxonomy(
+                    course_id,
+                    [e.model_dump() for e in to_create],
+                    SkillOrigin.GENERATED,
                 )
-                if recorded:
-                    logger.info(
-                        "recorded %d skill proposal(s) for %s: %s",
-                        len(recorded), course_id, recorded,
-                    )
-            except Exception:
-                # Counting a proposal is bookkeeping. It must never cost the
-                # student the problem they asked for.
-                logger.exception("recording skill proposals failed for %s", course_id)
+                added_ids = append_skills(self.session, course_id, produced)
+                skill_ids.extend(added_ids)
+            except TaxonomyError:
+                # A malformed batch must never cost the student the problem
+                # they asked for -- only the topic attribution it would add.
+                logger.exception("skill identification failed for course %s", course_id)
                 self.session.rollback()
 
         if required_skill_id and required_skill_id not in skill_ids:
             skill_ids.append(required_skill_id)
-        return skill_ids
+        return list(dict.fromkeys(skill_ids))

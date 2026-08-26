@@ -178,8 +178,19 @@ interface GeneratedProblemResponse {
   skills: AttributedSkillResponse[];
 }
 
+/**
+ * POST /api/courses/{course_id}/questions/generate
+ *
+ * questionRequest may be empty: the engine then picks a topic itself (an
+ * implicit "practice next topic") instead of grounding the student's own
+ * description. Either way the server attributes the generated problem to
+ * the topic(s) it exercises -- existing or newly identified from the
+ * question itself -- and returns the primary one so marking this problem
+ * correct can record an attempt.
+ */
 export async function generateCourseQuestion(
   courseId: string,
+  studentId: string,
   documentId: string,
   questionRequest: string,
 ): Promise<Problem> {
@@ -189,6 +200,7 @@ export async function generateCourseQuestion(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        student_id: studentId,
         document_id: documentId,
         question_request: questionRequest.trim(),
       }),
@@ -198,10 +210,6 @@ export async function generateCourseQuestion(
     response,
     "Generating a question",
   );
-  // The server attributes every generated problem to the skill(s) it
-  // exercises (existing or newly proposed), same as next-problem — surface
-  // the primary one so marking this problem correct can record an attempt
-  // and move mastery, not just next-problem-generated ones.
   const primary = data.skills[0];
   return {
     id: data.problem.id,
@@ -209,62 +217,7 @@ export async function generateCourseQuestion(
     documentId: data.problem.document_id,
     source: data.problem.source,
     prompt: data.problem.prompt,
-    skill: primary
-      ? {
-          skillId: primary.id,
-          skillName: primary.name,
-          targetDifficulty: primary.difficulty_band,
-          isReview: false,
-        }
-      : undefined,
-  };
-}
-
-interface GenerationSpecResponse {
-  skill_id: string;
-  skill_name: string;
-  target_difficulty: number;
-  is_review: boolean;
-}
-
-interface NextProblemResponse {
-  problem: ProblemResponse;
-  spec: GenerationSpecResponse;
-}
-
-/**
- * POST /api/courses/{course_id}/next-problem
- *
- * The learning engine picks what to practice and grounds a question for it —
- * no document or question text to supply. A 404 means the course has no
- * unlocked skill to serve yet: either no documents have been ingested, or
- * (for a course with documents but no taxonomy) the cold-start bootstrap
- * itself found nothing to propose from.
- */
-export async function fetchNextProblem(
-  courseId: string,
-  studentId: string,
-): Promise<Problem> {
-  const response = await fetch(
-    `${apiBaseUrl()}/api/courses/${courseId}/next-problem?student_id=${encodeURIComponent(studentId)}`,
-    { method: "POST" },
-  );
-  const data = await courseResponse<NextProblemResponse>(
-    response,
-    "Selecting the next problem",
-  );
-  return {
-    id: data.problem.id,
-    courseId: data.problem.course_id,
-    documentId: data.problem.document_id,
-    source: data.problem.source,
-    prompt: data.problem.prompt,
-    skill: {
-      skillId: data.spec.skill_id,
-      skillName: data.spec.skill_name,
-      targetDifficulty: data.spec.target_difficulty,
-      isReview: data.spec.is_review,
-    },
+    skill: primary ? { skillId: primary.id, skillName: primary.name } : undefined,
   };
 }
 

@@ -1,12 +1,19 @@
-"""Load, normalize, and validate a course's skill taxonomy."""
+"""Load, normalize, and validate a course's flat topic list.
+
+A topic is a label for grouping attempts, not a node in a curriculum: there
+is no prerequisite graph and nothing here gates what a student can be served.
+The course's data/courses/{course_id}.json file is the source of truth.
+append_skills is the only way a topic is added after seeding, and it writes
+the file first -- the database is the file's mirror, not the other way round.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
+import os
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 from sqlmodel import Session, select
@@ -14,14 +21,27 @@ from sqlmodel import Session, select
 from app.models.course_taxonomy_version import CourseTaxonomyVersion
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "courses"
+
+def _default_data_dir() -> Path:
+    """Where course skills files live. Overridable so tests that exercise
+    append_skills (which writes) never touch the real, git-tracked files."""
+    configured = os.getenv("MENTORA_COURSE_DATA_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return Path(__file__).resolve().parent.parent.parent / "data" / "courses"
+
+
+DATA_DIR = _default_data_dir()
 
 _SLUG_INVALID = re.compile(r"[^a-z0-9.]+")
 _SLUG_REPEAT = re.compile(r"-{2,}")
+
+# Dropped from a canonical-name key: they carry no identity ("the chain rule"
+# and "chain rule" are the same topic; "power rule" and "product rule" are not).
+_STOPWORDS = {"a", "an", "the", "of", "for", "to", "and", "rule", "rules"}
 
 _MAX_LIST_ENTRIES = 12
 _MAX_ENTRY_CHARS = 80
@@ -29,21 +49,19 @@ _MAX_SKILLS_PER_COURSE = 200
 
 
 class TaxonomyError(ValueError):
-    """A course's skill taxonomy failed validation on load."""
+    """A course's topic list failed validation on load."""
 
 
 def normalize_slug(course_id: str, raw: str) -> str:
-    """Lowercase, hyphenate, collapse repeats, and course-prefix a skill id.
+    """Lowercase, hyphenate, collapse repeats, and course-prefix a topic id.
 
     Idempotent: normalize_slug(c, normalize_slug(c, x)) == normalize_slug(c, x).
 
     A course id containing characters outside [a-z0-9.] (e.g. "course_demo")
-    goes through the same _SLUG_INVALID/_SLUG_REPEAT substitution as the raw
-    slug before either is compared — otherwise a raw id that already includes
-    the course prefix (e.g. an LLM echoing "course_demo.foo" back) fails the
-    startswith check against the *unnormalized* course_id (its underscore
-    never matches the slug's now-hyphenated one) and gets prefixed a second
-    time, producing two different ids for what should be one skill.
+    goes through the same substitution as the raw slug before either is
+    compared -- otherwise a raw id that already includes the course prefix
+    (e.g. a model echoing "course_demo.foo" back) fails the startswith check
+    against the unnormalized course_id and gets prefixed a second time.
     """
     slug = raw.strip().lower()
     slug = _SLUG_INVALID.sub("-", slug)
@@ -58,29 +76,22 @@ def normalize_slug(course_id: str, raw: str) -> str:
     return f"{course_id}.{slug}"
 
 
-def _validate_acyclic(skills: dict[str, Skill]) -> None:
-    """Depth-first search with a visiting set. Raises on any cycle."""
-    WHITE, GRAY, BLACK = 0, 1, 2
-    state = {skill_id: WHITE for skill_id in skills}
+def canonical_key(name: str) -> str:
+    """A name-similarity key: same words, any order, any article or case.
 
-    def visit(skill_id: str, path: list[str]) -> None:
-        state[skill_id] = GRAY
-        for prereq_id in skills[skill_id].prereqs:
-            if state.get(prereq_id) == GRAY:
-                cycle = " -> ".join(path + [prereq_id])
-                raise TaxonomyError(f"prerequisite cycle detected: {cycle}")
-            if state.get(prereq_id) == WHITE:
-                visit(prereq_id, path + [prereq_id])
-        state[skill_id] = BLACK
-
-    for skill_id in skills:
-        if state[skill_id] == WHITE:
-            visit(skill_id, [skill_id])
+    Two names reduce to the same key when they share the same significant
+    words regardless of order, casing, or stopwords -- enough to catch a
+    model re-describing an existing topic in different words without an
+    embedding call. Two genuinely different topics sharing this key would be
+    a false merge; that is the accepted tradeoff for a check this cheap.
+    """
+    words = re.findall(r"[a-z0-9]+", name.lower())
+    return "-".join(sorted(w for w in words if w not in _STOPWORDS))
 
 
 def _validate_string_list(skill_id: str, field: str, values: list[str]) -> None:
-    """Guard the free-form keyword / question_form lists before they reach an
-    embedding call: non-empty strings, at most 12 entries, each <= 80 chars."""
+    """Guard the free-form keyword / question_form lists: non-empty strings,
+    at most 12 entries, each <= 80 chars."""
     if len(values) > _MAX_LIST_ENTRIES:
         raise TaxonomyError(
             f"{skill_id}: {field} has {len(values)} entries "
@@ -96,33 +107,24 @@ def _validate_string_list(skill_id: str, field: str, values: list[str]) -> None:
 
 
 def validate_taxonomy(skills: list[Skill]) -> None:
-    """Raise TaxonomyError on any structural problem in a skill list."""
+    """Raise TaxonomyError on any structural problem in a topic list."""
     if len(skills) > _MAX_SKILLS_PER_COURSE:
         raise TaxonomyError(
             f"course has {len(skills)} skills (max {_MAX_SKILLS_PER_COURSE}); "
             "a generator producing this many likely malfunctioned"
         )
 
-    by_id: dict[str, Skill] = {}
+    seen: set[str] = set()
     for skill in skills:
-        if skill.id in by_id:
+        if skill.id in seen:
             raise TaxonomyError(f"duplicate skill id after normalization: {skill.id}")
-        by_id[skill.id] = skill
-
-    for skill in skills:
+        seen.add(skill.id)
         if not (0.0 <= skill.difficulty_band <= 1.0):
             raise TaxonomyError(
                 f"{skill.id}: difficulty_band {skill.difficulty_band} out of [0, 1]"
             )
         _validate_string_list(skill.id, "keywords", skill.keywords)
         _validate_string_list(skill.id, "question_forms", skill.question_forms)
-        for prereq_id in skill.prereqs:
-            if prereq_id not in by_id:
-                raise TaxonomyError(
-                    f"{skill.id}: unresolved prerequisite '{prereq_id}'"
-                )
-
-    _validate_acyclic(by_id)
 
 
 def build_taxonomy(
@@ -130,36 +132,29 @@ def build_taxonomy(
 ) -> list[Skill]:
     """Turn a list of raw skill dicts into validated Skill objects.
 
-    The single builder for every taxonomy source — hand-authored course JSON
-    and LLM-generated output alike take this same path, so a generated skill
-    is held to exactly the rules a seeded one is: normalized ids, resolved
-    prereqs, no cycles, bounded keyword/question-form lists. Raises
+    The single builder for every topic source -- hand-authored course JSON
+    and model-identified topics alike take this same path. Raises
     TaxonomyError on any structural problem; raises nothing on success.
     """
-    skills: list[Skill] = []
-    for entry in raw_skills:
-        skill_id = normalize_slug(course_id, entry["id"])
-        prereqs = [normalize_slug(course_id, p) for p in entry.get("prereqs", [])]
-        skills.append(
-            Skill(
-                id=skill_id,
-                course_id=course_id,
-                name=entry["name"],
-                description=entry["description"],
-                difficulty_band=entry["difficulty_band"],
-                prereqs=prereqs,
-                keywords=list(entry.get("keywords", [])),
-                question_forms=list(entry.get("question_forms", [])),
-                origin=origin,
-            )
+    skills = [
+        Skill(
+            id=normalize_slug(course_id, entry["id"]),
+            course_id=course_id,
+            name=entry["name"],
+            description=entry["description"],
+            difficulty_band=entry["difficulty_band"],
+            keywords=list(entry.get("keywords", [])),
+            question_forms=list(entry.get("question_forms", [])),
+            origin=origin,
         )
-
+        for entry in raw_skills
+    ]
     validate_taxonomy(skills)
     return skills
 
 
 def load_taxonomy(course_id: str, data_dir: Path | None = None) -> list[Skill]:
-    """Load a course's seed taxonomy from data/courses/{course_id}.json.
+    """Load a course's topic list from data/courses/{course_id}.json.
 
     Normalizes every id (including hand-authored ones) and validates the
     result before returning. Raises TaxonomyError on any structural problem.
@@ -185,21 +180,9 @@ def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
     """Load every data/courses/*.json into the DB, re-seeding on file change.
 
     Called once on startup. Safe to call repeatedly: a course is re-seeded
-    only when its JSON file's content hash differs from what was last seeded.
-    Editing a course file and restarting therefore takes effect, instead of
-    being silently ignored because rows already exist.
-
-    Re-seeding deletes and reinserts only that course's origin=SEED rows.
-    Generated skills (origin=GENERATED — from bootstrap_first_skill or any
-    future generation path) are never touched by this function: a course
-    that has both hand-authored and generated skills must survive a restart
-    with its generated skills intact, not have them wiped because the seed
-    file happened to change (or even because it didn't — deleting "every
-    Skill row for this course" was the trap this scoping fixes).
-
-    SkillState is keyed by skill_id and is left untouched regardless, so
-    per-student progress survives; but a seed skill renamed or removed in the
-    edit orphans its SkillState, which is logged rather than dropped quietly.
+    only when its JSON file's content hash differs from what was last seeded
+    -- which includes changes append_skills already applied and recorded, so
+    this does not redo that work.
     """
     directory = data_dir or DATA_DIR
     for path in sorted(directory.glob("*.json")):
@@ -207,40 +190,17 @@ def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
         content_hash = _course_content_hash(path)
 
         version = session.get(CourseTaxonomyVersion, course_id)
-        existing_seed = session.exec(
-            select(Skill).where(
-                Skill.course_id == course_id, Skill.origin == SkillOrigin.SEED
-            )
+        existing = session.exec(
+            select(Skill).where(Skill.course_id == course_id)
         ).all()
-        if version is not None and version.content_hash == content_hash and existing_seed:
+        if version is not None and version.content_hash == content_hash and existing:
             continue
 
         loaded = load_taxonomy(course_id, data_dir=directory)
 
-        if existing_seed:
-            old_ids = {s.id for s in existing_seed}
-            new_ids = {s.id for s in loaded}
-            orphaned = sorted(old_ids - new_ids)
-            if orphaned:
-                stranded = [
-                    skill_id
-                    for skill_id in orphaned
-                    if session.exec(
-                        select(SkillState).where(SkillState.skill_id == skill_id)
-                    ).first()
-                    is not None
-                ]
-                if stranded:
-                    logger.warning(
-                        "re-seeding %s orphaned SkillState for removed/renamed "
-                        "skills (progress preserved but unreachable): %s",
-                        course_id,
-                        stranded,
-                    )
-            for skill in existing_seed:
-                session.delete(skill)
-            session.flush()
-
+        for skill in existing:
+            session.delete(skill)
+        session.flush()
         for skill in loaded:
             session.add(skill)
 
@@ -255,72 +215,62 @@ def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
     session.commit()
 
 
-@dataclass(frozen=True)
-class MergeReport:
-    added: list[str]
-    updated: list[str]
-    blocked_seed_collisions: list[str]
+def append_skills(
+    session: Session, course_id: str, produced: list[Skill], data_dir: Path | None = None
+) -> list[str]:
+    """Add newly-identified topics to a course's skills file, then the DB.
 
-
-def merge_generated(session: Session, course_id: str, produced: list[Skill]) -> MergeReport:
-    """Additively merge a freshly generated (or emergent) batch into a course.
-
-    Upserts by id: a produced skill whose id already belongs to a GENERATED
-    skill updates its describing fields (name, description, difficulty,
-    keywords, question_forms). SkillState is never touched here — it is
-    keyed by skill_id in a different table and survives any update to the
-    Skill row it names. A seed skill is read-only: a produced id colliding
-    with an origin=SEED skill is skipped and logged, never overwritten.
-
-    Nothing already in the course is ever deleted by this function. Removal
-    is a separate, deliberate operation and is out of scope here.
-
-    Validates the graph this merge would *produce* — every existing skill
-    this batch doesn't touch, plus the batch — as one unit, so a new skill's
-    prereq on an existing skill resolves, and so no addition introduces a
-    cycle spanning old and new skills, not just within the new batch.
+    The file is written first and is what a later restart trusts; the DB
+    insert here just means the topic is usable without waiting for one.
+    Skips an id already present -- an existing topic's fields are never
+    rewritten by a later question's read of it. Returns the ids actually
+    added.
     """
-    existing = session.exec(select(Skill).where(Skill.course_id == course_id)).all()
-    existing_by_id = {s.id: s for s in existing}
+    if not produced:
+        return []
 
-    to_apply: list[Skill] = []
-    blocked: list[str] = []
+    directory = data_dir or DATA_DIR
+    path = directory / f"{course_id}.json"
+    raw = (
+        json.loads(path.read_text(encoding="utf-8"))
+        if path.exists()
+        else {"course_id": course_id, "skills": []}
+    )
+    existing_ids = {normalize_slug(course_id, entry["id"]) for entry in raw["skills"]}
+
+    added: list[Skill] = []
     for skill in produced:
-        current = existing_by_id.get(skill.id)
-        if current is not None and current.origin != SkillOrigin.GENERATED:
-            blocked.append(skill.id)
+        if skill.id in existing_ids:
             continue
-        to_apply.append(skill)
-
-    if blocked:
-        logger.warning(
-            "merge_generated for %s: %d produced skill(s) collided with "
-            "non-generated (seed) skill ids and were not applied: %s",
-            course_id,
-            len(blocked),
-            blocked,
+        raw["skills"].append(
+            {
+                "id": skill.id,
+                "name": skill.name,
+                "description": skill.description,
+                "difficulty_band": skill.difficulty_band,
+                "keywords": skill.keywords,
+                "question_forms": skill.question_forms,
+            }
         )
+        existing_ids.add(skill.id)
+        added.append(skill)
 
-    apply_ids = {s.id for s in to_apply}
-    resulting = [s for s in existing if s.id not in apply_ids] + to_apply
-    validate_taxonomy(resulting)
+    if not added:
+        return []
 
-    added: list[str] = []
-    updated: list[str] = []
-    for skill in to_apply:
-        current = existing_by_id.get(skill.id)
-        if current is None:
-            session.add(skill)
-            added.append(skill.id)
-        else:
-            current.name = skill.name
-            current.description = skill.description
-            current.difficulty_band = skill.difficulty_band
-            current.prereqs = skill.prereqs
-            current.keywords = skill.keywords
-            current.question_forms = skill.question_forms
-            session.add(current)
-            updated.append(skill.id)
+    raw["skills"].sort(key=lambda entry: entry["id"])
+    path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
 
+    content_hash = _course_content_hash(path)
+    version = session.get(CourseTaxonomyVersion, course_id)
+    if version is None:
+        session.add(CourseTaxonomyVersion(course_id=course_id, content_hash=content_hash))
+    else:
+        version.content_hash = content_hash
+        session.add(version)
+
+    for skill in added:
+        session.add(skill)
     session.commit()
-    return MergeReport(added=added, updated=updated, blocked_seed_collisions=blocked)
+
+    return [s.id for s in added]

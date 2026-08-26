@@ -23,7 +23,6 @@ VALID_SKILL = {
     "name": "Chain rule",
     "description": "Differentiate a composite function.",
     "difficulty_band": 0.5,
-    "prereqs": [],
     "keywords": ["composite function"],
     "question_forms": ["differentiate a nested expression"],
 }
@@ -58,22 +57,6 @@ def test_persistently_invalid_source_ids_fail_closed():
     with pytest.raises(QuestionWorkflowError):
         asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
     assert workflow.attempts == 2
-
-
-def test_a_skill_may_resolve_a_prereq_against_existing_skills():
-    entry = {**VALID_SKILL, "id": "s1", "prereqs": ["calc1.limits.evaluation"]}
-    workflow = Harness([
-        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [entry]},
-    ])
-    result = asyncio.run(
-        workflow.run(
-            chunks=CHUNKS,
-            question_request="Conceptual",
-            existing_skills=[{"id": "calc1.limits.evaluation", "name": "Limits"}],
-        )
-    )
-    assert result.skills[0].prereqs == ["calc1.limits.evaluation"]
-    assert workflow.attempts == 1
 
 
 def test_more_than_four_skills_is_rejected():

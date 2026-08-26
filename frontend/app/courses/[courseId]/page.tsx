@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SpaceGrid } from "@/features/spaces/SpaceGrid";
 import { CourseMaterials } from "@/features/materials/CourseMaterials";
-import { PracticeNextSkill } from "@/features/materials/PracticeNextSkill";
 import { getCourse } from "@/lib/spaces/courses";
 
 export default async function CoursePage({
@@ -26,7 +25,6 @@ export default async function CoursePage({
         <h1 className="mt-1 text-3xl font-bold text-slate-950">{course.name}</h1>
         <p className="mt-1 text-slate-600">{course.description}</p>
       </header>
-      <PracticeNextSkill courseId={course.id} />
       <CourseMaterials courseId={course.id} />
       <SpaceGrid courseId={course.id} />
     </main>

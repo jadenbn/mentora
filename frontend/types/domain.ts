@@ -6,14 +6,11 @@ export interface Course {
   description: string;
 }
 
-/** What the learning engine picked this problem for. Only present on a
- * problem generated via next-problem — a problem generated from a manually
- * chosen document has no skill attribution. */
+/** The topic this generated problem was attributed to, if any --
+ * unattributed for a problem the engine could not tie to a topic. */
 export interface ProblemSkill {
   skillId: string;
   skillName: string;
-  targetDifficulty: number;
-  isReview: boolean;
 }
 
 export interface Problem {

@@ -13,6 +13,7 @@ from app.api.tutor import get_tutor_service
 from app.db import engine
 from app.main import app
 from app.models.skill_state import SkillState
+from app.services.accuracy import accuracy
 from app.services import attribution
 from app.services.taxonomy import seed_all_courses
 from app.schemas.documents import ChunkMetadata, DocumentType
@@ -95,7 +96,7 @@ def test_a_correct_mark_records_an_attempt_the_client_never_scored(seeded):
     assert "calc1.derivatives.chain-rule" in body["attempt"]["updated_skills"]
     with Session(engine) as s:
         state = s.get(SkillState, ("stu1", "calc1.derivatives.chain-rule"))
-        assert state.mastery > 0.5  # a correct attempt raised it
+        assert accuracy(state.recent_outcomes) == pytest.approx(1.0)
         assert state.attempts == 1
 
 

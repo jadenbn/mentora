@@ -129,7 +129,7 @@ class TestApiKeyGate:
         with TestClient(app) as client:
             assert client.get("/health").status_code == 200
             assert client.get(
-                "/api/courses/calc1/student-model", params={"student_id": "s"}
+                "/api/courses/calc1/skills-overview", params={"student_id": "s"}
             ).status_code == 200
 
     def test_a_configured_key_is_required_on_api_routes(self, monkeypatch):
@@ -140,12 +140,12 @@ class TestApiKeyGate:
         monkeypatch.setenv("MENTORA_API_KEY", "secret")
         with TestClient(app) as client:
             unauthorized = client.get(
-                "/api/courses/calc1/student-model", params={"student_id": "s"}
+                "/api/courses/calc1/skills-overview", params={"student_id": "s"}
             )
             assert unauthorized.status_code == 401
 
             authorized = client.get(
-                "/api/courses/calc1/student-model",
+                "/api/courses/calc1/skills-overview",
                 params={"student_id": "s"},
                 headers={"x-api-key": "secret"},
             )

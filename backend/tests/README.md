@@ -22,37 +22,35 @@ RUN_LIVE_GEMINI=1 python -m pytest -q -m live -s
 | `test_tutor_workflow.py` | direct provider request, schema dialect, repair, failure translation | google-genai |
 | `test_database.py` | additive SQLite schema, document replacement, problem grounding | sqlite3 |
 | `test_documents_api.py` | document upload validation and listing | fastapi |
-| `test_question_service.py` | bounded context selection and grounded persistence | pydantic |
 | `test_question_workflow.py` | direct provider request, source-id validation, bounded repair | google-genai |
-| `test_questions_api.py` | generated-problem HTTP contract and safe failures | fastapi |
 | `test_embeddings.py` | chunk embedding; text stays in SQLite, never in metadata | — |
 | `test_retrieval.py` | Pinecone ranking joined to canonical SQLite chunk text | — |
 | `test_live_gemini.py` | opt-in real request | credentials |
 
 ### Learning engine
 
+The engine has no user-facing surface — it's consulted implicitly inside
+question generation. These tests are all service-layer or dev-API; there is
+no "next problem" route to test because there is no such route.
+
 | File | Covers | Needs |
 | --- | --- | --- |
-| `test_mastery.py` | the pure update rules, as **properties** — bounds, monotonicity, decay | hypothesis |
-| `test_taxonomy.py` | slug normalization, validation, cycle detection, seeding, `merge_generated` | — |
-| `test_skill_generation.py` | cold-start bootstrap: one skill, one document, no documents | — |
-| `test_taxonomy_workflow.py` | the taxonomy provider adapter's direct request and repair | google-genai |
-| `test_selection.py` | unlock gating, priority, recency penalty, the forced-review floor | — |
-| `test_student_model_service.py` | attribution, idempotency, mastery updates, prereq bleed, decay | — |
-| `test_skills_overview.py` | the dashboard view: all skills, unlock state, seed defaults | — |
-| `test_proposals.py` | the quarantine: recording, merging near-duplicates, promotion | — |
+| `test_taxonomy.py` | normalization, validation, `canonical_key`, seeding, `append_skills` | — |
+| `test_selection.py` | topic priority: coverage vs weakness, recency, difficulty | — |
+| `test_student_model_service.py` | the rolling accuracy window, idempotency, the overview query | — |
+| `test_skills_overview.py` | the dashboard view: every topic, origin, recency | — |
 | `test_attribution.py` | which skills a problem counts toward; unknown ids dropped | — |
+| `test_question_service.py` | the piggyback: attribution, new-topic creation, name-similarity match | pydantic |
+| `test_questions_api.py` | the one generation route: implicit topic pick, HTTP contract | fastapi |
 | `test_work_api.py` | server-side grading: the client scores nothing | fastapi |
-| `test_closed_loop.py` | select → generate → tag → grade → record, end to end at the service layer | — |
-| `test_next_problem_bootstrap.py` | the cold-start branch: bootstrap one skill, then retry selection | fastapi |
+| `test_closed_loop.py` | pick topic → generate → tag → grade → record, end to end at the service layer | — |
 | `test_dev_api.py` | the dashboard page and the skills-import endpoint | fastapi |
-| `test_proposals_api.py` | listing and reviewing proposals over HTTP | fastapi |
 
 ## Why the dependency column matters
 
-Only the tutor, question, and taxonomy provider adapters may import
-`google.genai`. Everything else — schemas, policy, services, database, and APIs
-— remains testable without making a provider call.
+Only the tutor and question provider adapters may import `google.genai`.
+Everything else — schemas, policy, services, database, and APIs — remains
+testable without making a provider call.
 
 That constraint is a design constraint, not a testing trick: it forces the
 `TutorWorkflow` port to be declared by the service that consumes it rather than
@@ -78,66 +76,72 @@ For what the engine *is*, read `docs/LEARNING_ENGINE.md`. This section is how to
 verify it.
 
 ```bash
-python -m pytest -q tests/test_mastery.py tests/test_taxonomy.py \
-  tests/test_selection.py tests/test_student_model_service.py \
-  tests/test_skill_generation.py tests/test_skills_overview.py \
-  tests/test_proposals.py tests/test_attribution.py tests/test_closed_loop.py \
-  tests/test_work_api.py tests/test_next_problem_bootstrap.py tests/test_dev_api.py
+python -m pytest -q tests/test_taxonomy.py tests/test_selection.py \
+  tests/test_student_model_service.py tests/test_skills_overview.py \
+  tests/test_attribution.py tests/test_question_service.py \
+  tests/test_questions_api.py tests/test_closed_loop.py \
+  tests/test_work_api.py tests/test_dev_api.py
 ```
 
-**None of these spend a provider call.** Every one runs against an in-memory
-SQLite database with a stubbed workflow, so the whole engine is exercisable with
-no `GEMINI_API_KEY` set.
+**None of these spend a provider call.** Every one runs against an isolated
+temporary SQLite database with a stubbed workflow, so the whole engine is
+exercisable with no `GEMINI_API_KEY` set.
 
-## The four layers, and what each one is for
+`conftest.py` points `MENTORA_DB_PATH` and `MENTORA_COURSE_DATA_DIR` at temp
+locations before the first `import app.*` and rebuilds the DB schemas and a
+fresh copy of `data/courses/*.json` around each test, so the suite never
+touches `backend/mentora.db` or the real, git-tracked skills files — that
+second guard matters here specifically because `append_skills` *writes* to
+the skills file, unlike anything on the tutor/question side used to. **The
+suite must pass twice in a row** — that is the check that catches a test
+leaking state, which is how two fixture skills once ended up permanently in
+the development database.
 
-The engine is tested in layers, deliberately. Each answers a question the layer
-below it can't.
+## What each layer answers
 
-### 1. Is the math right? — `test_mastery.py`
+### Is one service right? — the unit tests
 
-`services/mastery.py` is pure — no DB, no I/O — so it is tested with
-**hypothesis property tests** rather than examples. Properties, not cases:
-mastery never escapes `[0.02, 0.98]` for any input; a perfect score never
-decreases mastery and a zero score never increases it; the update is monotonic
-in score; the learning rate is non-increasing in attempts; expected score is
-exactly 0.5 at mastery/difficulty parity and falls as difficulty rises; decay is
-the identity at zero elapsed days and moves toward 0.5 without overshooting.
+Each builds the smallest graph that isolates one rule and asserts on it:
 
-This is the layer to extend when you change a constant, because a property that
-holds for all inputs catches the case you wouldn't have thought to write.
-
-### 2. Is one service right? — the unit tests
-
-Each takes an in-memory SQLite session, builds the smallest graph that isolates
-one rule, and asserts on it:
-
-- **`test_selection.py`** — build a prereq DAG, set masteries, assert *which
-  skill comes back*. Locked skills stay unserved; the recency penalty pushes off
-  the just-served skill; three weak picks in a row force a review.
-- **`test_student_model_service.py`** — attribution and idempotency. An attempt
-  naming a skill outside the course 400s; re-posting the same problem returns
-  the original attempt rather than moving mastery twice.
-- **`test_proposals.py`** — the quarantine. A model-named skill the course lacks
-  becomes a pending proposal, never a `Skill`; repeats accumulate on one row; a
-  near-duplicate merges into the existing skill and a genuine gap is promoted.
+- **`test_selection.py`** — set per-topic accuracy, assert *which topic comes
+  back*. An untouched topic beats a mastered one (coverage); a topic the
+  student is actively failing beats an untouched one (weakness beats
+  coverage); the recency penalty pushes off the just-served topic; difficulty
+  tracks accuracy once there's enough signal and defaults otherwise.
+- **`test_student_model_service.py`** — the rolling window. A correct
+  unassisted attempt scores 1.0, hinted lower, incorrect 0.0; the window caps
+  at 8 outcomes while the attempt count keeps growing; re-posting the same
+  problem returns the original attempt rather than moving accuracy twice.
 - **`test_attribution.py`** — what a problem is attributed to, and that an id
-  outside the taxonomy is dropped with a warning rather than stored.
-- **`test_taxonomy.py`** — the largest file (25 tests) because it's the widest
-  input surface: normalization is idempotent, cycles are caught with the path
-  named, seed skills survive a re-seed, `merge_generated` blocks a seed
-  collision and validates the *resulting* graph rather than just the batch.
-- **`test_skills_overview.py`** — untouched skills appear at seed mastery rather
-  than being omitted, and the view survives a failing `select_next`.
+  outside the topic list is dropped with a warning rather than stored.
+- **`test_taxonomy.py`** — normalization is idempotent; `canonical_key`
+  collapses reworded names to the same key; `append_skills` writes the file
+  before the DB and never overwrites an existing id; re-seeding after
+  `append_skills` doesn't lose what it added.
+- **`test_skills_overview.py`** — untouched topics appear with `accuracy:
+  None` rather than being omitted; origin and recency are exposed for the
+  dashboard.
 
-### 3. Does the loop close? — `test_closed_loop.py`
+### Does the piggyback actually create topics safely? — `test_question_service.py`
+
+The widest surface in the suite, because it's where a model's free-text
+output turns into schema. A named topic that already exists is attributed,
+not duplicated; a genuinely new one is created *and lands in the skills
+file*, not just the DB; the same topic named across repeated calls creates
+exactly one row; a reworded name ("The Chain Rule" vs "chain rule") resolves
+to the existing topic via `canonical_key`, not a duplicate; a seed topic is
+never overwritten; a malformed batch (two entries colliding after
+normalization) costs the model's own attribution, never the student's
+problem.
+
+### Does the loop close? — `test_closed_loop.py`
 
 One test, and the most valuable in the suite.
 
-It runs `select_next → render request → generate (stubbed) → set_problem_skills
-→ grade → record_attempt` and asserts that mastery moved **for the skill
-selection actually chose** — proving the server-side attribution path holds end
-to end, not just that each half works alone.
+It runs `pick_topic → generate (stubbed) → set_problem_skills → grade →
+record_attempt` and asserts that accuracy moved **for the topic selection
+actually chose** — proving the server-side attribution path holds end to end,
+not just that each half works alone.
 
 If you break the `ProblemSkill` bridge, this is what catches it. Keep it
 passing.
@@ -147,92 +151,34 @@ grades server-side, takes difficulty from what generation recorded rather than
 from the request, records nothing for a hint or an unreadable canvas, and
 answers a repeated mark with the original attempt.
 
-`test_next_problem_bootstrap.py` covers the same route's cold-start branch:
-a course with documents but zero skills bootstraps exactly one skill and retries
-selection. The route function is called directly with dependencies passed in and
-`bootstrap_first_skill` stubbed, so there's still no provider call.
-
-### 4. Does the *policy* work on a real student? — `scripts/simulate.py`
-
-The layer unit tests structurally cannot reach.
-
-A unit test asserts one decision in isolation. It cannot tell you whether
-mastery converges to true ability **under the actual selection policy** — which
-matters because selection always serves difficulty above current mastery, so the
-estimator and the sequencer are coupled. Nor can it tell you whether some
-reachable skill is quietly starved by the priority formula over hundreds of
-attempts.
-
-`simulate.py` drives the real `select_next()` and real `record_attempt()`
-against the real 15-skill `calc1` taxonomy, samples outcomes from a hidden
-true-ability model, and simulates the passage of time (batched sessions across
-days, with gaps) so read-time decay is exercised the way it is for a student who
-doesn't practice daily. Timestamps are corrected after each write rather than by
-monkeypatching clocks, so the services under test run **unmodified**.
-
-```bash
-python scripts/simulate.py
-# 5 archetypes x 3 trials x 600 attempts.
-# Gates on: mastery MAE, rank correlation, skill starvation,
-# selection stalls, and whether forced review ever fires.
-# Exit 0 = all checks passed, 1 = a check failed, 2 = unknown archetype.
-
-python scripts/simulate.py --seed 7 --trials 5
-# Same suite, different seed, more trials. Run this FIRST when a
-# threshold fails — it separates a real regression from sampling noise.
-
-python scripts/simulate.py --archetype weak --attempts 800 --verbose
-# Drill into one archetype with a per-skill table:
-# depth, attempts, final mastery, hidden true ability.
-
-python scripts/simulate.py --journey
-# Narrate one novice-to-master run where true ability RISES with
-# practice. The suite's thresholds don't apply; it passes only if
-# every skill ends above the mastery bar.
-```
-
-Archetypes: `average`, `strong`, `weak`, `uneven_advanced_gap`, `hint_farmer`.
-
-`uneven_advanced_gap` is the one that matters most for the review floor — it's
-the only archetype that has mastered shallow skills to review while still
-struggling on deep ones, so it's the only one where forced review *can* fire.
-`weak` and `hint_farmer` have nothing above the review threshold at this attempt
-budget, by construction.
-
-**Run `simulate.py` whenever you change a constant in `mastery.py` or
-`selection.py`.** The unit tests will still pass — they assert local behavior —
-while convergence quietly degrades. This is the tool that justified lowering
-`ALPHA_FLOOR` from 0.15 to 0.03 (late-stage oscillation down ~3–4×), and it's
-the only thing that would have shown that.
+`test_questions_api.py` covers the route itself: an empty request lets the
+engine pick a topic; a typed request keeps the student's topic and only gets
+a difficulty level appended; `required_skill_id` is set only in the
+implicit-topic case.
 
 ## Testing by hand
 
 Start the server and open **`http://localhost:8000/dev/dashboard`**.
 
-Every skill in the course, with mastery bars, unlock state, origin, and buttons
-to fire synthetic correct/partial/incorrect attempts against the currently
-selected skill. It hits the same JSON APIs a real client would, so watching
-mastery move there is watching the real loop run.
+Every topic in the course, with an accuracy bar, origin, and buttons to fire
+synthetic correct/partial/incorrect attempts against a selected topic. It
+hits the same JSON APIs a real client would.
 
-To test a **specific graph shape** without spending a model call, post a raw
-taxonomy straight in:
+To test a **specific topic list** without spending a model call, post a raw
+batch straight into a course's skills file:
 
 ```bash
 curl -X POST localhost:8000/dev/courses/scratch/skills/import \
   -H 'content-type: application/json' \
-  -d '{"skills":[{"id":"a","name":"A","description":"root",
-        "difficulty_band":0.3,"prereqs":[]},
-       {"id":"b","name":"B","description":"needs A",
-        "difficulty_band":0.6,"prereqs":["a"]}]}'
+  -d '{"skills":[{"id":"a","name":"A","description":"topic a",
+        "difficulty_band":0.3},
+       {"id":"b","name":"B","description":"topic b",
+        "difficulty_band":0.6}]}'
 ```
 
-It runs the same `build_taxonomy → merge_generated` path real generation uses,
-so a pasted taxonomy is validated and merged exactly like a generated one. Seed
-skills stay protected.
-
-For a **cheap look at selection alone**, `GET /api/courses/{id}/next-problem-spec?student_id=x`
-returns what the engine would target without generating anything — no model
-call, no cost.
+It runs the same `build_taxonomy → append_skills` path the piggyback uses, so
+a pasted batch is validated and appended exactly like a model-identified one.
+An id that already exists is skipped, not overwritten.
 
 ## Writing a new learning-engine test
 
@@ -247,17 +193,18 @@ def session():
         yield s
 ```
 
-In-memory, per-test, no shared state, no fixture file to keep in sync. Build the
-smallest graph that isolates the rule you're testing — `test_selection.py`'s
-`_skill()` helper is the pattern.
+In-memory, per-test, no shared state. Build the smallest graph that isolates
+the rule you're testing — `test_selection.py`'s `_skill()`/`_state()` helpers
+are the pattern.
 
-Two rules:
+**If your test calls `append_skills` (directly, or via the piggyback in
+`question_service`), don't assume it's safe by default** — it writes to
+`app.services.taxonomy.DATA_DIR`, which `conftest.py` already points at an
+isolated temp copy for the whole suite. You don't need to do anything extra
+for isolation; you do need to know that a test asserting on-disk file content
+(`test_question_service.py`'s piggyback tests) is reading `DATA_DIR`, not the
+real `backend/data/courses/`.
 
-**Never let a learning-engine test import `google.genai`.** The taxonomy
-workflow adapter is the only module in the engine allowed to, and
-`test_taxonomy_workflow.py` is the only test that touches it. Everything else
-stubs the `TaxonomyWorkflow` protocol.
-
-**Assert on behavior, not on constants.** `assert chosen.id == "calc1.limits"`
-survives a weight tweak; `assert priority == 0.62` does not, and re-encodes the
-implementation into the test.
+**Assert on behavior, not on constants.** `assert topic.skill_id ==
+"calc1.limits"` survives a weight tweak; `assert priority == 0.62` does not,
+and re-encodes the implementation into the test.

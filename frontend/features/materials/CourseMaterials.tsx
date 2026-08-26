@@ -7,6 +7,7 @@ import {
   listCourseDocuments,
   uploadCourseDocument,
 } from "@/lib/api/api";
+import { getStudentId } from "@/lib/student/identity";
 import { createSpace } from "@/lib/spaces/store";
 import type { CourseDocument, DocumentType } from "@/types/domain";
 
@@ -79,16 +80,16 @@ export function CourseMaterials({ courseId }: { courseId: string }) {
 
   async function handleGenerate(document: CourseDocument) {
     if (generatingId) return;
+    // Empty is a valid request: the engine picks a topic itself instead of
+    // grounding the student's own description. There is no separate
+    // "practice next topic" button -- this is that feature, implicit.
     const questionRequest = questionRequests[document.document_id]?.trim() ?? "";
-    if (!questionRequest) {
-      setError("Describe the kind of question you want generated.");
-      return;
-    }
     setGeneratingId(document.document_id);
     setError(null);
     try {
       const problem = await generateCourseQuestion(
         courseId,
+        getStudentId(),
         document.document_id,
         questionRequest,
       );
@@ -178,16 +179,13 @@ export function CourseMaterials({ courseId }: { courseId: string }) {
                       [document.document_id]: event.target.value,
                     }))
                   }
-                  placeholder="e.g. A difficult conceptual chain-rule question"
+                  placeholder="Optional — describe a question, or leave blank to let it pick a topic"
                   type="text"
                   value={questionRequests[document.document_id] ?? ""}
                 />
                 <button
                   className="shrink-0 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:text-slate-400"
-                  disabled={
-                    generatingId !== null ||
-                    !(questionRequests[document.document_id]?.trim())
-                  }
+                  disabled={generatingId !== null}
                   onClick={() => void handleGenerate(document)}
                   type="button"
                 >

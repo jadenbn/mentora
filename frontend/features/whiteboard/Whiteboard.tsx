@@ -28,7 +28,6 @@ import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { ProblemCard } from "@/features/problems/ProblemCard";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { clearAiShapes } from "@/lib/annotations/renderCanvasActions";
-import { type AttemptOutcome } from "@/lib/api/api";
 import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
 import { saveCanvas } from "@/lib/canvas/persistence";
 import { removeLegacyProblemShape } from "@/lib/problems/renderProblem";
@@ -102,27 +101,6 @@ function TutorResult({
   );
 }
 
-/** Surfaces the one thing "mark" changed server-side: this skill's mastery. */
-function MasteryUpdate({
-  outcome,
-  skillId,
-  skillName,
-}: {
-  outcome: AttemptOutcome | null;
-  skillId: string | undefined;
-  skillName: string | undefined;
-}) {
-  if (!outcome || !skillId || !(skillId in outcome.updatedSkills)) {
-    return null;
-  }
-  const mastery = outcome.updatedSkills[skillId];
-  return (
-    <p className="mt-2 rounded-lg border border-[#cbd9cf] bg-[#eef5ef] px-3 py-2 text-xs font-semibold text-[#2f5a41]">
-      {skillName ?? skillId} mastery → {mastery.toFixed(2)}
-    </p>
-  );
-}
-
 function CanvasPanel({
   host,
   onAnalyze,
@@ -130,9 +108,6 @@ function CanvasPanel({
   busyMode,
   response,
   error,
-  attemptOutcome,
-  skillId,
-  skillName,
 }: {
   host: HTMLElement | null;
   onAnalyze: (mode: TutorMode) => void;
@@ -140,9 +115,6 @@ function CanvasPanel({
   busyMode: TutorMode | null;
   response: TutorResponse | null;
   error: string | null;
-  attemptOutcome: AttemptOutcome | null;
-  skillId: string | undefined;
-  skillName: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -191,7 +163,6 @@ function CanvasPanel({
             />
           </div>
           <TutorResult error={error} response={response} />
-          <MasteryUpdate outcome={attemptOutcome} skillId={skillId} skillName={skillName} />
         </section>
 
         <section className="mt-6 border-t border-[#e2dfd6] pt-5">
@@ -238,7 +209,6 @@ export function Whiteboard({
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
   const [response, setResponse] = useState<TutorResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [attemptOutcome, setAttemptOutcome] = useState<AttemptOutcome | null>(null);
 
   const handleAnalyze = useCallback(
     async (mode: TutorMode) => {
@@ -252,9 +222,9 @@ export function Whiteboard({
 
       try {
         // The server grades and records in one call for a skill-attributed
-        // problem; `attempt` comes back null when nothing was recorded (a
-        // hint, an unreadable canvas, or a problem already marked).
-        const { response: result, attempt } = await runTutorAnalysis({
+        // problem; the engine has no UI, so nothing about what it recorded
+        // is surfaced here.
+        const result = await runTutorAnalysis({
           editor: current,
           mode,
           courseId,
@@ -267,9 +237,6 @@ export function Whiteboard({
 
         if (mode === "hint") {
           hintCount.current += 1;
-        }
-        if (attempt) {
-          setAttemptOutcome(attempt);
         }
       } catch (caught) {
         setResponse(null);
@@ -291,7 +258,6 @@ export function Whiteboard({
     }
     setResponse(null);
     setError(null);
-    setAttemptOutcome(null);
   }, []);
 
   // Autosave outlives any single render, so tear it down when the space closes.
@@ -354,15 +320,12 @@ export function Whiteboard({
             <CanvasToolbar />
             <SaveIndicator visible={justSaved} />
             <CanvasPanel
-              attemptOutcome={attemptOutcome}
               busyMode={busyMode}
               error={error}
               host={drawerHost}
               onAnalyze={handleAnalyze}
               onClear={handleClear}
               response={response}
-              skillId={problem?.skill?.skillId}
-              skillName={problem?.skill?.skillName}
             />
           </Tldraw>
         </div>

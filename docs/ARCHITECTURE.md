@@ -803,164 +803,133 @@ If the architecture supports this cleanly, it is serving the product.
 
 The backend is the merge of two halves: the **tutor product** (Gemini
 whiteboard tutor, grounded question generation, Pinecone retrieval, document
-repository — everything above) and the **adaptive learning engine** (a skill
-DAG, per-student mastery estimation, a selection policy, and a closed-loop
-simulator). This section describes how they connect; the halves themselves
-are documented above and in `TUTOR_AGENT.md`.
+repository — everything above) and the **learning engine**, which has no
+surface of its own. It is the tutor's brain: a per-course topic list and a
+per-student read of how they're doing on each one, consulted implicitly
+during question generation. There is no student-facing "next problem" screen
+and no mastery score shown anywhere — see `docs/LEARNING_ENGINE.md` for the
+full design, this section is only how the two halves connect.
 
-### 47.1 Two persistence layers, one file — deliberately
+### 47.1 Two persistence layers, one file
 
-Two ORMs open the same `backend/mentora.db`, and they are *not* unified:
+Two ORMs open the same `backend/mentora.db`:
 
 ```text
-app/db.py        SQLModel engine   -> skill, skill_state, student_profile,
-                                       attempt, course_taxonomy_version
+app/db.py        SQLModel engine   -> skill, skill_state, attempt,
+                                       problem_skill, course_taxonomy_version
 app/database.py  raw sqlite3       -> course_documents, document_chunks,
                  CourseRepository     generated_problems,
-                                       problem_grounding_chunks, problem_skills
+                                       problem_grounding_chunks,
+                                       problem_difficulty
 ```
 
-Their table sets are disjoint and both are well tested; merging them would be
-churn for no user-visible gain. Two rules keep the arrangement safe:
+`ProblemSkill` -- which skill(s) a generated problem counts toward -- lives in
+the SQLModel layer specifically so `skill_id` can carry a real foreign key to
+`skill.id`; that guarantee is worth a dedicated table and is why this table
+moved out of the raw layer. Documents, chunks, and generated problems stay
+raw: content-addressed blob storage, not something either the topic list or
+attempts logic ever join against directly.
+
+Two rules keep the split safe:
 
 - **One source of truth for the path.** Both resolve `MENTORA_DB_PATH` through
-  `app.config.database_path()`; `app/db.py` no longer has its own copy.
+  `app.config.database_path()`.
 - **Survive two writers.** Each layer enables `PRAGMA journal_mode=WAL` and
-  `PRAGMA busy_timeout=5000`, so two independent connection pools on one SQLite
-  file do not trip `database is locked`.
+  `PRAGMA busy_timeout=5000`; the SQLModel engine also enables
+  `PRAGMA foreign_keys=ON` (off by default in SQLite, which would make
+  `ProblemSkill`'s FK a comment rather than a constraint).
 
-There is deliberately **no foreign key across the boundary** — e.g.
-`problem_skills.skill_id` (raw layer) is not an FK to `skill.id` (SQLModel
-layer). `skill_id` is validated in the service instead.
+### 47.2 The loop
 
-Because `SQLModel.metadata.create_all()` does not migrate an existing table,
-schema changes to the SQLModel tables (such as the `skill` columns in §47.3)
-require deleting and re-seeding the dev `mentora.db`.
-
-### 47.2 The closed loop
-
-`POST /api/courses/{course_id}/next-problem` runs the whole cycle:
+There is one generation route, `POST /api/courses/{course_id}/questions/generate`,
+and the engine is consulted inside it rather than through a route of its own:
 
 ```text
-selection.select_next()        -> GenerationSpec (skill, difficulty, forms,
-                                    retrieval_query) or 404 if nothing unlocked
-retrieval.search_course()      -> rank course chunks by the spec's query;
-                                    the top chunk's document is the target
-QuestionService.generate()     -> a grounded problem in that document, from a
-                                    request string rendered from the spec
-repository.set_problem_skills()-> a problem_skills row tying problem -> skill
-return { problem, spec }        -> client posts the attempt back by problem_id
+student types a request, or leaves it blank
+        |
+        +-- blank -> selection.pick_topic()   picks a topic + difficulty from
+        |                                       this student's per-topic accuracy
+        +-- typed -> profile.get_profile()    contributes a difficulty level
+        |                                       from overall accuracy; the
+        |                                       student's own topic wins
+        v
+QuestionService.generate()      a grounded problem; the model also names the
+                                  skill(s) it thinks the question exercises
+        |
+        +-- names an existing topic  -> attributed to it
+        +-- names something new      -> appended to the course's skills file
+        |                                and inserted (the piggyback)
+        v
+attribution.set_problem_skills() + repository.set_problem_difficulty()
+        |
+        v
+POST /work        the student's canvas; the tutor grades it server-side and
+                    record_attempt() updates the topic's rolling accuracy window
 ```
 
-The attempt then flows back through `POST /attempts` ->
-`student_model_service.record_attempt` -> mastery moves. Crucially, when the
-attempt names a problem we generated, **`expected_skills` is derived
-server-side from `problem_skills`**, not taken from the client payload; the
-client's list is only a cross-checked hint (logged on disagreement). This
-closes a trust gap where a client could attribute any attempt to any skill and
-move that mastery.
+**The client never scores its own work.** `POST /work` replaced an earlier
+`POST /attempts` that took `correct` straight from the browser; the tutor's own
+reading of the canvas decides the outcome now, and difficulty is read back from
+`problem_difficulty` rather than restated by the client. `POST
+/dev/courses/{id}/attempts` still takes a stated outcome, and its docstring
+says why that is fine there and nowhere else: it drives the dashboard without a
+canvas or a model call.
 
-### 47.3 Skills-to-material bridge
+### 47.3 Topics are flat, and can only grow through the piggyback
 
-The two halves met with a gap: selection picks a *skill*; generation needs a
-*document* and a sentence of intent. Two additions close it:
+There is no prerequisite graph and no unlock gate. An earlier gated design
+(mastery estimate + a fixed unlock threshold) starved a real demo course — an
+average student's estimate correctly settled at their true ability, which sat
+below the gate, so they never reached most of the material. A flat pool scored
+by weakness and staleness (`services/selection.py`) doesn't have that failure
+mode.
 
-- **`keywords` and `question_forms`** — optional JSON columns on `Skill`,
-  authored per skill in `data/courses/*.json`. `keywords` supply the
-  textbook's own vocabulary for `search_course`; `question_forms` populate
-  `GenerationSpec.avoid_forms`. Both default empty, so existing course files
-  stay valid. `seed_all_courses` re-seeds a course when its file's content
-  hash changes (tracked in `course_taxonomy_version`), instead of skipping it
-  once rows exist; a renamed/removed skill orphans its `SkillState`, which is
-  logged rather than dropped.
-- **`problem_skills`** — the raw-layer bridge table recording which skill(s)
-  each generated problem targets, populated by the `next-problem` route and
-  read back by `record_attempt`.
+**A topic can only be added by `QuestionService._attribute_skills`.** Every
+question the model generates also names the topic(s) it exercises. Each name
+resolves three ways, in order: an exact normalized-id match; a
+name-similarity match (`taxonomy.canonical_key` — same significant words,
+any order, case, or article, so "the chain rule" and "chain rule" collapse to
+one topic without an embedding call); or, if neither matches, a genuinely new
+topic. New topics go through `build_taxonomy` — the same normalizer and
+validator every topic source uses — and then `taxonomy.append_skills`, which
+writes the new entry into `data/courses/{course_id}.json` before inserting it,
+so the file stays the source of truth and the DB its mirror.
 
-### 47.4 Known granularity gap
+A malformed batch (e.g. two entries that collide after normalization) raises
+`TaxonomyError` inside `_attribute_skills`; it is caught and logged there, and
+the student still gets their problem, attributed only to whatever topic
+selection required.
 
-`attempt_grading` can only tag a wrong answer `CONCEPTUAL_ERROR`, because
-`TutorResponse` carries nothing finer than correct / incorrect / partial /
-uncertain. This flattens the `MisconceptionTag` vocabulary and limits what
-`selection.target_misconception` can surface. Closing it means having the
-tutor's single model call emit a misconception directly (extending
-`TutorPlan`, its response schema, and the prompt) — a change owned by the
-tutor path, deferred as the most prompt-delicate work in the repo. §47.5
-below leans on this same schema-extension idea for skill discovery, not just
-misconception tagging.
+### 47.4 Cold start
 
-### 47.5 Skill generation: cold-start bootstrap, deferred piggyback growth
+A brand-new course has no topics and nothing to select. `pick_topic` returns
+`None` in that case, and the route falls back to "write a question grounded
+in this material" with no required topic — the model's own read of the
+document seeds the first one or two topics through the ordinary piggyback
+path. Every generation after that has topics to select from. There is no
+separate bootstrap call.
 
-A course only has skills where someone put them: `data/courses/*.json` for
-the four built-in courses, or generation for an uploaded one. Two things
-worth naming: how a skill gets proposed, and how that proposal gets merged
-in without disturbing anything a student has already touched.
+### 47.5 What was cut, and why
 
-**`app.services.taxonomy.build_taxonomy(course_id, raw_skills, origin)`** is
-the single builder every taxonomy source uses — hand-authored course JSON
-(`origin=SEED`) and LLM output (`origin=GENERATED`) both normalize ids,
-resolve prereqs, and validate through the exact same `validate_taxonomy`, so
-a generated skill is held to the same rules a seeded one is. `load_taxonomy`
-is just `build_taxonomy(..., SEED)` over a file's raw dicts.
+An earlier version of this engine was a small adaptive-learning platform: an
+Elo/IRT mastery estimator with read-time decay and a confidence function, a
+skill DAG with unlock gating and prerequisite bleed, a forced-review floor, a
+dedicated LLM taxonomy-generation path, and a proposal-and-review queue for
+new skills (observation counts, embedding-based deduplication, a promotion
+step). All of it is gone. Two reasons converged:
 
-**`app.services.taxonomy.merge_generated(session, course_id, produced)`** is
-how a generated batch lands: upsert by id (an existing `GENERATED` skill's
-describing fields update; its `SkillState` is never touched, since mastery
-is keyed by `skill_id` in a different table), a `SEED` skill id is read-only
-(a collision is skipped and logged, never overwritten), and **nothing is
-ever deleted** — removal is a separate, out-of-scope operation. It validates
-the graph the merge would *produce* (untouched existing skills + the batch)
-as one unit, so a new skill's prereq on an existing skill resolves and a
-cycle spanning old and new skills is caught, not just one within the batch.
-`seed_all_courses`'s own re-seed delete is scoped to `origin=SEED` for the
-same reason: a course restart must never wipe a generated skill.
+- **It had a user interface, and it should not have one.** A "practice next
+  skill" button and a mastery readout on the whiteboard made the engine a
+  feature the student interacted with, when it should be invisible
+  infrastructure the tutor consults.
+- **It was over-built for what the product actually asks for.** `PRODUCT.md`
+  §23 asks the MVP to track attempts, correct/incorrect, hints used, and
+  difficulty — counters, not a fitted ability model — and §24 explicitly
+  prefers qualitative insight over "one opaque mastery score."
 
-**`agents.taxonomy_workflow.GeminiTaxonomyWorkflow`** is the LLM adapter —
-same shape as `question_workflow.py` (structured output, one repair retry,
-a hard timeout). Its own retry loop checks batch-local structural problems
-(duplicate ids, unresolved prereqs, same-batch cycles) so the model gets a
-repair pass before the caller ever sees them; graph-wide checks against the
-*existing* course are `merge_generated`'s job, run downstream. An
-`emergent=True` flag swaps in a prompt asking for exactly one new skill
-given the existing graph, instead of a full-course taxonomy.
-
-**Where a call is actually spent — and where it deliberately isn't.** An
-early design auto-fired a whole-course generation call on every document
-upload. That was dropped: it doesn't scale to large course material (a
-char-capped sample is either costly or lossy) and it spends provider quota
-on courses that may never be used. The generation service supporting that
-mode (`skill_generation.generate_taxonomy_for_course`, content-hash-guarded
-via `CourseTaxonomyVersion`'s sibling `CourseGenerationVersion`) remains as
-tested infrastructure nothing currently calls automatically — available for
-a manual "regenerate this course" action, or a future switch back if usage
-data favors it.
-
-What *does* fire automatically is narrower: **`skill_generation.
-bootstrap_first_skill`**, called from `next_problem` only when a course has
-ingested documents but zero `Skill` rows — the one situation where there is
-no prior question-generation call to piggyback skill discovery onto, because
-`selection.select_next()` has nothing to select yet. It reads a handful of
-chunks from one document (not course-wide sampling) and proposes exactly one
-skill via the `emergent=True` path. After it succeeds, selection always has
-something to work with and this path never fires again for that course.
-
-**Deferred: continuous growth by piggybacking on calls that already
-happen.** Beyond that first skill, the intended mechanism is not another
-standalone generation call — it's extending `QuestionPlan` (question
-generation) and `TutorPlan` (grading, alongside §47.4's granularity fix) so
-skill discovery rides on calls the system makes anyway, at zero marginal
-LLM spend. This is real, valuable work not implemented yet: it touches the
-tutor's own response schema and prompt, which the codebase already treats
-as its most delicate surface, and deserves its own focused pass rather than
-being rushed alongside the rest of this section. `build_taxonomy` and
-`merge_generated` are already the right shape to receive whatever it
-proposes — nothing about the persistence layer needs to change when it
-lands.
-
-**Dev visibility.** `GET .../skills-overview` exposes `origin`, `keywords`,
-`question_forms`, and `created_at`/`is_recent` (created in the last 15
-minutes) per skill — not just mastery. `POST /dev/courses/{id}/skills/import`
-(dev-only) runs a pasted raw taxonomy through the same `build_taxonomy ->
-merge_generated` path real generation uses, so the dashboard at
-`/dev/dashboard` can be exercised against any graph shape with no model
-call.
+What replaced it: a rolling window of recent outcomes per topic
+(`services/accuracy.py`), a flat priority formula with no gate
+(`services/selection.py`), and a student profile derived on read from the
+attempt ledger rather than stored (`services/profile.py`). `GET
+.../skills-overview` (dev dashboard only) now shows `accuracy`/`attempts`
+instead of `mastery`/`confidence`/`unlocked`.

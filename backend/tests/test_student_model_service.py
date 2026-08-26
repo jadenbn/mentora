@@ -1,5 +1,5 @@
-"""Tests for attempt ingestion: the expected_skills guard, mastery updates,
-prerequisite bleed, cold start, and read-time decay."""
+"""Tests for attempt ingestion: the expected_skills guard, the rolling
+accuracy window, idempotency, and the dashboard's overview query."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from app.models.skill import Skill
 from app.models.skill_state import SkillState
 from app.schemas.learning import AttemptCreate
 from app.services import student_model_service as svc
-from app.services.mastery import update_mastery
+from app.services.accuracy import accuracy
 
 
 @pytest.fixture
@@ -24,102 +24,121 @@ def session():
         yield s
 
 
-def _skill(session, id_, course_id="calc1", prereqs=None, name=None):
+def _skill(session, id_, course_id="calc1", name=None):
     s = Skill(
         id=id_,
         course_id=course_id,
         name=name or id_,
         description="test skill",
         difficulty_band=0.5,
-        prereqs=prereqs or [],
     )
     session.add(s)
     session.commit()
     return s
 
 
-def test_record_attempt_updates_mastery(session):
+def test_record_attempt_scores_a_correct_unassisted_attempt_at_1(session):
     _skill(session, "calc1.a")
     payload = AttemptCreate(
-        student_id="stu1",
-        session_id="sess1",
-        problem_id="p1",
-        expected_skills=["calc1.a"],
-        difficulty=0.5,
-        correct=True,
-        hints_used=0,
+        student_id="stu1", session_id="sess1", problem_id="p1",
+        expected_skills=["calc1.a"], difficulty=0.5, correct=True, hints_used=0,
     )
     result = svc.record_attempt(session, "calc1", payload)
 
-    expected = update_mastery(0.5, 1.0, 0.5, 0)
-    assert result.updated_skills["calc1.a"] == pytest.approx(expected)
-
+    assert result.updated_skills["calc1.a"] == pytest.approx(1.0)
     state = session.get(SkillState, ("stu1", "calc1.a"))
     assert state.attempts == 1
-    assert state.correct_unassisted == 1
-    assert state.streak == 1
+    assert state.hints_used == 0
+    assert accuracy(state.recent_outcomes) == pytest.approx(1.0)
+
+
+def test_record_attempt_scores_a_hinted_correct_attempt_lower(session):
+    _skill(session, "calc1.a")
+    payload = AttemptCreate(
+        student_id="stu1", session_id="sess1", problem_id="p1",
+        expected_skills=["calc1.a"], difficulty=0.5, correct=True, hints_used=1,
+    )
+    result = svc.record_attempt(session, "calc1", payload)
+
+    assert 0.0 < result.updated_skills["calc1.a"] < 1.0
+    state = session.get(SkillState, ("stu1", "calc1.a"))
+    assert state.hints_used == 1
+
+
+def test_record_attempt_scores_incorrect_at_0(session):
+    _skill(session, "calc1.a")
+    payload = AttemptCreate(
+        student_id="stu1", session_id="sess1", problem_id="p1",
+        expected_skills=["calc1.a"], difficulty=0.5, correct=False,
+    )
+    result = svc.record_attempt(session, "calc1", payload)
+    assert result.updated_skills["calc1.a"] == pytest.approx(0.0)
+
+
+def test_accuracy_is_the_mean_of_the_recent_window(session):
+    _skill(session, "calc1.a")
+
+    def post(problem_id, correct):
+        return svc.record_attempt(
+            session, "calc1",
+            AttemptCreate(
+                student_id="stu1", session_id="sess1", problem_id=problem_id,
+                expected_skills=["calc1.a"], difficulty=0.5, correct=correct,
+            ),
+        )
+
+    post("p1", True)
+    post("p2", False)
+    post("p3", True)
+
+    state = session.get(SkillState, ("stu1", "calc1.a"))
+    assert state.attempts == 3
+    assert accuracy(state.recent_outcomes) == pytest.approx(2 / 3)
+
+
+def test_the_window_caps_at_eight_outcomes(session):
+    _skill(session, "calc1.a")
+    for i in range(10):
+        svc.record_attempt(
+            session, "calc1",
+            AttemptCreate(
+                student_id="stu1", session_id="sess1", problem_id=f"p{i}",
+                expected_skills=["calc1.a"], difficulty=0.5, correct=True,
+            ),
+        )
+    state = session.get(SkillState, ("stu1", "calc1.a"))
+    assert state.attempts == 10  # the count keeps growing
+    assert len(state.recent_outcomes) == 8  # the window doesn't
 
 
 def test_unknown_skill_raises(session):
     _skill(session, "calc1.a")
     payload = AttemptCreate(
-        student_id="stu1",
-        session_id="sess1",
-        problem_id="p1",
-        expected_skills=["calc1.does-not-exist"],
-        difficulty=0.5,
-        correct=True,
+        student_id="stu1", session_id="sess1", problem_id="p1",
+        expected_skills=["calc1.does-not-exist"], difficulty=0.5, correct=True,
     )
     with pytest.raises(svc.UnknownSkillError):
         svc.record_attempt(session, "calc1", payload)
 
 
-def test_prereq_bleed_reaches_direct_prerequisite(session):
-    _skill(session, "calc1.a")
-    _skill(session, "calc1.b", prereqs=["calc1.a"])
-    payload = AttemptCreate(
-        student_id="stu1",
-        session_id="sess1",
-        problem_id="p1",
-        expected_skills=["calc1.b"],
-        difficulty=0.5,
-        correct=True,
-        hints_used=0,
-    )
-    svc.record_attempt(session, "calc1", payload)
-
-    state_a = session.get(SkillState, ("stu1", "calc1.a"))
-    assert state_a is not None
-    # b's delta was positive (correct answer), so the bleed onto a is positive too
-    assert state_a.mastery > 0.5
-
-
-def test_reposting_the_same_problem_does_not_move_mastery_again(session):
+def test_reposting_the_same_problem_does_not_move_accuracy_again(session):
     """The whiteboard posts on every "mark", so repeats are expected traffic.
 
     They must be answered with the original attempt, not counted twice --
-    otherwise ten marks on one correct canvas saturate mastery.
+    otherwise ten marks on one canvas would all count toward accuracy.
     """
     _skill(session, "calc1.a")
     payload = AttemptCreate(
-        student_id="stu1",
-        session_id="sess1",
-        problem_id="p1",
-        expected_skills=["calc1.a"],
-        difficulty=0.5,
-        correct=True,
+        student_id="stu1", session_id="sess1", problem_id="p1",
+        expected_skills=["calc1.a"], difficulty=0.5, correct=True,
     )
     first = svc.record_attempt(session, "calc1", payload)
-    mastery_after_first = session.get(SkillState, ("stu1", "calc1.a")).mastery
-
     repeat = svc.record_attempt(session, "calc1", payload)
 
     assert repeat.attempt_id == first.attempt_id
-    assert repeat.updated_skills["calc1.a"] == pytest.approx(mastery_after_first)
+    assert repeat.updated_skills["calc1.a"] == pytest.approx(first.updated_skills["calc1.a"])
     assert len(session.exec(select(Attempt)).all()) == 1
-    state = session.get(SkillState, ("stu1", "calc1.a"))
-    assert state.attempts == 1
-    assert state.mastery == pytest.approx(mastery_after_first)
+    assert session.get(SkillState, ("stu1", "calc1.a")).attempts == 1
 
 
 def test_a_different_problem_is_still_a_new_attempt(session):
@@ -127,8 +146,7 @@ def test_a_different_problem_is_still_a_new_attempt(session):
 
     def post(problem_id):
         return svc.record_attempt(
-            session,
-            "calc1",
+            session, "calc1",
             AttemptCreate(
                 student_id="stu1", session_id="sess1", problem_id=problem_id,
                 expected_skills=["calc1.a"], difficulty=0.5, correct=True,
@@ -142,26 +160,37 @@ def test_a_different_problem_is_still_a_new_attempt(session):
     assert session.get(SkillState, ("stu1", "calc1.a")).attempts == 2
 
 
-def test_get_student_model_applies_decay_on_read(session):
-    skill = _skill(session, "calc1.a", name="A")
-    old = datetime.now(timezone.utc) - timedelta(days=28)  # two half-lives
-    session.add(
-        SkillState(
-            student_id="stu1",
-            course_id="calc1",
-            skill_id="calc1.a",
-            mastery=0.9,
-            attempts=5,
-            last_seen=old,
-        )
+def test_skills_overview_includes_untouched_topics(session):
+    _skill(session, "calc1.a", name="A")
+    _skill(session, "calc1.b", name="B")
+    svc.record_attempt(
+        session, "calc1",
+        AttemptCreate(
+            student_id="stu1", session_id="sess1", problem_id="p1",
+            expected_skills=["calc1.a"], difficulty=0.5, correct=True,
+        ),
     )
+
+    overview = svc.get_skills_overview(session, "calc1", "stu1")
+    by_id = {s.skill_id: s for s in overview.skills}
+
+    assert by_id["calc1.a"].accuracy == pytest.approx(1.0)
+    assert by_id["calc1.a"].attempts == 1
+    assert by_id["calc1.b"].accuracy is None
+    assert by_id["calc1.b"].attempts == 0
+    assert by_id["calc1.b"].has_signal is False
+
+
+def test_skills_overview_flags_a_recently_added_topic(session):
+    fresh = Skill(id="calc1.new", course_id="calc1", name="New", description="d",
+                  difficulty_band=0.4, created_at=datetime.now(timezone.utc))
+    old = Skill(id="calc1.old", course_id="calc1", name="Old", description="d",
+               difficulty_band=0.4, created_at=datetime.now(timezone.utc) - timedelta(hours=1))
+    session.add(fresh)
+    session.add(old)
     session.commit()
 
-    model = svc.get_student_model(session, "calc1", "stu1")
-    out = next(s for s in model.skills if s.skill_id == "calc1.a")
-    assert out.mastery < 0.9
-    assert out.mastery > 0.5  # decays toward 0.5, doesn't overshoot
-
-    # stored value is untouched -- decay is read-time only
-    stored = session.get(SkillState, ("stu1", "calc1.a"))
-    assert stored.mastery == 0.9
+    overview = svc.get_skills_overview(session, "calc1", "stu1")
+    by_id = {s.skill_id: s for s in overview.skills}
+    assert by_id["calc1.new"].is_recent is True
+    assert by_id["calc1.old"].is_recent is False

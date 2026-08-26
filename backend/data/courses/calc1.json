@@ -6,135 +6,233 @@
       "name": "Limit evaluation",
       "description": "Evaluating limits by direct substitution, factoring, or rationalizing.",
       "difficulty_band": 0.25,
-      "prereqs": [],
-      "keywords": ["indeterminate form", "direct substitution", "factoring", "rationalizing", "one-sided limit"],
-      "question_forms": ["evaluate a limit that needs factoring", "evaluate a one-sided limit"]
+      "keywords": [
+        "indeterminate form",
+        "direct substitution",
+        "factoring",
+        "rationalizing",
+        "one-sided limit"
+      ],
+      "question_forms": [
+        "evaluate a limit that needs factoring",
+        "evaluate a one-sided limit"
+      ]
     },
     {
       "id": "calc1.limits.continuity",
       "name": "Continuity",
       "description": "Determining whether a function is continuous at a point using the limit definition.",
       "difficulty_band": 0.3,
-      "prereqs": ["calc1.limits.evaluation"],
-      "keywords": ["continuous at a point", "removable discontinuity", "jump discontinuity", "piecewise function"],
-      "question_forms": ["decide whether a function is continuous at a point", "find a value making a piecewise function continuous"]
+      "keywords": [
+        "continuous at a point",
+        "removable discontinuity",
+        "jump discontinuity",
+        "piecewise function"
+      ],
+      "question_forms": [
+        "decide whether a function is continuous at a point",
+        "find a value making a piecewise function continuous"
+      ]
     },
     {
       "id": "calc1.algebra.sign-handling",
       "name": "Sign handling",
       "description": "Tracking negative signs correctly through multi-step algebraic manipulation.",
       "difficulty_band": 0.2,
-      "prereqs": [],
-      "keywords": ["distributing a negative", "sign error", "subtracting expressions"],
-      "question_forms": ["simplify an expression with nested negatives"]
+      "keywords": [
+        "distributing a negative",
+        "sign error",
+        "subtracting expressions"
+      ],
+      "question_forms": [
+        "simplify an expression with nested negatives"
+      ]
     },
     {
       "id": "calc1.derivatives.power-rule",
       "name": "Power rule",
       "description": "Differentiating polynomial terms of the form x^n.",
       "difficulty_band": 0.25,
-      "prereqs": ["calc1.limits.evaluation"],
-      "keywords": ["power rule", "polynomial", "exponent", "negative exponent", "fractional exponent"],
-      "question_forms": ["differentiate a polynomial", "differentiate a term with a fractional exponent"]
+      "keywords": [
+        "power rule",
+        "polynomial",
+        "exponent",
+        "negative exponent",
+        "fractional exponent"
+      ],
+      "question_forms": [
+        "differentiate a polynomial",
+        "differentiate a term with a fractional exponent"
+      ]
     },
     {
       "id": "calc1.derivatives.product-rule",
       "name": "Product rule",
       "description": "Differentiating a product of two functions, f(x)g(x).",
       "difficulty_band": 0.4,
-      "prereqs": ["calc1.derivatives.power-rule"],
-      "keywords": ["product rule", "product of functions", "first times derivative of second"],
-      "question_forms": ["differentiate a product of two functions"]
+      "keywords": [
+        "product rule",
+        "product of functions",
+        "first times derivative of second"
+      ],
+      "question_forms": [
+        "differentiate a product of two functions"
+      ]
     },
     {
       "id": "calc1.derivatives.quotient-rule",
       "name": "Quotient rule",
       "description": "Differentiating a ratio of two functions, f(x)/g(x).",
       "difficulty_band": 0.45,
-      "prereqs": ["calc1.derivatives.product-rule"],
-      "keywords": ["quotient rule", "ratio of functions", "denominator squared"],
-      "question_forms": ["differentiate a quotient of two functions"]
+      "keywords": [
+        "quotient rule",
+        "ratio of functions",
+        "denominator squared"
+      ],
+      "question_forms": [
+        "differentiate a quotient of two functions"
+      ]
     },
     {
       "id": "calc1.derivatives.chain-rule",
       "name": "Chain rule",
       "description": "Differentiating composed functions f(g(x)).",
       "difficulty_band": 0.5,
-      "prereqs": ["calc1.derivatives.power-rule"],
-      "keywords": ["chain rule", "composite function", "outer derivative", "inner function", "nested expression"],
-      "question_forms": ["differentiate a nested expression", "identify the inner function"]
+      "keywords": [
+        "chain rule",
+        "composite function",
+        "outer derivative",
+        "inner function",
+        "nested expression"
+      ],
+      "question_forms": [
+        "differentiate a nested expression",
+        "identify the inner function"
+      ]
     },
     {
       "id": "calc1.derivatives.trig",
       "name": "Trig derivatives",
       "description": "Differentiating sin, cos, tan, and their compositions.",
       "difficulty_band": 0.5,
-      "prereqs": ["calc1.derivatives.chain-rule"],
-      "keywords": ["trigonometric derivative", "sine", "cosine", "tangent", "chain rule with trig"],
-      "question_forms": ["differentiate a trigonometric composition"]
+      "keywords": [
+        "trigonometric derivative",
+        "sine",
+        "cosine",
+        "tangent",
+        "chain rule with trig"
+      ],
+      "question_forms": [
+        "differentiate a trigonometric composition"
+      ]
     },
     {
       "id": "calc1.derivatives.exponential",
       "name": "Exponential derivatives",
       "description": "Differentiating e^x, a^x, and their compositions.",
       "difficulty_band": 0.5,
-      "prereqs": ["calc1.derivatives.chain-rule"],
-      "keywords": ["exponential derivative", "natural exponential", "base-a exponential", "ln of base"],
-      "question_forms": ["differentiate an exponential composition"]
+      "keywords": [
+        "exponential derivative",
+        "natural exponential",
+        "base-a exponential",
+        "ln of base"
+      ],
+      "question_forms": [
+        "differentiate an exponential composition"
+      ]
     },
     {
       "id": "calc1.derivatives.implicit",
       "name": "Implicit differentiation",
       "description": "Differentiating both sides of an equation not solved for y.",
       "difficulty_band": 0.6,
-      "prereqs": ["calc1.derivatives.chain-rule"],
-      "keywords": ["implicit differentiation", "dy/dx", "differentiate both sides", "treat y as a function of x"],
-      "question_forms": ["find dy/dx by implicit differentiation"]
+      "keywords": [
+        "implicit differentiation",
+        "dy/dx",
+        "differentiate both sides",
+        "treat y as a function of x"
+      ],
+      "question_forms": [
+        "find dy/dx by implicit differentiation"
+      ]
     },
     {
       "id": "calc1.applications.related-rates",
       "name": "Related rates",
       "description": "Relating the rates of change of two or more quantities via implicit differentiation.",
       "difficulty_band": 0.7,
-      "prereqs": ["calc1.derivatives.implicit"],
-      "keywords": ["related rates", "rate of change", "differentiate with respect to time", "geometric relationship"],
-      "question_forms": ["set up and solve a related-rates word problem"]
+      "keywords": [
+        "related rates",
+        "rate of change",
+        "differentiate with respect to time",
+        "geometric relationship"
+      ],
+      "question_forms": [
+        "set up and solve a related-rates word problem"
+      ]
     },
     {
       "id": "calc1.applications.optimization",
       "name": "Optimization",
       "description": "Finding maxima and minima of a modeled quantity using derivatives.",
       "difficulty_band": 0.7,
-      "prereqs": ["calc1.derivatives.power-rule", "calc1.derivatives.product-rule"],
-      "keywords": ["optimization", "maximum", "minimum", "critical point", "constraint equation"],
-      "question_forms": ["maximize or minimize a modeled quantity"]
+      "keywords": [
+        "optimization",
+        "maximum",
+        "minimum",
+        "critical point",
+        "constraint equation"
+      ],
+      "question_forms": [
+        "maximize or minimize a modeled quantity"
+      ]
     },
     {
       "id": "calc1.integrals.basic-antiderivatives",
       "name": "Basic antiderivatives",
       "description": "Reversing the power rule to find antiderivatives of polynomial terms.",
       "difficulty_band": 0.4,
-      "prereqs": ["calc1.derivatives.power-rule"],
-      "keywords": ["antiderivative", "reverse power rule", "constant of integration", "indefinite integral"],
-      "question_forms": ["find the antiderivative of a polynomial"]
+      "keywords": [
+        "antiderivative",
+        "reverse power rule",
+        "constant of integration",
+        "indefinite integral"
+      ],
+      "question_forms": [
+        "find the antiderivative of a polynomial"
+      ]
     },
     {
       "id": "calc1.integrals.u-substitution",
       "name": "U-substitution",
       "description": "Integrating a composed function by substituting for its inner function.",
       "difficulty_band": 0.6,
-      "prereqs": ["calc1.integrals.basic-antiderivatives", "calc1.derivatives.chain-rule"],
-      "keywords": ["u-substitution", "inner function", "du", "change of variable", "reverse chain rule"],
-      "question_forms": ["integrate using u-substitution", "choose an appropriate substitution"]
+      "keywords": [
+        "u-substitution",
+        "inner function",
+        "du",
+        "change of variable",
+        "reverse chain rule"
+      ],
+      "question_forms": [
+        "integrate using u-substitution",
+        "choose an appropriate substitution"
+      ]
     },
     {
       "id": "calc1.integrals.by-parts",
       "name": "Integration by parts",
       "description": "Integrating a product of two functions using the by-parts formula.",
       "difficulty_band": 0.65,
-      "prereqs": ["calc1.integrals.u-substitution", "calc1.derivatives.product-rule"],
-      "keywords": ["integration by parts", "LIATE", "choose u and dv", "product of functions"],
-      "question_forms": ["integrate a product using integration by parts"]
+      "keywords": [
+        "integration by parts",
+        "LIATE",
+        "choose u and dv",
+        "product of functions"
+      ],
+      "question_forms": [
+        "integrate a product using integration by parts"
+      ]
     }
   ]
 }

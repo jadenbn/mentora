@@ -28,9 +28,6 @@ one, occasionally two or three for a question that combines techniques.
   id local to this response (do not prefix it with a course id), a plain-
   language name and description, difficulty_band in [0, 1], and 3-12
   keywords a textbook would use for it.
-- A new skill's prereqs may reference only ids you also propose in this same
-  response, or ids from the supplied existing skills. Never invent a prereq
-  id that resolves nowhere, and never create a prerequisite cycle.
 - List 1-4 skills total. Prefer the smallest accurate set — most questions
   need exactly one.
 """.strip()

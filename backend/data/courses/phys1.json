@@ -5,99 +5,85 @@
       "id": "phys1.kinematics.motion-graphs",
       "name": "Motion graphs",
       "description": "Reading position, velocity, and acceleration from position-time and velocity-time graphs.",
-      "difficulty_band": 0.2,
-      "prereqs": []
+      "difficulty_band": 0.2
     },
     {
       "id": "phys1.kinematics.equations",
       "name": "Kinematic equations",
       "description": "Applying the constant-acceleration equations to solve for position, velocity, or time.",
-      "difficulty_band": 0.25,
-      "prereqs": ["phys1.kinematics.motion-graphs"]
+      "difficulty_band": 0.25
     },
     {
       "id": "phys1.vectors.components",
       "name": "Vector components",
       "description": "Resolving a vector into perpendicular components using sine and cosine.",
-      "difficulty_band": 0.2,
-      "prereqs": []
+      "difficulty_band": 0.2
     },
     {
       "id": "phys1.vectors.addition",
       "name": "Vector addition",
       "description": "Combining vectors by adding components, including for displacement and velocity.",
-      "difficulty_band": 0.25,
-      "prereqs": ["phys1.vectors.components"]
+      "difficulty_band": 0.25
     },
     {
       "id": "phys1.dynamics.newtons-laws",
       "name": "Newton's laws",
       "description": "Applying F = ma to a free-body diagram to find net force or acceleration, often combined with kinematics to solve for motion.",
-      "difficulty_band": 0.3,
-      "prereqs": ["phys1.vectors.addition", "phys1.kinematics.equations"]
+      "difficulty_band": 0.3
     },
     {
       "id": "phys1.dynamics.friction",
       "name": "Friction",
       "description": "Incorporating static and kinetic friction forces into a force analysis, including resolving the normal force into components on an incline.",
-      "difficulty_band": 0.4,
-      "prereqs": ["phys1.dynamics.newtons-laws", "phys1.vectors.components"]
+      "difficulty_band": 0.4
     },
     {
       "id": "phys1.dynamics.circular-motion",
       "name": "Circular motion",
       "description": "Applying centripetal force and acceleration to objects moving along a curved path.",
-      "difficulty_band": 0.5,
-      "prereqs": ["phys1.dynamics.newtons-laws", "phys1.kinematics.equations"]
+      "difficulty_band": 0.5
     },
     {
       "id": "phys1.energy.work",
       "name": "Work",
       "description": "Computing the work done by a force, including cases where force and displacement are not parallel.",
-      "difficulty_band": 0.35,
-      "prereqs": ["phys1.dynamics.newtons-laws", "phys1.vectors.components"]
+      "difficulty_band": 0.35
     },
     {
       "id": "phys1.energy.conservation",
       "name": "Conservation of energy",
       "description": "Tracking kinetic and potential energy through a system where mechanical energy is conserved.",
-      "difficulty_band": 0.5,
-      "prereqs": ["phys1.energy.work", "phys1.kinematics.equations"]
+      "difficulty_band": 0.5
     },
     {
       "id": "phys1.momentum.conservation",
       "name": "Conservation of momentum",
       "description": "Applying conservation of momentum, a vector quantity, to a system of interacting objects.",
-      "difficulty_band": 0.5,
-      "prereqs": ["phys1.dynamics.newtons-laws", "phys1.vectors.addition"]
+      "difficulty_band": 0.5
     },
     {
       "id": "phys1.momentum.collisions",
       "name": "Collisions",
       "description": "Distinguishing elastic from inelastic collisions by checking whether kinetic energy is conserved, then solving for post-collision velocities.",
-      "difficulty_band": 0.6,
-      "prereqs": ["phys1.momentum.conservation", "phys1.energy.conservation"]
+      "difficulty_band": 0.6
     },
     {
       "id": "phys1.rotation.torque",
       "name": "Torque",
       "description": "Computing torque about a pivot and applying rotational equilibrium.",
-      "difficulty_band": 0.55,
-      "prereqs": ["phys1.dynamics.newtons-laws", "phys1.vectors.components"]
+      "difficulty_band": 0.55
     },
     {
       "id": "phys1.rotation.angular-momentum",
       "name": "Angular momentum",
       "description": "Applying conservation of angular momentum to a rotating system.",
-      "difficulty_band": 0.65,
-      "prereqs": ["phys1.rotation.torque", "phys1.momentum.conservation"]
+      "difficulty_band": 0.65
     },
     {
       "id": "phys1.gravitation.orbital-motion",
       "name": "Orbital motion",
       "description": "Combining gravitation with circular motion, energy conservation, and Kepler's second law (conservation of angular momentum) to describe orbits.",
-      "difficulty_band": 0.7,
-      "prereqs": ["phys1.dynamics.circular-motion", "phys1.energy.conservation", "phys1.rotation.angular-momentum"]
+      "difficulty_band": 0.7
     }
   ]
 }

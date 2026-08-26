@@ -8,7 +8,7 @@
   :root {
     --bg:#0f1319; --panel:#171d26; --panel2:#1e2733; --ink:#e6ebf1;
     --muted:#8fa0b3; --line:#28313d; --accent:#4cb6bc; --good:#3fb27f;
-    --warn:#d5a749; --bad:#e0715b; --lock:#5b6775;
+    --warn:#d5a749; --bad:#e0715b;
     --gen:#a48cf2; --new:#e8b84b;
   }
   * { box-sizing:border-box; }
@@ -17,6 +17,7 @@
   header { padding:18px 22px; border-bottom:1px solid var(--line);
     display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
   h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.02em; }
+  h2 { font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
   header .sub { color:var(--muted); font-size:12px; }
   .controls { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   input, select, button { font:inherit; }
@@ -25,6 +26,9 @@
   button { background:var(--accent); color:#04191b; border:0;
     border-radius:6px; padding:7px 12px; cursor:pointer; font-weight:600; }
   button.ghost { background:var(--panel2); color:var(--ink); border:1px solid var(--line); }
+  button.good { background:var(--good); color:#05130d; }
+  button.warn { background:var(--warn); color:#1a1305; }
+  button.bad { background:var(--bad); color:#1c0a06; }
   button:disabled { opacity:.45; cursor:not-allowed; }
   main { padding:22px; max-width:1100px; margin:0 auto; }
   .bar { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
@@ -40,7 +44,6 @@
   tr.skill { cursor:pointer; }
   tr.skill:hover { background:var(--panel2); }
   tr.sel { background:#12303199; box-shadow:inset 3px 0 0 var(--accent); }
-  tr.locked td { color:var(--muted); }
   .name { font-weight:600; }
   .id { color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
   .track { position:relative; height:8px; width:130px; background:var(--panel2);
@@ -48,35 +51,28 @@
   .fill { position:absolute; inset:0 auto 0 0; border-radius:5px; }
   .pct { font-variant-numeric:tabular-nums; }
   .pill { font-size:11px; padding:2px 8px; border-radius:20px; font-weight:600; }
-  .pill.unlocked { background:#123a2c; color:var(--good); }
-  .pill.locked { background:#31261a; color:var(--warn); }
-  .pill.next { background:#0d3134; color:var(--accent); border:1px solid var(--accent); }
   .pill.seed { background:#242c38; color:var(--muted); }
   .pill.generated { background:#241f3d; color:var(--gen); }
+  .pill.new { background:#0d3134; color:var(--accent); border:1px solid var(--accent); }
   .badge-new { display:inline-block; margin-left:5px; font-size:10px; font-weight:700;
     color:var(--new); background:#312a12; border-radius:20px; padding:1px 6px;
     letter-spacing:.03em; vertical-align:middle; }
   .panel { margin-top:18px; background:var(--panel); border:1px solid var(--line);
     border-radius:10px; padding:16px; }
-  .panel h2 { font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
   .panel .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  button.good { background:var(--good); color:#05130d; }
-  button.warn { background:var(--warn); color:#1a1305; }
-  button.bad { background:var(--bad); color:#1c0a06; }
+  .panel p.sub { color:var(--muted); font-size:12px; }
   #log, #importLog { margin-top:12px; font-family:ui-monospace,monospace; font-size:12px;
     color:var(--muted); white-space:pre-wrap; max-height:180px; overflow:auto; }
   .err { color:var(--bad); }
   .ok { color:var(--good); }
-  #detail { display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--line);
-    font-size:12.5px; color:var(--muted); }
-  #detail.show { display:block; }
-  #detail dt { font-family:ui-monospace,monospace; font-size:10.5px; text-transform:uppercase;
-    letter-spacing:.07em; color:var(--ink-faint,var(--muted)); margin-top:8px; }
-  #detail dt:first-child { margin-top:0; }
-  #detail dd { margin:2px 0 0; color:var(--ink); }
+  dl.show { display:grid; grid-template-columns:max-content 1fr; gap:6px 14px;
+    margin:14px 0 0; font-size:13px; }
+  dl dt { color:var(--muted); }
+  dl dd { margin:0; }
   .chip { display:inline-block; background:var(--panel2); border:1px solid var(--line);
-    border-radius:20px; padding:1px 9px; margin:2px 4px 0 0; font-size:11.5px; }
-  textarea { width:100%; min-height:140px; background:var(--panel2); color:var(--ink);
+    border-radius:20px; padding:2px 9px; margin:0 6px 6px 0; font-size:12px; }
+  code { background:var(--panel2); border-radius:4px; padding:1px 5px; font-size:12px; }
+  textarea { width:100%; min-height:180px; background:var(--panel2); color:var(--ink);
     border:1px solid var(--line); border-radius:6px; padding:9px; font-family:ui-monospace,monospace;
     font-size:12px; resize:vertical; }
 </style>
@@ -85,7 +81,7 @@
 <header>
   <div>
     <h1>Learning Engine · Dev Dashboard</h1>
-    <div class="sub">synthetic-attempt harness — drives selection, mastery, and server-side attribution</div>
+    <div class="sub">the tutor's brain has no student-facing UI — this is the only view of it</div>
   </div>
   <div class="controls">
     <label class="sub">course <input id="course" value="calc1" size="8"></label>
@@ -97,8 +93,7 @@
   <div class="bar" id="stats"></div>
   <table>
     <thead><tr>
-      <th>Skill</th><th>Origin</th><th>Mastery</th><th>State</th><th>Attempts</th>
-      <th>Conf.</th><th>Diff.</th>
+      <th>Topic</th><th>Origin</th><th>Accuracy</th><th>Attempts</th><th>Diff.</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
@@ -106,54 +101,32 @@
   <div class="panel">
     <h2>Drive the loop — synthetic attempt</h2>
     <div class="row">
-      <span id="selName" class="sub">Selected: <b>none</b> (click a skill, or use the selection pick)</span>
+      <span id="selName" class="sub">Selected: <b>none</b> (click a topic)</span>
     </div>
     <div class="row" style="margin-top:10px">
       <button class="good" id="bCorrect" disabled>✓ Correct</button>
       <button class="warn" id="bPartial" disabled>◑ Partial</button>
       <button class="bad" id="bIncorrect" disabled>✗ Incorrect</button>
-      <button class="ghost" id="bPickNext">Select engine's pick →</button>
     </div>
     <dl id="detail"></dl>
     <div id="log"></div>
   </div>
 
   <div class="panel">
-    <h2>Skill proposals — quarantine</h2>
+    <h2>Import topics (dev)</h2>
     <p class="sub" style="margin-bottom:8px">
-      Skills the generator named that this course doesn't have. Question
-      generation counts them; it can't create them. Review promotes the ones
-      named often enough and folds near-duplicates into the skill they
-      already match.
-    </p>
-    <div class="row">
-      <button class="ghost" id="bReview">Review proposals →</button>
-      <span class="sub" id="proposalSummary">—</span>
-    </div>
-    <table style="margin-top:10px">
-      <thead><tr>
-        <th>Proposed skill</th><th>Seen</th><th>Status</th><th>Resolved to</th>
-      </tr></thead>
-      <tbody id="proposalRows"></tbody>
-    </table>
-    <div id="proposalLog"></div>
-  </div>
-
-  <div class="panel">
-    <h2>Import skills (dev)</h2>
-    <p class="sub" style="margin-bottom:8px">
-      Paste a raw taxonomy batch and post it straight into the selected course —
-      the same build_taxonomy → merge_generated path real generation uses, no
-      model call. Shape: <code>{"skills":[{"id","name","description","difficulty_band",...}]}</code>.
+      Paste a raw topic batch and post it straight into the selected course's
+      skills file — the same build_taxonomy → append_skills path the
+      piggyback in question generation uses, no model call. Shape:
+      <code>{"skills":[{"id","name","description","difficulty_band","keywords","question_forms"}]}</code>.
     </p>
     <textarea id="importText" spellcheck="false">{
   "skills": [
     {
-      "id": "example-skill",
-      "name": "Example skill",
+      "id": "example-topic",
+      "name": "Example topic",
       "description": "Replace with a real one.",
       "difficulty_band": 0.4,
-      "prereqs": [],
       "keywords": [],
       "question_forms": []
     }
@@ -185,58 +158,12 @@ function log(msg, isErr, target) {
   line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
   el.prepend(line);
 }
-function masteryColor(m) {
-  if (m >= 0.85) return 'var(--good)';
-  if (m >= 0.6) return 'var(--accent)';
-  if (m >= 0.4) return 'var(--warn)';
+function accuracyColor(a) {
+  if (a === null) return 'var(--muted)';
+  if (a >= 0.85) return 'var(--good)';
+  if (a >= 0.6) return 'var(--accent)';
+  if (a >= 0.4) return 'var(--warn)';
   return 'var(--bad)';
-}
-
-async function loadProposals() {
-  let data;
-  try {
-    const r = await fetch(devApi('proposals'));
-    if (!r.ok) throw new Error(await r.text());
-    data = await r.json();
-  } catch (e) {
-    $('#proposalSummary').textContent = 'could not load proposals';
-    return;
-  }
-  const rows = data.proposals;
-  const pending = rows.filter(p => p.status === 'pending');
-  const ready = pending.filter(p => p.observations >= data.min_observations);
-  $('#proposalSummary').textContent =
-    `${rows.length} total · ${pending.length} pending · ${ready.length} ready to promote ` +
-    `(threshold ${data.min_observations})`;
-  $('#proposalRows').innerHTML = rows.length ? rows.map(p => `
-    <tr>
-      <td><div class="name">${p.name}</div><div class="id">${p.slug}</div></td>
-      <td class="pct">${p.observations}</td>
-      <td><span class="pill ${p.status === 'pending' ? 'locked' : 'unlocked'}">${p.status}</span></td>
-      <td class="id">${p.resolved_skill_id || '·'}</td>
-    </tr>`).join('') : '<tr><td colspan="4" class="sub">No proposals yet.</td></tr>';
-}
-
-async function reviewProposals() {
-  $('#bReview').disabled = true;
-  try {
-    const r = await fetch(devApi('proposals/review'), { method: 'POST' });
-    if (!r.ok) throw new Error(await r.text());
-    const res = await r.json();
-    const parts = [];
-    if (res.promoted.length) parts.push(`promoted ${res.promoted.join(', ')}`);
-    const merged = Object.entries(res.merged);
-    if (merged.length) parts.push(merged.map(([a, b]) => `${a} → ${b}`).join(', '));
-    if (res.still_pending.length) parts.push(`${res.still_pending.length} still pending`);
-    if (res.skipped_semantic_check) parts.push('(no embedder: promoted on count alone)');
-    log(parts.length ? parts.join(' · ') : 'nothing to review', false, '#proposalLog');
-  } catch (e) {
-    log('review failed: ' + e.message, true, '#proposalLog');
-  } finally {
-    $('#bReview').disabled = false;
-  }
-  await load();
-  await loadProposals();
 }
 
 async function load() {
@@ -251,36 +178,30 @@ async function load() {
 
 function render() {
   const skills = data.skills;
-  const mastered = skills.filter(s => s.mastery >= 0.85).length;
-  const unlocked = skills.filter(s => s.unlocked).length;
-  const touched = skills.filter(s => s.has_state).length;
-  const avg = skills.length ? skills.reduce((a,s)=>a+s.mastery,0)/skills.length : 0;
+  const touched = skills.filter(s => s.attempts > 0).length;
+  const withSignal = skills.filter(s => s.has_signal);
+  const avg = withSignal.length
+    ? withSignal.reduce((a, s) => a + s.accuracy, 0) / withSignal.length
+    : null;
   $('#stats').innerHTML = [
-    ['Skills', skills.length], ['Mastered ≥.85', mastered],
-    ['Unlocked', unlocked], ['Touched', touched],
-    ['Avg mastery', avg.toFixed(2)],
-    ['Engine pick', data.next_skill_id ? '✓' : '—'],
-  ].map(([l,n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+    ['Topics', skills.length],
+    ['Touched', touched],
+    ['Avg accuracy', avg === null ? '—' : avg.toFixed(2)],
+  ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
 
   $('#rows').innerHTML = skills.map(s => {
-    const isNext = s.skill_id === data.next_skill_id;
-    const cls = ['skill']; if (!s.unlocked) cls.push('locked');
-    if (selected === s.skill_id) cls.push('sel');
-    const state = s.unlocked
-      ? `<span class="pill unlocked">unlocked</span>`
-      : `<span class="pill locked">locked</span>`;
-    const next = isNext ? ` <span class="pill next">next</span>` : '';
+    const cls = ['skill']; if (selected === s.skill_id) cls.push('sel');
     const origin = `<span class="pill ${s.origin}">${s.origin}</span>` +
-      (s.is_recent ? '<span class="badge-new" title="created in the last 15 minutes">new</span>' : '');
+      (s.is_recent ? '<span class="badge-new" title="added in the last 15 minutes">new</span>' : '');
+    const accuracyText = s.accuracy === null ? '—' : s.accuracy.toFixed(2);
+    const width = s.accuracy === null ? 0 : s.accuracy * 100;
     return `<tr class="${cls.join(' ')}" data-id="${s.skill_id}">
-      <td><div class="name">${s.skill_name}${next}</div><div class="id">${s.skill_id}</div></td>
+      <td><div class="name">${s.skill_name}</div><div class="id">${s.skill_id}</div></td>
       <td>${origin}</td>
       <td><div style="display:flex;gap:8px;align-items:center">
-        <div class="track"><div class="fill" style="width:${(s.mastery*100).toFixed(0)}%;background:${masteryColor(s.mastery)}"></div></div>
-        <span class="pct">${s.mastery.toFixed(2)}</span></div></td>
-      <td>${state}</td>
+        <div class="track"><div class="fill" style="width:${width.toFixed(0)}%;background:${accuracyColor(s.accuracy)}"></div></div>
+        <span class="pct">${accuracyText}</span></div></td>
       <td class="pct">${s.attempts}</td>
-      <td class="pct">${s.confidence.toFixed(2)}</td>
       <td class="pct">${s.difficulty_band.toFixed(2)}</td>
     </tr>`;
   }).join('');
@@ -296,8 +217,8 @@ function chips(items) {
 
 function renderSelected() {
   const s = data && selected ? data.skills.find(x => x.skill_id === selected) : null;
-  $('#selName').innerHTML = 'Selected: <b>' + (s ? s.skill_name + ' <span class="id">'+s.skill_id+'</span>' : 'none') + '</b>';
-  for (const id of ['#bCorrect','#bPartial','#bIncorrect']) $(id).disabled = !s;
+  $('#selName').innerHTML = 'Selected: <b>' + (s ? s.skill_name + ' <span class="id">' + s.skill_id + '</span>' : 'none') + '</b>';
+  for (const id of ['#bCorrect', '#bPartial', '#bIncorrect']) $(id).disabled = !s;
 
   const detail = $('#detail');
   if (!s) { detail.classList.remove('show'); detail.innerHTML = ''; return; }
@@ -307,7 +228,6 @@ function renderSelected() {
     <dt>Origin</dt><dd><span class="pill ${s.origin}">${s.origin}</span>
       ${s.is_recent ? '<span class="badge-new">new</span>' : ''}
       <span class="sub" style="margin-left:6px">${new Date(s.created_at).toLocaleString()}</span></dd>
-    <dt>Prereqs</dt><dd>${chips(s.prereqs)}</dd>
     <dt>Keywords</dt><dd>${chips(s.keywords)}</dd>
     <dt>Question forms</dt><dd>${chips(s.question_forms)}</dd>
   `;
@@ -326,12 +246,12 @@ async function attempt(kind) {
     partial: kind === 'partial',
   };
   try {
-    const r = await fetch(devApi('attempts') + `?student_id=${encodeURIComponent($('#student').value.trim())}`, {
-      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body),
+    const r = await fetch(devApi('attempts'), {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     });
     if (!r.ok) throw new Error(await r.text());
     const res = await r.json();
-    const deltas = Object.entries(res.updated_skills).map(([k,v]) => `${k.split('.').pop()}→${v.toFixed(2)}`).join('  ');
+    const deltas = Object.entries(res.updated_skills).map(([k, v]) => `${k.split('.').pop()}→${v.toFixed(2)}`).join('  ');
     log(`${kind} on ${s.skill_id}: ${deltas}`);
   } catch (e) { log('attempt failed: ' + e.message, true); return; }
   await load();
@@ -349,14 +269,13 @@ async function importSkills() {
   }
   try {
     const r = await fetch(`/dev/courses/${course}/skills/import`, {
-      method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(payload),
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
     });
     if (!r.ok) throw new Error(await r.text());
     const res = await r.json();
     const parts = [];
     if (res.added.length) parts.push(`+${res.added.length} added: ${res.added.join(', ')}`);
-    if (res.updated.length) parts.push(`${res.updated.length} updated: ${res.updated.join(', ')}`);
-    if (res.blocked_seed_collisions.length) parts.push(`${res.blocked_seed_collisions.length} blocked (seed collision): ${res.blocked_seed_collisions.join(', ')}`);
+    if (res.skipped.length) parts.push(`${res.skipped.length} skipped (already exists): ${res.skipped.join(', ')}`);
     log(parts.length ? parts.join(' · ') : 'nothing changed', false, '#importLog');
   } catch (e) {
     log('import failed: ' + e.message, true, '#importLog');
@@ -365,17 +284,14 @@ async function importSkills() {
   await load();
 }
 
-$('#reload').onclick = () => { load(); loadProposals(); };
+$('#reload').onclick = load;
 $('#course').onchange = load;
 $('#student').onchange = load;
 $('#bCorrect').onclick = () => attempt('correct');
 $('#bPartial').onclick = () => attempt('partial');
 $('#bIncorrect').onclick = () => attempt('incorrect');
-$('#bPickNext').onclick = () => { if (data && data.next_skill_id) { selected = data.next_skill_id; render(); renderSelected(); } };
 $('#bImport').onclick = importSkills;
-$('#bReview').onclick = reviewProposals;
 load();
-loadProposals();
 </script>
 </body>
 </html>

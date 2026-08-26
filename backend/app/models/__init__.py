@@ -11,7 +11,6 @@ from app.models.attempt import Attempt
 from app.models.course_taxonomy_version import CourseTaxonomyVersion
 from app.models.problem_skill import ProblemSkill
 from app.models.skill import Skill
-from app.models.skill_proposal import SkillProposal
 from app.models.skill_state import SkillState
 
 __all__ = [
@@ -19,6 +18,5 @@ __all__ = [
     "CourseTaxonomyVersion",
     "ProblemSkill",
     "Skill",
-    "SkillProposal",
     "SkillState",
 ]

@@ -151,7 +151,6 @@ export function ProblemCard({ problem }: { problem: Problem }) {
           </p>
           {problem.skill ? (
             <span className="rounded-full bg-[#e8f2ea] px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#2f5a41]">
-              {problem.skill.isReview ? "Review · " : ""}
               {problem.skill.skillName}
             </span>
           ) : null}

@@ -161,7 +161,7 @@ describe("course material APIs", () => {
       ],
     }));
     await expect(
-      generateCourseQuestion("course_demo", "doc_1", "  A conceptual question  "),
+      generateCourseQuestion("course_demo", "stu_1", "doc_1", "  A conceptual question  "),
     ).resolves.toEqual({
       id: "problem_1",
       courseId: "course_demo",
@@ -171,8 +171,6 @@ describe("course material APIs", () => {
       skill: {
         skillId: "course_demo.power-rule",
         skillName: "Power rule",
-        targetDifficulty: 0.4,
-        isReview: false,
       },
     });
     expect(spy.mock.calls[0][1]).toMatchObject({
@@ -180,6 +178,7 @@ describe("course material APIs", () => {
       headers: { "Content-Type": "application/json" },
     });
     expect(JSON.parse(spy.mock.calls[0][1].body as string)).toEqual({
+      student_id: "stu_1",
       document_id: "doc_1",
       question_request: "A conceptual question",
     });
@@ -196,8 +195,27 @@ describe("course material APIs", () => {
       },
       skills: [],
     }));
-    const result = await generateCourseQuestion("course_demo", "doc_1", "Conceptual");
+    const result = await generateCourseQuestion("course_demo", "stu_1", "doc_1", "Conceptual");
     expect(result.skill).toBeUndefined();
+  });
+
+  it("lets an empty request through -- the engine picks the topic itself", async () => {
+    const spy = mockFetch(ok({
+      problem: {
+        id: "problem_3",
+        course_id: "course_demo",
+        document_id: "doc_1",
+        source: "generated",
+        prompt: "Differentiate x squared.",
+      },
+      skills: [],
+    }));
+    await generateCourseQuestion("course_demo", "stu_1", "doc_1", "");
+    expect(JSON.parse(spy.mock.calls[0][1].body as string)).toEqual({
+      student_id: "stu_1",
+      document_id: "doc_1",
+      question_request: "",
+    });
   });
 });
 

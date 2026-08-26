@@ -1,4 +1,10 @@
-"""Request/response contracts for the learning engine API."""
+"""Request/response contracts for the learning engine's HTTP-facing pieces.
+
+There is no student-facing "what do I know" or "what's next" endpoint here --
+the engine is consulted implicitly during question generation and grading.
+Everything in this module either records an attempt or serves the dev
+dashboard, the engine's only observability.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,6 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import SkillOrigin
-from app.schemas.problems import GeneratedProblem
 from app.schemas.tutor import TutorResponse
 
 
@@ -34,64 +39,30 @@ class AttemptResult(StrictModel):
     updated_skills: dict[str, float]
 
 
-class SkillStateOut(StrictModel):
-    skill_id: str
-    skill_name: str
-    mastery: float
-    confidence: float
-    attempts: int
-
-
-class StudentModelResponse(StrictModel):
-    student_id: str
-    course_id: str
-    skills: list[SkillStateOut]
-
-
 class SkillOverviewOut(StrictModel):
     skill_id: str
     skill_name: str
     description: str
     difficulty_band: float
-    prereqs: list[str]
     keywords: list[str]
     question_forms: list[str]
     origin: SkillOrigin
     created_at: datetime
     is_recent: bool
-    mastery: float
-    confidence: float
+    accuracy: float | None
     attempts: int
-    unlocked: bool
-    has_state: bool
+    has_signal: bool
 
 
 class SkillsOverviewResponse(StrictModel):
-    """Every skill in a course with this student's progress and unlock state.
+    """Every topic in a course with this student's attempt history.
 
-    Unlike StudentModelResponse, untouched skills are included at their seed
-    mastery so a dashboard can render the whole taxonomy, not just what was
-    attempted. next_skill_id is what selection would pick right now.
+    Dev dashboard only.
     """
 
     student_id: str
     course_id: str
     skills: list[SkillOverviewOut]
-    next_skill_id: str | None = None
-
-
-class GenerationSpec(StrictModel):
-    skill_id: str
-    skill_name: str
-    skill_description: str
-    target_difficulty: float
-    # The shapes a question on this skill typically takes -- passed to the
-    # generator as examples, not as things to avoid. It used to be
-    # avoid_forms, built from exactly this field, which told the generator to
-    # steer away from every canonical form of the skill it was asked to test.
-    question_forms: list[str] = []
-    retrieval_query: str = ""
-    is_review: bool = False
 
 
 class WorkResponse(StrictModel):
@@ -104,15 +75,3 @@ class WorkResponse(StrictModel):
 
     tutor: TutorResponse
     attempt: AttemptResult | None = None
-
-
-class NextProblemResponse(StrictModel):
-    """A generated problem plus the spec that produced it.
-
-    The client posts the attempt back with the returned problem_id; the skills
-    it exercised are looked up server-side from problem_skills, so the client
-    never has to (and no longer can) attribute the attempt itself.
-    """
-
-    problem: GeneratedProblem
-    spec: GenerationSpec

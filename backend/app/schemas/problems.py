@@ -15,11 +15,14 @@ class StrictModel(BaseModel):
 
 
 class GenerateQuestionRequest(StrictModel):
+    student_id: str = Field(min_length=1)
     document_id: str = Field(min_length=1)
+    #: What the student typed, or empty/omitted to let the engine pick a
+    #: topic (services/selection.py) and steer difficulty from it instead.
     question_request: Annotated[
         str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=1_000),
-    ]
+        StringConstraints(strip_whitespace=True, max_length=1_000),
+    ] = ""
 
 
 class ProblemContext(StrictModel):
@@ -50,10 +53,8 @@ class QuestionPlan(StrictModel):
 
     skills: every skill this question exercises, usually one but sometimes a
     few for a composite problem. Each entry either names an existing course
-    skill (by id, offered as context) or proposes a new one — same shape and
-    same downstream handling (build_taxonomy + merge_generated) as
-    taxonomy_workflow's output, so an inline proposal here is held to
-    exactly the same rules a full taxonomy-generation pass is.
+    skill (by id, offered as context) or names a new one -- see
+    QuestionService._attribute_skills for how each is resolved.
     """
 
     prompt: str = Field(min_length=1, max_length=8_000)

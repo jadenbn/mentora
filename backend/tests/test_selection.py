@@ -1,4 +1,10 @@
-"""Tests for next-problem selection: unlock gating, recency, review floor."""
+"""Tests for topic selection: coverage vs weakness, recency, difficulty.
+
+No unlock gate and no prerequisite graph -- topics are flat. That is
+deliberate: gating on top of an ability estimate is what starved a real
+demo course (an average student never clears a fixed unlock threshold), and
+a flat pool scored by weakness and staleness does not have that failure mode.
+"""
 
 from __future__ import annotations
 
@@ -22,22 +28,23 @@ def session():
         yield s
 
 
-def _skill(session, id_, course_id="calc1", prereqs=None):
+def _skill(session, id_, course_id="calc1", difficulty_band=0.5):
     s = Skill(
         id=id_, course_id=course_id, name=id_, description="d",
-        difficulty_band=0.5, prereqs=prereqs or [],
+        difficulty_band=difficulty_band,
     )
     session.add(s)
     return s
 
 
 def _state(session, skill_id, student_id="stu1", course_id="calc1",
-           mastery=0.5, attempts=5, days_ago=0.0):
+           recent_outcomes=None, attempts=5, days_ago=0.0):
     last_seen = datetime.now(timezone.utc) - timedelta(days=days_ago)
     session.add(
         SkillState(
             student_id=student_id, course_id=course_id, skill_id=skill_id,
-            mastery=mastery, attempts=attempts, last_seen=last_seen,
+            recent_outcomes=recent_outcomes if recent_outcomes is not None else [0.5],
+            attempts=attempts, last_seen=last_seen,
         )
     )
 
@@ -46,8 +53,7 @@ _problem_counter = itertools.count()
 
 
 def _attempt(session, skill_id, student_id="stu1", course_id="calc1", minutes_ago=0):
-    # Distinct problem ids: Attempt is unique on (student_id, problem_id),
-    # since one problem may only be attempted once.
+    # Distinct problem ids: Attempt is unique on (student_id, problem_id).
     session.add(
         Attempt(
             student_id=student_id, course_id=course_id, session_id="s",
@@ -59,158 +65,86 @@ def _attempt(session, skill_id, student_id="stu1", course_id="calc1", minutes_ag
     )
 
 
-def test_returns_none_when_course_has_no_skills(session):
-    assert selection.select_next(session, "nope", "stu1") is None
+def test_returns_none_when_course_has_no_topics(session):
+    assert selection.pick_topic(session, "nope", "stu1") is None
 
 
-def test_locked_skill_never_selected(session):
-    _skill(session, "calc1.a")  # no state -> default mastery 0.5, unlocked (no prereqs)
-    _skill(session, "calc1.b", prereqs=["calc1.a"])  # locked: a's mastery 0.5 < 0.6
-    session.commit()
-
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.a"
-
-
-def test_unlocks_once_prereq_mastery_clears_threshold(session):
-    _skill(session, "calc1.a")
-    _skill(session, "calc1.b", prereqs=["calc1.a"])
-    _state(session, "calc1.a", mastery=0.9, attempts=10)
-    session.commit()
-
-    spec = selection.select_next(session, "calc1", "stu1")
-    # both unlocked now; b should win since a is already strong (low urgency)
-    assert spec.skill_id == "calc1.b"
-
-
-def test_recency_penalty_avoids_just_seen_skill(session):
+def test_recency_penalty_avoids_just_seen_topic(session):
     _skill(session, "calc1.a")
     _skill(session, "calc1.c")
-    # identical mastery/staleness inputs -- only difference is recency
-    _state(session, "calc1.a", mastery=0.4, attempts=5, days_ago=3)
-    _state(session, "calc1.c", mastery=0.4, attempts=5, days_ago=3)
+    # identical weakness/staleness inputs -- only difference is recency
+    _state(session, "calc1.a", recent_outcomes=[0.4] * 5, days_ago=3)
+    _state(session, "calc1.c", recent_outcomes=[0.4] * 5, days_ago=3)
     # two most recent attempts both name "a" as primary skill
     _attempt(session, "calc1.a", minutes_ago=1)
     _attempt(session, "calc1.a", minutes_ago=2)
     session.commit()
 
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.c"
+    topic = selection.pick_topic(session, "calc1", "stu1")
+    assert topic.skill_id == "calc1.c"
 
 
-def test_forced_review_floor_after_three_weak_picks(session):
-    _skill(session, "calc1.weak")
-    _skill(session, "calc1.strong")
-    _state(session, "calc1.weak", mastery=0.3, attempts=8, days_ago=0.1)
-    _state(session, "calc1.strong", mastery=0.85, attempts=8, days_ago=6)
-    for i in range(3):
-        _attempt(session, "calc1.weak", minutes_ago=i)
-    session.commit()
-
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.strong"
-    assert spec.is_review is True
-
-
-def test_no_review_floor_without_three_consecutive_weak_picks(session):
-    _skill(session, "calc1.weak")
-    _skill(session, "calc1.strong")
-    _state(session, "calc1.weak", mastery=0.3, attempts=8, days_ago=0.1)
-    _state(session, "calc1.strong", mastery=0.85, attempts=8, days_ago=6)
-    # only two prior attempts, not three, and neither names weak/strong as
-    # primary -- isolates the review-floor check from the recency penalty
-    _attempt(session, "calc1.other", minutes_ago=0)
-    _attempt(session, "calc1.other", minutes_ago=1)
-    session.commit()
-
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.weak"
-    assert spec.is_review is False
-
-
-def test_difficulty_target_is_mastery_plus_offset(session):
-    _skill(session, "calc1.a")
-    # days_ago=0 avoids read-time decay confounding the expected value
-    _state(session, "calc1.a", mastery=0.4, attempts=5, days_ago=0)
-    session.commit()
-
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.target_difficulty == pytest.approx(
-        0.4 + selection.DIFFICULTY_OFFSET, abs=1e-4
-    )
-
-
-
-
-def test_a_failing_skill_outranks_an_untouched_one(session):
+def test_a_failing_topic_outranks_an_untouched_one(session):
     """The bug this formula exists to fix.
 
-    Staleness used to score `last_seen is None` at a full 1.0, so a skill
-    nobody had attempted (0.60*0.5 + 0.25*1.0 = 0.550) beat a skill the
-    student was failing (0.60*0.80 = 0.480). Every generated skill then
-    outranked real remediation.
+    Under the old, gated design, staleness scored "never attempted" at a
+    full 1.0 -- a term meaning "decayed since practice" -- so an untouched
+    skill (0.60*0.5 + 0.25*1.0 = 0.550) beat a skill the student was failing
+    (0.60*0.80 = 0.480). Every newly identified topic then outranked real
+    remediation. Coverage and weakness are separate terms now.
     """
     _skill(session, "calc1.failing")
     _skill(session, "calc1.untouched")
-    _state(session, "calc1.failing", mastery=0.20, attempts=6, days_ago=0)
+    _state(session, "calc1.failing", recent_outcomes=[0.0] * 6, attempts=6, days_ago=0)
     session.commit()
 
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.failing"
+    topic = selection.pick_topic(session, "calc1", "stu1")
+    assert topic.skill_id == "calc1.failing"
 
 
-def test_an_untouched_skill_outranks_a_mastered_one(session):
+def test_an_untouched_topic_outranks_a_mastered_one(session):
     """Coverage still has to pull in new material -- just not over remediation."""
     _skill(session, "calc1.mastered")
     _skill(session, "calc1.untouched")
-    _state(session, "calc1.mastered", mastery=0.92, attempts=10, days_ago=0)
+    _state(session, "calc1.mastered", recent_outcomes=[1.0] * 10, attempts=10, days_ago=0)
     session.commit()
 
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.untouched"
+    topic = selection.pick_topic(session, "calc1", "stu1")
+    assert topic.skill_id == "calc1.untouched"
 
 
-def test_a_single_observation_carries_little_urgency(session):
-    """confidence(1) is 0.22, so one bad attempt is not yet evidence of weakness.
-
-    A skill seen once and failed should not outrank unexplored material; the
-    student gets breadth before the engine commits to drilling.
-    """
-    _skill(session, "calc1.seen-once")
-    _skill(session, "calc1.untouched")
-    _state(session, "calc1.seen-once", mastery=0.30, attempts=1, days_ago=0)
+def test_a_cold_student_starts_at_the_easiest_topic(session):
+    """Every topic ties at W_COVERAGE, so the tie-break decides."""
+    _skill(session, "calc1.advanced", difficulty_band=0.9)
+    _skill(session, "calc1.basic", difficulty_band=0.1)
     session.commit()
 
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.untouched"
+    topic = selection.pick_topic(session, "calc1", "stu1")
+    assert topic.skill_id == "calc1.basic"
 
 
-def test_a_cold_student_starts_at_the_easiest_skill(session):
-    """Every skill ties at W_COVERAGE, so the tie-break decides -- and it
-    should be the foundational end of the graph, not list order."""
-    _skill(session, "calc1.advanced")
-    session.add(
-        Skill(id="calc1.basic", course_id="calc1", name="basic", description="d",
-              difficulty_band=0.1, prereqs=[])
-    )
-    session.commit()
-
-    spec = selection.select_next(session, "calc1", "stu1")
-    assert spec.skill_id == "calc1.basic"
-
-
-def test_prereq_bleed_does_not_reset_a_skills_staleness(session):
-    """A state created by bleed has no last_seen, so it cannot read as
-    freshly practised and cannot restart its decay clock."""
+def test_difficulty_tracks_accuracy_once_there_is_signal(session):
     _skill(session, "calc1.a")
-    session.add(
-        SkillState(student_id="stu1", course_id="calc1", skill_id="calc1.a",
-                   mastery=0.4, attempts=0, last_seen=None)
-    )
+    _state(session, "calc1.a", recent_outcomes=[0.7] * 5, attempts=5, days_ago=0)
     session.commit()
 
-    progress = selection.decayed_progress(
-        session.get(SkillState, ("stu1", "calc1.a")), datetime.now(timezone.utc)
-    )
-    assert progress.last_seen is None
-    assert progress.mastery == pytest.approx(0.4)  # undecayed, not re-stamped
+    topic = selection.pick_topic(session, "calc1", "stu1")
+    assert topic.target_difficulty == pytest.approx(0.7)
+
+
+def test_difficulty_defaults_without_enough_signal(session):
+    _skill(session, "calc1.a")
+    _state(session, "calc1.a", recent_outcomes=[0.0], attempts=1, days_ago=0)
+    session.commit()
+
+    topic = selection.pick_topic(session, "calc1", "stu1")
+    assert topic.target_difficulty == pytest.approx(selection.DEFAULT_DIFFICULTY)
+
+
+def test_difficulty_is_clamped_to_the_productive_range(session):
+    _skill(session, "calc1.a")
+    _state(session, "calc1.a", recent_outcomes=[1.0] * 8, attempts=8, days_ago=0)
+    session.commit()
+
+    topic = selection.pick_topic(session, "calc1", "stu1")
+    assert topic.target_difficulty == pytest.approx(selection.DIFFICULTY_CEIL)
