@@ -61,9 +61,9 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
   }
 
   return (
-    <main className="flex h-dvh flex-col bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 bg-transparent px-3 py-2 sm:px-5">
-        <div className="min-w-0">
+    <main className="relative h-dvh bg-white">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-50 flex flex-wrap items-center justify-between gap-3 bg-transparent px-3 py-2 sm:px-5">
+        <div className="pointer-events-auto min-w-0">
           <Link
             className="text-sm font-semibold text-blue-700"
             href={`/courses/${space.courseId}`}
@@ -72,16 +72,19 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
           </Link>
           <p className="truncate text-sm text-slate-600">{space.title}</p>
         </div>
-        <div className="min-w-0 flex-1 basis-full sm:basis-auto" ref={setFeedbackHost} />
+        <div
+          className="pointer-events-auto min-w-0 flex-1 basis-full sm:basis-auto"
+          ref={setFeedbackHost}
+        />
         <button
-          className="shrink-0 rounded-md border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="pointer-events-auto shrink-0 rounded-md border border-slate-200 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-700 backdrop-blur-sm hover:bg-white/90"
           onClick={handleRename}
           type="button"
         >
           Rename
         </button>
       </header>
-      <section className="min-h-0 flex-1" aria-label="Whiteboard canvas">
+      <section className="relative h-full min-h-0" aria-label="Whiteboard canvas">
         <Whiteboard
           courseId={space.courseId}
           feedbackHost={feedbackHost}
