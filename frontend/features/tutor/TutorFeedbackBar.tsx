@@ -34,7 +34,7 @@ export function TutorFeedbackBar({
   const atEnd = activeIndex < 0 || activeIndex >= layerCount - 1;
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-center gap-1.5 text-sm">
+    <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-wrap items-center justify-center gap-2 text-sm">
       {error ? (
         <span aria-live="assertive" className="text-xs font-semibold text-red-700" role="alert">
           {error}
@@ -58,11 +58,11 @@ export function TutorFeedbackBar({
             <ChevronLeft aria-hidden="true" className="size-4" />
           </button>
           <span
-            className={`min-w-0 max-w-full flex-1 text-center ${visible ? "text-slate-800" : "text-slate-400"}`}
+            className={`min-w-0 max-w-4xl flex-1 text-left ${visible ? "text-slate-950" : "text-slate-400"}`}
             title={visible ? layer.response.summary : "Feedback hidden"}
           >
             <ProblemBody
-              className="problem-katex max-w-full whitespace-pre-wrap text-[clamp(0.9rem,1.4vw,1.1rem)] leading-snug text-inherit"
+              className="problem-katex max-w-full whitespace-pre-wrap text-[clamp(1rem,1.5vw,1.25rem)] leading-relaxed text-inherit"
               prompt={visible ? layer.response.summary : "Feedback hidden"}
             />
           </span>

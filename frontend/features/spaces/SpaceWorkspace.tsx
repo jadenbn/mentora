@@ -15,6 +15,7 @@ import { useIsClient } from "@/lib/useIsClient";
 export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
   const hydrated = useIsClient();
   const [feedbackHost, setFeedbackHost] = useState<HTMLDivElement | null>(null);
+  const [thinkingHost, setThinkingHost] = useState<HTMLDivElement | null>(null);
   // Read the index directly so a rename elsewhere is reflected here.
   const all = useSyncExternalStore(
     subscribeToSpaces,
@@ -72,10 +73,10 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
           </Link>
           <p className="truncate text-sm text-slate-600">{space.title}</p>
         </div>
-        <div
-          className="pointer-events-auto min-w-0 flex-1 basis-full sm:basis-auto"
-          ref={setFeedbackHost}
-        />
+        <div className="pointer-events-auto min-w-0 flex-1 basis-full sm:basis-auto">
+          <div ref={setFeedbackHost} />
+          <div className="mt-1 flex justify-center" ref={setThinkingHost} />
+        </div>
         <button
           className="pointer-events-auto shrink-0 rounded-md border border-slate-200 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-700 backdrop-blur-sm hover:bg-white/90"
           onClick={handleRename}
@@ -88,6 +89,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
         <Whiteboard
           courseId={space.courseId}
           feedbackHost={feedbackHost}
+          thinkingHost={thinkingHost}
           problem={space.problem}
           spaceId={space.id}
         />

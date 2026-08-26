@@ -163,7 +163,7 @@ function ThinkingPill() {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none absolute left-1/2 top-3 z-50 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+      className="pointer-events-none mx-auto w-fit rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm"
       role="status"
     >
       Thinking
@@ -181,11 +181,13 @@ export function Whiteboard({
   courseId,
   problem,
   feedbackHost,
+  thinkingHost,
 }: {
   spaceId: string;
   courseId: string;
   problem?: ProblemContext;
   feedbackHost?: HTMLElement | null;
+  thinkingHost?: HTMLElement | null;
 }) {
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
@@ -406,7 +408,6 @@ export function Whiteboard({
 
   return (
     <div className="relative h-full">
-      {isThinking ? <ThinkingPill /> : null}
       {feedbackHost
         ? createPortal(
             <TutorFeedbackBar
@@ -423,6 +424,9 @@ export function Whiteboard({
             />,
             feedbackHost,
           )
+        : null}
+      {thinkingHost && isThinking
+        ? createPortal(<ThinkingPill />, thinkingHost)
         : null}
       <ProblemShapeProvider problem={problem}>
         <Tldraw
