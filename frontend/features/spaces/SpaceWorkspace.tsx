@@ -63,7 +63,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
 
   return (
     <main className="relative h-dvh bg-white">
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-50 grid grid-cols-[auto,minmax(0,1fr)] items-start gap-3 bg-transparent px-3 py-2 sm:px-5">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-50 bg-transparent px-3 py-2 sm:px-5">
         <div className="pointer-events-auto min-w-0 pt-0.5">
           <Link
             className="text-sm font-semibold text-blue-700"
@@ -80,7 +80,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
             Rename
           </button>
         </div>
-        <div className="pointer-events-auto min-w-0">
+        <div className="pointer-events-auto absolute inset-x-0 top-14 px-3 sm:top-2 sm:px-52">
           <div ref={setFeedbackHost} />
           <div className="mt-1 flex justify-center" ref={setThinkingHost} />
         </div>

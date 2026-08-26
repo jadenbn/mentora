@@ -34,7 +34,13 @@ export function TutorFeedbackBar({
   const atEnd = activeIndex < 0 || activeIndex >= layerCount - 1;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-nowrap items-center justify-center gap-2 text-sm">
+    <div
+      className={
+        hasLayer
+          ? "mx-auto grid w-full max-w-6xl min-w-0 grid-cols-[1.75rem,minmax(0,1fr),1.75rem,auto,1.75rem] items-start gap-2 text-sm"
+          : "mx-auto flex w-full min-w-0 items-center justify-center gap-2 text-sm"
+      }
+    >
       {error ? (
         <span aria-live="assertive" className="text-xs font-semibold text-red-700" role="alert">
           {error}
@@ -58,7 +64,7 @@ export function TutorFeedbackBar({
             <ChevronLeft aria-hidden="true" className="size-4" />
           </button>
           <span
-            className={`min-w-0 max-w-4xl flex-1 text-center ${visible ? "text-slate-950" : "text-slate-400"}`}
+            className={`min-w-0 overflow-hidden text-center ${visible ? "text-slate-950" : "text-slate-400"}`}
             title={visible ? layer.response.summary : "Feedback hidden"}
           >
             <ProblemBody
