@@ -63,7 +63,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
 
   return (
     <main className="relative h-dvh bg-white">
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-50 grid grid-cols-[auto,minmax(0,1fr),auto] items-start gap-3 bg-transparent px-3 py-2 sm:px-5">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-50 grid grid-cols-[auto,minmax(0,1fr)] items-start gap-3 bg-transparent px-3 py-2 sm:px-5">
         <div className="pointer-events-auto min-w-0 pt-0.5">
           <Link
             className="text-sm font-semibold text-blue-700"
@@ -72,18 +72,18 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
             ← {course?.name ?? "Course"}
           </Link>
           <p className="truncate text-sm text-slate-600">{space.title}</p>
+          <button
+            className="mt-1 inline-flex rounded-md border border-slate-200 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-700 backdrop-blur-sm hover:cursor-grab hover:bg-white/90"
+            onClick={handleRename}
+            type="button"
+          >
+            Rename
+          </button>
         </div>
         <div className="pointer-events-auto min-w-0">
           <div ref={setFeedbackHost} />
           <div className="mt-1 flex justify-center" ref={setThinkingHost} />
         </div>
-        <button
-          className="pointer-events-auto mt-0.5 shrink-0 rounded-md border border-slate-200 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-700 backdrop-blur-sm hover:bg-white/90"
-          onClick={handleRename}
-          type="button"
-        >
-          Rename
-        </button>
       </header>
       <section className="relative h-full min-h-0" aria-label="Whiteboard canvas">
         <Whiteboard
