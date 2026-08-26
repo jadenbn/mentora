@@ -1,0 +1,32 @@
+{
+  "course_id": "course_demo",
+  "skills": [
+    {
+      "id": "course_demo.chain-rule-differentiation",
+      "name": "Chain Rule for Differentiation",
+      "description": "Differentiating composite functions using the formula \\frac{d}{dx} F(u(x)) = F'(u(x)) \\cdot u'(x).",
+      "difficulty_band": 0.4,
+      "keywords": [
+        "chain rule",
+        "composite function",
+        "differentiation",
+        "derivative",
+        "calculus"
+      ],
+      "question_forms": []
+    },
+    {
+      "id": "course_demo.product-rule-differentiation",
+      "name": "Product Rule for Differentiation",
+      "description": "Applying the product rule to compute the derivative of a product of two differentiable functions.",
+      "difficulty_band": 0.3,
+      "keywords": [
+        "product rule",
+        "differentiation",
+        "derivatives",
+        "calculus"
+      ],
+      "question_forms": []
+    }
+  ]
+}

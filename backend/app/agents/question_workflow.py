@@ -132,7 +132,7 @@ class GeminiQuestionWorkflow:
     ) -> dict:
         # Echo back exactly what failed, not a generic reminder — a canned
         # "use only the exact chunk IDs below" hint is useless when the real
-        # problem was e.g. an invalid skill prereq or an out-of-range
+        # problem was e.g. a duplicate skill id or an out-of-range
         # difficulty_band; the model needs the actual validation error.
         prefix = (
             f"Repair attempt: the previous response was rejected with this "

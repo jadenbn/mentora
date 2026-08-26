@@ -35,7 +35,7 @@ DIFFICULTY_FLOOR = 0.15
 DIFFICULTY_CEIL = 0.85
 DEFAULT_DIFFICULTY = 0.5
 
-RECENT_WINDOW = 2  # how many recently-served topics incur the recency penalty
+RECENT_PICKS_WINDOW = 2  # how many recently-served topics incur the recency penalty
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,7 @@ def pick_topic(session: Session, course_id: str, student_id: str) -> TopicPick |
         )
     ).all()
     state_by_id = {state.skill_id: state for state in states}
-    recent = set(_recent_primary_skills(session, course_id, student_id, RECENT_WINDOW))
+    recent = set(_recent_primary_skills(session, course_id, student_id, RECENT_PICKS_WINDOW))
 
     def priority(skill: Skill) -> float:
         state = state_by_id.get(skill.id)

@@ -61,7 +61,7 @@ async def submit_work(
     `correct`, `partial`, `hints_used` and `difficulty` straight from the
     browser: the server chose which skill an attempt moved, but the client
     decided whether it went up or down, on an API with no authentication. A
-    one-line curl could set any student's mastery to the ceiling.
+    one-line curl could set any student's accuracy to the ceiling.
 
     Here the tutor's own reading of the canvas decides the outcome, and the
     difficulty comes from what generation asked for at question-creation
@@ -114,7 +114,7 @@ async def submit_work(
             except UnknownSkillError:
                 # The problem names a skill the taxonomy no longer has (a
                 # re-seed removed it, say). The grading still stands; only the
-                # mastery update is lost.
+                # accuracy update is lost.
                 logger.exception("could not record attempt for problem %s", problem_id)
         else:
             logger.info(

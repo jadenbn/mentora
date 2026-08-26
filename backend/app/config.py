@@ -47,7 +47,7 @@ def api_key() -> str | None:
 
     Set MENTORA_API_KEY on any deployment reachable by anything but you. This
     API spends provider quota on every generation and grading call, and it
-    writes student mastery.
+    writes to the student model.
 
     Scope, stated plainly: a shared key authenticates the *caller*, not the
     student. `student_id` is still whatever the request says it is, so any

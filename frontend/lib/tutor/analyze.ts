@@ -51,19 +51,17 @@ export async function runTutorAnalysis(
   // server recorded is not surfaced here -- the engine has no UI.
   const response =
     problem?.skill && studentId && sessionId
-      ? (
-          await submitWork({
-            courseId: options.courseId,
-            studentId,
-            sessionId,
-            problemId: problem.id,
-            mode: options.mode,
-            canvasImage: capture.blob,
-            priorAnnotations,
-            hintsUsed: options.hintsUsed ?? 0,
-            signal: options.signal,
-          })
-        ).tutor
+      ? await submitWork({
+          courseId: options.courseId,
+          studentId,
+          sessionId,
+          problemId: problem.id,
+          mode: options.mode,
+          canvasImage: capture.blob,
+          priorAnnotations,
+          hintsUsed: options.hintsUsed ?? 0,
+          signal: options.signal,
+        })
       : await analyzeCanvas({
           courseId: options.courseId,
           mode: options.mode,

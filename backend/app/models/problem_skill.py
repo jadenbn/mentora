@@ -26,5 +26,5 @@ class ProblemSkill(SQLModel, table=True):
         ondelete="CASCADE",
     )
     #: Declared order. The first skill is the problem's primary one, which is
-    #: what selection's recency and review windows look at.
+    #: what selection's recency penalty looks at.
     ordinal: int = Field(default=0)

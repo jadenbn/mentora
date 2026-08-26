@@ -106,14 +106,6 @@ Accuracy is the mean of a topic's most recent 8 scores
 gates on `attempts >= MIN_ATTEMPTS_FOR_SIGNAL` (2) — below that, a reading
 is too thin to act on and callers fall back to a default.
 
-This replaced an Elo/IRT-style estimator (a residual update toward the gap
-between actual and expected score, with read-time decay and a confidence
-function). That estimator was doing real, correct work — but the engine
-has no UI to spend the extra precision on, and a rolling window is simpler
-to reason about, to explain, and to get right. `docs/PRODUCT.md` §23 also
-asks the MVP to track exactly this: attempts, correct/incorrect, hints used
-— counters, not a fitted ability model.
-
 ---
 
 ## 4. Topics come from the questions themselves

@@ -1,7 +1,7 @@
-"""A student's tendencies, derived from their attempt ledger.
+"""A student's overall accuracy, derived from their attempt ledger.
 
 Not a stored row: computed on read from Attempt, the same immutable log
-mastery accuracy is read from. That means it can never drift from what
+per-topic accuracy is read from. That means it can never drift from what
 actually happened and needs no migration if the definition changes later.
 If aggregation ever gets too slow to compute per-request, it can be
 materialized into a table without changing this module's return shape.
@@ -25,8 +25,6 @@ DEFAULT_ACCURACY = 0.5
 class StudentProfile:
     attempts: int
     accuracy: float | None  # None until MIN_ATTEMPTS_FOR_SIGNAL is reached
-    hint_rate: float  # fraction of attempts that used at least one hint
-    topics_touched: int
 
 
 def get_profile(session: Session, course_id: str, student_id: str) -> StudentProfile:
@@ -37,17 +35,12 @@ def get_profile(session: Session, course_id: str, student_id: str) -> StudentPro
     ).all()
 
     if not rows:
-        return StudentProfile(attempts=0, accuracy=None, hint_rate=0.0, topics_touched=0)
+        return StudentProfile(attempts=0, accuracy=None)
 
     correct = sum(1 for a in rows if a.correct)
-    hinted = sum(1 for a in rows if a.hints_used > 0)
-    topics = {skill_id for a in rows for skill_id in a.expected_skills}
-
     return StudentProfile(
         attempts=len(rows),
         accuracy=correct / len(rows) if len(rows) >= MIN_ATTEMPTS_FOR_SIGNAL else None,
-        hint_rate=hinted / len(rows),
-        topics_touched=len(topics),
     )
 
 

@@ -221,22 +221,18 @@ export async function generateCourseQuestion(
   };
 }
 
-export interface AttemptOutcome {
-  attemptId: string;
-  updatedSkills: Record<string, number>;
-}
-
 /**
  * POST /api/courses/{course_id}/work
  *
  * Submit the canvas for a graded check-in. The tutor's own reading of the
  * work decides the outcome and the server records the attempt in the same
- * round trip; the difficulty comes from what selection asked for at
- * generation time. Nothing the browser sends scores the student's work — it
- * used to send `correct`, which meant anyone could set their own mastery.
+ * round trip; the difficulty comes from what generation asked for at
+ * question-creation time. Nothing the browser sends scores the student's
+ * work — it used to send `correct`, which meant anyone could set their own
+ * mastery.
  *
- * `attempt` comes back null when nothing was recorded: a hint rather than a
- * mark, a canvas the tutor could not read, or a problem already attempted.
+ * The server also returns what it recorded (or null, if nothing was), but
+ * the engine has no UI, so only the tutor's response is surfaced here.
  */
 export async function submitWork(args: {
   courseId: string;
@@ -248,7 +244,7 @@ export async function submitWork(args: {
   priorAnnotations: NormalizedBounds[];
   hintsUsed: number;
   signal?: AbortSignal;
-}): Promise<{ tutor: TutorResponse; attempt: AttemptOutcome | null }> {
+}): Promise<TutorResponse> {
   const form = new FormData();
   form.append("session_id", args.sessionId);
   form.append("mode", args.mode);
@@ -276,14 +272,8 @@ export async function submitWork(args: {
     );
   }
 
-  const data = (await response.json()) as {
-    tutor: TutorResponse;
-    attempt: { attempt_id: string; updated_skills: Record<string, number> } | null;
-  };
-  return {
-    tutor: data.tutor,
-    attempt: data.attempt
-      ? { attemptId: data.attempt.attempt_id, updatedSkills: data.attempt.updated_skills }
-      : null,
-  };
+  // The server also returns `attempt` (what it recorded, or null); the
+  // engine has no UI, so the caller only needs the tutor's response.
+  const data = (await response.json()) as { tutor: TutorResponse };
+  return data.tutor;
 }

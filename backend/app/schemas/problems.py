@@ -76,9 +76,9 @@ class GeneratedProblemResponse(StrictModel):
     """A generated problem plus the skill(s) it was attributed to.
 
     The client posts the attempt back with problem.id; expected_skills is
-    still resolved server-side from problem_skills (this is only what the
-    client uses to render a badge and pick a difficulty for the attempt),
-    same trust model as NextProblemResponse.
+    still resolved server-side from problem_skills -- this is only what the
+    client uses to render a badge. The client never gets to name the skills
+    an attempt moves.
     """
 
     problem: GeneratedProblem
