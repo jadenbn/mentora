@@ -80,7 +80,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
             Rename
           </button>
         </div>
-        <div className="pointer-events-auto absolute inset-x-0 top-14 px-3 sm:top-2 sm:px-52">
+        <div className="pointer-events-none absolute inset-x-0 top-14 px-3 sm:top-2 sm:px-52">
           <div ref={setFeedbackHost} />
           <div className="mt-1 flex justify-center" ref={setThinkingHost} />
         </div>
