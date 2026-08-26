@@ -21,6 +21,7 @@ import type {
   JsonObject,
   TLDefaultColorStyle,
   TLDefaultSizeStyle,
+  TLShapePartial,
   TLShapeId,
 } from "tldraw";
 import { strokeLength, type Stroke } from "@/lib/annotations/geometry";
@@ -30,6 +31,7 @@ export const DEFAULT_FPS = 30;
 export const DEFAULT_PEN_SPEED = 900;
 /** Pause between one stroke finishing and the next starting. */
 export const PEN_LIFT_MS = 90;
+export const MARK_FADE_MS = 240;
 
 export interface AnimationHandle {
   /** Stop immediately, leaving whatever has been drawn so far in place. */
@@ -185,6 +187,38 @@ export function animateStrokes(
   }
 
   return schedule(frames, intervalMs);
+}
+
+/** Fade in a settled text mark while keeping its final glyph unchanged. */
+export function animateTextShape(
+  editor: Editor,
+  shape: TLShapePartial & { type: "text" },
+  durationMs = MARK_FADE_MS,
+): AnimationHandle {
+  const frameCount = Math.max(2, Math.round(durationMs / (1000 / DEFAULT_FPS)));
+  const frames: Frame[] = [
+    {
+      run: () =>
+        write(editor, () => {
+          editor.createShape({ ...shape, opacity: 0 });
+        }),
+    },
+  ];
+
+  for (let frame = 1; frame <= frameCount; frame++) {
+    frames.push({
+      run: () =>
+        write(editor, () => {
+          editor.updateShape({
+            id: shape.id,
+            type: "text",
+            opacity: frame / frameCount,
+          });
+        }),
+    });
+  }
+
+  return schedule(frames, 1000 / DEFAULT_FPS);
 }
 
 /** A cancellable pause, so a script can breathe between beats. */

@@ -150,13 +150,31 @@ function buildShape(
     };
   }
 
-  // A check or cross sits just past the top-right corner of what it marks.
+  return buildMarkShape(action, context, { id, meta });
+}
+
+/** Build the settled text glyph used by both instant and animated rendering. */
+export function buildMarkShape(
+  action: CanvasAction,
+  context: RenderContext,
+  overrides: { id?: TLShapeId; meta?: AiShapeMeta } = {},
+) {
+  if (action.type !== "check" && action.type !== "cross") return null;
+  const mark = MARKS[action.type];
+  const rect = toWorldRect(action.target, context.bounds);
   return {
-    id,
+    id: overrides.id ?? createShapeId(),
     type: "text" as const,
     x: rect.x + rect.w,
     y: rect.y,
-    meta,
-    props: { richText: toRichText(mark.glyph), color: mark.color, size: "l" },
+    meta: overrides.meta ?? {
+      owner: AI_SHAPE_OWNER,
+      interactionId: context.interactionId,
+    },
+    props: {
+      richText: toRichText(mark.glyph!),
+      color: mark.color,
+      size: "l" as const,
+    },
   };
 }

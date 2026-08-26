@@ -1,21 +1,19 @@
 /**
  * The animated counterpart to renderCanvasActions.
  *
- * Same input, same coordinate rules, different output: geometry is drawn as
- * freehand strokes rather than perfect geo shapes, because a sketched ellipse
- * next to handwriting reads better than a vector one.
+ * Same input and coordinate rules, with circles drawn as freehand strokes and
+ * check/cross marks fading in as the same settled glyphs used during restore.
  */
 
 import { createShapeId } from "tldraw";
 import type { Editor, TLDefaultColorStyle } from "tldraw";
 import {
+  animateTextShape,
   animateStrokes,
   sequence,
   type AnimationHandle,
 } from "@/lib/annotations/animate";
 import {
-  checkStrokes,
-  crossStrokes,
   ellipseStroke,
   makeJitter,
   toWorldRect,
@@ -25,6 +23,7 @@ import {
 import {
   AI_SHAPE_OWNER,
   clearAiShapesForInteraction,
+  buildMarkShape,
   type RenderContext,
 } from "@/lib/annotations/renderCanvasActions";
 import type { CanvasAction } from "@/types/tutor";
@@ -52,17 +51,12 @@ function strokesFor(action: CanvasAction, frame: WorldBounds): Stroke[] | null {
   switch (action.type) {
     case "circle":
       return [ellipseStroke(rect, jitter)];
-    case "check":
-      return checkStrokes(rect, jitter);
-    case "cross":
-      return crossStrokes(rect, jitter);
     default:
       return null;
   }
 }
 
 const COLORS: Partial<Record<CanvasAction["type"], TLDefaultColorStyle>> = {
-  check: "green",
   highlight: "yellow",
 };
 
@@ -77,6 +71,12 @@ function stepFor(
 ): (() => AnimationHandle) | null {
   const meta = metaFor(context);
   const color = colorFor(action);
+
+  if (action.type === "check" || action.type === "cross") {
+    const shape = buildMarkShape(action, context);
+    if (!shape) return null;
+    return () => animateTextShape(editor, shape);
+  }
 
   const strokes = strokesFor(action, context.bounds);
   if (strokes) {

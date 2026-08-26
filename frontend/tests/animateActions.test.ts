@@ -70,6 +70,26 @@ describe("animateCanvasActions", () => {
     expect(fake.updated.length).toBeGreaterThan(3);
   });
 
+  it("fades the settled check glyph in instead of drawing a different mark", async () => {
+    const fake = makeEditor();
+    const handle = animateCanvasActions(
+      fake.editor,
+      [{ type: "check", target: { x: 0.2, y: 0.2, width: 0.2, height: 0.2 } }],
+      CONTEXT,
+    );
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.created[0]).toMatchObject({
+      type: "text",
+      opacity: 0,
+      props: { color: "green", size: "l" },
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await handle.done;
+    expect(fake.updated.at(-1)).toMatchObject({ type: "text", opacity: 1 });
+  });
+
   it("cancels an in-flight reveal without leaving later actions running", async () => {
     const fake = makeEditor();
     const handle = animateCanvasActions(
