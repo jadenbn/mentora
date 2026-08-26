@@ -81,7 +81,7 @@ keep the model from grading its own handwriting:
   "interaction_id": "33c9fd11c4504fb588fa50490766cf88",
   "status": "partial",
   "canvas_actions": [
-    {"type": "text", "position": {"x": 0.43, "y": 0.35}, "text": "What about the 2?"},
+    {"type": "highlight", "target": {"x": 0.43, "y": 0.35, "width": 0.12, "height": 0.08}},
     {"type": "circle", "target": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1}}
   ],
   "summary": "The setup is right; the coefficient was dropped."
@@ -92,11 +92,12 @@ keep the model from grading its own handwriting:
 
 ### Actions
 
-Two shapes, because there are two things the tutor can do to a canvas.
+The tutor can target a region in one of four visual ways. Prose stays in the
+navbar `summary`, never on the student's work area.
 
 | Type | Carries | Draws |
 | --- | --- | --- |
-| `text` | `position` | words beside the work |
+| `highlight` | `target` | translucent attention region |
 | `circle` | `target` | an outline around a region |
 | `check` | `target` | a ✓ past the region's top-right |
 | `cross` | `target` | a ✗ past the region's top-right |
@@ -105,8 +106,9 @@ All coordinates are normalized to the submitted image, `[0, 1]` from its
 top-left. `frontend/lib/annotations/renderCanvasActions.ts` is the only place
 that converts them to tldraw world space.
 
-`interaction_id` is server-minted. Re-rendering the same interaction replaces
-its shapes; a different interaction leaves earlier feedback in place.
+`interaction_id` is server-minted. The whiteboard stores each response as a
+feedback layer and renders only the selected layer's shapes; switching layers
+replaces AI shapes without touching system or student content.
 
 ## The safety policy
 

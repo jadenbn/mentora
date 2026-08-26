@@ -15,7 +15,7 @@
 // compressLegacySegments is not re-exported by the tldraw barrel, so tlschema
 // is a declared dependency pinned to the same version.
 import { compressLegacySegments } from "@tldraw/tlschema";
-import { createShapeId, toRichText } from "tldraw";
+import { createShapeId } from "tldraw";
 import type {
   Editor,
   JsonObject,
@@ -28,8 +28,6 @@ import { strokeLength, type Stroke } from "@/lib/annotations/geometry";
 export const DEFAULT_FPS = 30;
 /** Pen speed in world units per second. */
 export const DEFAULT_PEN_SPEED = 900;
-/** Milliseconds per character for the typewriter reveal. */
-export const DEFAULT_CHAR_MS = 28;
 /** Pause between one stroke finishing and the next starting. */
 export const PEN_LIFT_MS = 90;
 
@@ -187,70 +185,6 @@ export function animateStrokes(
   }
 
   return schedule(frames, intervalMs);
-}
-
-export interface TextAnimationOptions {
-  meta?: Partial<JsonObject>;
-  color?: TLDefaultColorStyle;
-  size?: TLDefaultSizeStyle;
-  charMs?: number;
-  onShape?: (id: TLShapeId) => void;
-}
-
-/**
- * Typewriter reveal.
- *
- * Real stroke-level handwriting would need a single-stroke font and glyph
- * layout; revealing character by character costs nothing and still reads as
- * the tutor writing.
- */
-export function animateText(
-  editor: Editor,
-  at: { x: number; y: number },
-  text: string,
-  options: TextAnimationOptions = {},
-): AnimationHandle {
-  const {
-    meta = {},
-    color = "red",
-    size = "m",
-    charMs = DEFAULT_CHAR_MS,
-    onShape,
-  } = options;
-
-  const id = createShapeId();
-  const frames: Frame[] = [
-    {
-      run: () =>
-        write(editor, () => {
-          editor.createShape({
-            id,
-            type: "text",
-            x: at.x,
-            y: at.y,
-            meta,
-            props: { richText: toRichText(""), color, size },
-          });
-          onShape?.(id);
-        }),
-    },
-  ];
-
-  for (let i = 1; i <= text.length; i++) {
-    const slice = text.slice(0, i);
-    frames.push({
-      run: () =>
-        write(editor, () => {
-          editor.updateShape({
-            id,
-            type: "text",
-            props: { richText: toRichText(slice) },
-          });
-        }),
-    });
-  }
-
-  return schedule(frames, charMs);
 }
 
 /** A cancellable pause, so a script can breathe between beats. */

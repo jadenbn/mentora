@@ -57,7 +57,6 @@ AI outputs include:
 - checks/crosses
 - circles/arrows
 - underlines/highlights
-- short notes
 - math expressions
 - visual explanations
 - clean problem text
@@ -69,9 +68,12 @@ AI identifies exact region
         ↓
 AI circles the relevant sign
         ↓
-AI writes "check this sign"
+The navbar says "Check this sign"
 ```
-Avoid turning every interaction into a paragraph in a side panel.
+Keep prose out of the student's working area. Feedback is chronological: the
+current concise guidance appears in the navbar while its spatial marks appear
+on the canvas. Previous layers can be revisited with navbar arrows without
+changing student work.
 
 ## 5. Two Core Problem Entry Flows
 ### 5.1 AI-Generated Practice
@@ -272,7 +274,8 @@ AI tutor content
 ```
 This enables:
 - analyze student work without confusing AI output
-- hide/clear AI feedback
+- hide the current AI feedback layer
+- revisit the last 10 feedback layers
 - undo tutor interventions
 - preserve problem content
 - advanced layer controls later
@@ -293,7 +296,7 @@ structured annotation/action
     ↓
 canvas renderer
     ↓
-tldraw shapes / text / math
+tldraw shapes / math
 ```
 Do not tightly couple reasoning to one visual style.
 
@@ -302,22 +305,21 @@ Do not tightly couple reasoning to one visual style.
 Implemented today — the authoritative list is `backend/app/schemas/tutor.py`:
 
 ```text
-text     say something at a point
+highlight point at a region with a translucent yellow mark
 circle   point at a region
 check    mark a region right
 cross    mark a region wrong
 ```
 
-`math`, `arrow`, `underline`, and `highlight` were specified earlier and are
-**not built**. Circling, underlining, and highlighting were three ways to say
-"look here", and a labelled mark duplicated `text`, so one pointing primitive
-carries all of it. Add one back only if the tutor demonstrably cannot express
-something; the renderer and the prompt must change together.
+Prose belongs in the required, concise `summary` field and is shown in the
+navbar. `math`, `arrow`, and `underline` are not built. Add one back only if
+the tutor demonstrably cannot express something; the renderer and prompt must
+change together.
 Model output must be validated before rendering.
 The model should not directly call arbitrary canvas methods.
 
 ## 20. Clean Math First, Handwriting Later
-For the MVP, prioritize structured/typeset math and predictable text.
+For the MVP, prioritize structured/typeset math and predictable navbar prose.
 A polish goal is realistic AI handwriting, including animated pen strokes and natural drawing motion.
 Treat handwriting as a renderer/presentation improvement so tutor reasoning does not need to be rewritten later.
 

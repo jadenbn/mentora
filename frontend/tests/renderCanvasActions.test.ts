@@ -25,8 +25,8 @@ const render = (actions: CanvasAction[], context = CONTEXT) => {
   return fake;
 };
 
-const text = (over = {}): CanvasAction =>
-  ({ type: "text", position: { x: 0.25, y: 0.5 }, text: "Check the exponent", ...over }) as CanvasAction;
+const highlight = (over = {}): CanvasAction =>
+  ({ type: "highlight", target: { x: 0.25, y: 0.5, width: 0.2, height: 0.1 }, ...over }) as CanvasAction;
 
 const circle = (over = {}): CanvasAction =>
   ({ type: "circle", target: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }, ...over }) as CanvasAction;
@@ -35,9 +35,10 @@ const mark = (type: "check" | "cross"): CanvasAction =>
   ({ type, target: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } }) as CanvasAction;
 
 describe("coordinate conversion", () => {
-  it("places text at the world point its normalized position names", () => {
-    const { created } = render([text()]);
+  it("places a highlight at the world rectangle its normalized target names", () => {
+    const { created } = render([highlight()]);
     expect(created[0]).toMatchObject({ x: 200, y: 600 });
+    expect(created[0].props).toMatchObject({ w: 80, h: 80 });
   });
 
   it("sizes a circle to the world rectangle its target names", () => {
@@ -54,8 +55,8 @@ describe("coordinate conversion", () => {
 });
 
 describe("action coverage", () => {
-  it("renders text", () => {
-    expect(render([text()]).created).toHaveLength(1);
+  it("renders a highlight", () => {
+    expect(render([highlight()]).created).toHaveLength(1);
   });
 
   it("renders a circle as an outline, not a filled blob over the work", () => {
@@ -70,7 +71,7 @@ describe("action coverage", () => {
   });
 
   it("renders every action it is given", () => {
-    const { created } = render([text(), circle(), mark("check"), mark("cross")]);
+    const { created } = render([highlight(), circle(), mark("check"), mark("cross")]);
     expect(created).toHaveLength(4);
   });
 
@@ -89,14 +90,14 @@ describe("action coverage", () => {
 
 describe("provenance", () => {
   it("tags every shape it creates as tutor-authored", () => {
-    const { created } = render([text(), circle(), mark("check")]);
+    const { created } = render([highlight(), circle(), mark("check")]);
     for (const shape of created) {
       expect(shape.meta).toMatchObject({ owner: AI_SHAPE_OWNER });
     }
   });
 
   it("records which interaction produced each shape", () => {
-    const { created } = render([text()]);
+    const { created } = render([highlight()]);
     expect(created[0].meta).toMatchObject({ interactionId: "interaction_1" });
   });
 });
@@ -104,9 +105,9 @@ describe("provenance", () => {
 describe("replacing earlier feedback", () => {
   it("replaces its own shapes when the same interaction renders again", () => {
     const fake = makeEditor({
-      shapes: [{ id: "old", type: "text", meta: { owner: AI_SHAPE_OWNER, interactionId: "interaction_1" } }],
+      shapes: [{ id: "old", type: "geo", meta: { owner: AI_SHAPE_OWNER, interactionId: "interaction_1" } }],
     });
-    renderCanvasActions(fake.editor, [text()], CONTEXT);
+    renderCanvasActions(fake.editor, [highlight()], CONTEXT);
     expect(fake.deleted).toEqual(["old"]);
   });
 
@@ -114,9 +115,9 @@ describe("replacing earlier feedback", () => {
     // Follow-up tutoring builds on earlier marks; a new interaction must not
     // wipe the conversation it is continuing.
     const fake = makeEditor({
-      shapes: [{ id: "earlier", type: "text", meta: { owner: AI_SHAPE_OWNER, interactionId: "interaction_0" } }],
+      shapes: [{ id: "earlier", type: "geo", meta: { owner: AI_SHAPE_OWNER, interactionId: "interaction_0" } }],
     });
-    renderCanvasActions(fake.editor, [text()], CONTEXT);
+    renderCanvasActions(fake.editor, [highlight()], CONTEXT);
     expect(fake.deleted).toEqual([]);
   });
 
@@ -124,7 +125,7 @@ describe("replacing earlier feedback", () => {
     const fake = makeEditor({
       shapes: [{ id: "student", type: "draw", meta: { owner: "student" } }],
     });
-    renderCanvasActions(fake.editor, [text()], CONTEXT);
+    renderCanvasActions(fake.editor, [highlight()], CONTEXT);
     expect(fake.deleted).toEqual([]);
   });
 });
@@ -132,7 +133,7 @@ describe("replacing earlier feedback", () => {
 describe("clearAiShapes", () => {
   it("reports whether tutor feedback is present", () => {
     const fake = makeEditor({
-      shapes: [{ id: "ai", type: "text", meta: { owner: AI_SHAPE_OWNER } }],
+      shapes: [{ id: "ai", type: "geo", meta: { owner: AI_SHAPE_OWNER } }],
     });
     expect(hasAiShapes(fake.editor)).toBe(true);
     expect(hasAiShapes(makeEditor({ shapes: [] }).editor)).toBe(false);
@@ -141,8 +142,8 @@ describe("clearAiShapes", () => {
   it("removes tutor feedback from every interaction", () => {
     const fake = makeEditor({
       shapes: [
-        { id: "a", type: "text", meta: { owner: AI_SHAPE_OWNER, interactionId: "i0" } },
-        { id: "b", type: "text", meta: { owner: AI_SHAPE_OWNER, interactionId: "i1" } },
+        { id: "a", type: "geo", meta: { owner: AI_SHAPE_OWNER, interactionId: "i0" } },
+        { id: "b", type: "geo", meta: { owner: AI_SHAPE_OWNER, interactionId: "i1" } },
       ],
     });
     clearAiShapes(fake.editor);
@@ -153,7 +154,7 @@ describe("clearAiShapes", () => {
     const fake = makeEditor({
       shapes: [
         { id: "student", type: "draw", meta: { owner: "student" } },
-        { id: "ai", type: "text", meta: { owner: AI_SHAPE_OWNER } },
+        { id: "ai", type: "geo", meta: { owner: AI_SHAPE_OWNER } },
       ],
     });
     clearAiShapes(fake.editor);

@@ -29,12 +29,12 @@ def test_the_instruction_names_only_the_action_types_we_can_render(mode=TutorMod
     instruction = tutor_instruction(mode)
     for action in ALLOWED_ACTIONS:
         assert action in instruction
-    for retired in ("underline", "highlight", "latex"):
+    for retired in ("text", "underline", "latex"):
         assert retired not in instruction
 
 
 def test_the_allowed_action_set_matches_the_renderer():
-    assert ALLOWED_ACTIONS == ("text", "circle", "check", "cross")
+    assert ALLOWED_ACTIONS == ("highlight", "circle", "check", "cross")
 
 
 def test_mark_mode_withholds_future_steps():

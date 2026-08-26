@@ -10,14 +10,14 @@
 
 import { createShapeId, toRichText } from "tldraw";
 import type {
-  Box,
   Editor,
   TLDefaultColorStyle,
   TLShapePartial,
   TLShapeId,
 } from "tldraw";
-import { toWorldPoint, toWorldRect } from "@/lib/annotations/geometry";
-import type { CanvasAction, MarkType } from "@/types/tutor";
+import type { WorldBounds } from "@/lib/annotations/geometry";
+import { toWorldRect } from "@/lib/annotations/geometry";
+import type { CanvasAction } from "@/types/tutor";
 import { AI_SHAPE_OWNER } from "@/lib/canvas/ownership";
 
 /** Marks every shape this module creates, so tutor output stays identifiable. */
@@ -25,14 +25,15 @@ export { AI_SHAPE_OWNER } from "@/lib/canvas/ownership";
 
 export interface RenderContext {
   /** World rectangle the analyzed image covered, from captureCanvasForAnalysis. */
-  bounds: Box;
+  bounds: WorldBounds;
   interactionId: string;
 }
 
 type AiShapeMeta = { owner: typeof AI_SHAPE_OWNER; interactionId: string };
 
-/** How each mark draws. Circling outlines; a check or cross is a glyph. */
-const MARKS: Record<MarkType, { glyph?: string; color: TLDefaultColorStyle }> = {
+/** How each action draws. Prose never becomes a canvas shape. */
+const MARKS: Record<CanvasAction["type"], { glyph?: string; color: TLDefaultColorStyle }> = {
+  highlight: { color: "yellow" },
   circle: { color: "red" },
   check: { glyph: "✓", color: "green" },
   cross: { glyph: "✗", color: "red" },
@@ -44,8 +45,7 @@ export function renderCanvasActions(
   context: RenderContext,
 ): void {
   // Re-rendering one interaction replaces its shapes rather than stacking
-  // duplicates. Feedback from other interactions is left alone, so a follow-up
-  // does not wipe the conversation it is continuing.
+  // duplicates. Whiteboard history clears all AI shapes before switching layers.
   clearAiShapesForInteraction(editor, context.interactionId);
 
   const partials = actions
@@ -108,25 +108,28 @@ function buildShape(
     interactionId: context.interactionId,
   };
 
-  if (action.type === "text") {
-    const at = toWorldPoint(action.position, frame);
+  const mark = MARKS[action.type];
+  if (!mark || !action.target) return null;
+  const rect = toWorldRect(action.target, frame);
+  if (action.type === "highlight") {
     return {
       id,
-      type: "text" as const,
-      x: at.x,
-      y: at.y,
+      type: "geo" as const,
+      x: rect.x,
+      y: rect.y,
       meta,
-      props: { richText: toRichText(action.text), color: "red", size: "m" },
+      props: {
+        geo: "rectangle",
+        w: rect.w,
+        h: rect.h,
+        color: mark.color,
+        fill: "semi",
+        dash: "solid",
+        size: "s",
+      },
     };
   }
 
-  const mark = MARKS[action.type as MarkType];
-  if (!mark) {
-    // An action type from a newer backend: skip it rather than guess.
-    return null;
-  }
-
-  const rect = toWorldRect(action.target, frame);
   if (!mark.glyph) {
     return {
       id,

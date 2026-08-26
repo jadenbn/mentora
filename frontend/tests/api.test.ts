@@ -17,7 +17,7 @@ function mockFetch(response: Partial<Response> & { json?: () => Promise<unknown>
   return spy;
 }
 
-const ok = (body: unknown = { interaction_id: "i1", status: "partial", canvas_actions: [], summary: null }) => ({
+const ok = (body: unknown = { interaction_id: "i1", status: "partial", canvas_actions: [], summary: "Keep going." }) => ({
   ok: true,
   status: 200,
   json: async () => body,

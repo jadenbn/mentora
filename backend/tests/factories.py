@@ -35,8 +35,8 @@ def bounds(x: float = 0.2, y: float = 0.3, width: float = 0.2, height: float = 0
     return {"x": x, "y": y, "width": width, "height": height}
 
 
-def text_action(text: str = "What happens to the exponent?", **over) -> dict:
-    return {"type": "text", "position": {"x": 0.4, "y": 0.3}, "text": text, **over}
+def highlight_action(**over) -> dict:
+    return {"type": "highlight", "target": bounds(), **over}
 
 
 def circle_action(**over) -> dict:
@@ -63,7 +63,7 @@ def plan(
     *,
     status: WorkStatus | str = WorkStatus.partial,
     actions: list[dict] | None = None,
-    summary: str | None = "A restrained power-rule hint.",
+    summary: str = "A restrained power-rule hint.",
     uncertainties: list[dict] | None = None,
 ) -> TutorPlan:
     """A model-produced plan, already validated."""
@@ -82,7 +82,7 @@ def normalized_bounds(**over) -> NormalizedBounds:
 
 
 def action_types(actions: list[CanvasAction]) -> list[str]:
-    """Readable assertion helper: ['text', 'circle'] instead of object reprs."""
+    """Readable assertion helper: ['highlight', 'circle'] instead of object reprs."""
     return [action.type for action in actions]
 
 

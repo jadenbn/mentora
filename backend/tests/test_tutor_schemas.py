@@ -13,7 +13,6 @@ from pydantic import ValidationError
 from app.schemas.tutor import (
     CanvasAction,
     NormalizedBounds,
-    NormalizedPoint,
     TutorMode,
     TutorPlan,
     TutorResponse,
@@ -41,14 +40,6 @@ class TestVocabularies:
 
 
 class TestCoordinates:
-    def test_point_accepts_the_unit_square(self):
-        assert NormalizedPoint(x=0.0, y=1.0).y == 1.0
-
-    @pytest.mark.parametrize("x,y", [(-0.01, 0.5), (0.5, 1.01), (2, 0.5)])
-    def test_point_rejects_coordinates_outside_the_image(self, x, y):
-        with pytest.raises(ValidationError):
-            NormalizedPoint(x=x, y=y)
-
     @pytest.mark.parametrize("width,height", [(0, 0.1), (0.1, 0), (-0.2, 0.1)])
     def test_bounds_reject_a_degenerate_box(self, width, height):
         with pytest.raises(ValidationError):
@@ -65,18 +56,18 @@ class TestCoordinates:
 
 
 class TestCanvasActions:
-    """Exactly four action types. Each validates only its own fields."""
+    """Exactly four visual action types, all targeting a bounded region."""
 
     def test_the_union_admits_only_the_four_supported_types(self):
         supported = set()
-        for factory in (f.text_action, f.circle_action, f.check_action, f.cross_action):
+        for factory in (f.highlight_action, f.circle_action, f.check_action, f.cross_action):
             action = TutorPlan.model_validate(
-                {"status": "partial", "canvas_actions": [factory()]}
+                {"status": "partial", "canvas_actions": [factory()], "summary": "Keep going."}
             ).canvas_actions[0]
             supported.add(action.type)
-        assert supported == {"text", "circle", "check", "cross"}
+        assert supported == {"highlight", "circle", "check", "cross"}
 
-    @pytest.mark.parametrize("dropped_type", ["math", "arrow", "underline", "highlight"])
+    @pytest.mark.parametrize("dropped_type", ["math", "arrow", "underline", "text"])
     def test_retired_action_types_are_refused(self, dropped_type):
         # These were cut. If one reappears the renderer has no branch for it,
         # so the contract must reject it rather than let it through untyped.
@@ -88,26 +79,13 @@ class TestCanvasActions:
                 }
             )
 
-    def test_text_action_carries_a_point_not_a_box(self):
-        action = TutorPlan.model_validate(
-            {"status": "partial", "canvas_actions": [f.text_action()]}
-        ).canvas_actions[0]
-        assert isinstance(action.position, NormalizedPoint)
-        assert not hasattr(action, "target")
-
     def test_marking_actions_carry_a_box_not_a_point(self):
-        for factory in (f.circle_action, f.check_action, f.cross_action):
+        for factory in (f.highlight_action, f.circle_action, f.check_action, f.cross_action):
             action = TutorPlan.model_validate(
-                {"status": "partial", "canvas_actions": [factory()]}
+                {"status": "partial", "canvas_actions": [factory()], "summary": "Keep going."}
             ).canvas_actions[0]
             assert isinstance(action.target, NormalizedBounds)
             assert not hasattr(action, "position")
-
-    def test_text_action_requires_something_to_say(self):
-        with pytest.raises(ValidationError):
-            TutorPlan.model_validate(
-                {"status": "partial", "canvas_actions": [f.text_action(text="")]}
-            )
 
     def test_a_marking_action_cannot_omit_its_target(self):
         with pytest.raises(ValidationError):
@@ -139,7 +117,7 @@ class TestStrictness:
             TutorPlan.model_validate(
                 {
                     "status": "partial",
-                    "canvas_actions": [f.text_action(font_size=48)],
+                    "canvas_actions": [f.circle_action(font_size=48)],
                 }
             )
 
@@ -165,6 +143,12 @@ class TestTutorResponse:
         )
         assert response.canvas_actions == []
 
-    def test_summary_is_optional(self):
-        response = TutorResponse(interaction_id="abc123", status=WorkStatus.partial)
-        assert response.summary is None
+    def test_summary_is_required_and_concise(self):
+        with pytest.raises(ValidationError):
+            TutorResponse(interaction_id="abc123", status=WorkStatus.partial)
+        with pytest.raises(ValidationError):
+            TutorResponse(
+                interaction_id="abc123",
+                status=WorkStatus.partial,
+                summary="x" * 241,
+            )

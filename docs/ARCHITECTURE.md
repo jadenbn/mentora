@@ -172,10 +172,11 @@ Potential metadata:
 type ShapeOwner = "system" | "student" | "ai";
 ```
 Shapes the tutor draws carry `owner: "ai"` and the `interaction_id` that
-produced them, which is how re-rendering one interaction replaces its own
-shapes without disturbing earlier feedback. Ownership no longer crosses the
-wire as a shape list: the capture excludes tutor-authored shapes from the
-image and sends their bounds as `prior_annotations`.
+produced them. Each response is also stored as a per-Space feedback layer in
+browser storage; the selected layer is rendered and switching layers replaces
+AI shapes without disturbing system or student content. Ownership no longer
+crosses the wire as a shape list: capture excludes tutor-authored shapes from
+the image and sends their bounds as `prior_annotations`.
 The critical invariant is that the system can distinguish what the problem said, what the student wrote, and what the AI wrote.
 
 ## 10. Frontend Responsibilities
@@ -196,8 +197,8 @@ Do not call private AI-provider APIs directly from browser code.
 Whiteboard controls remain canvas-adjacent rather than becoming a second
 workspace: drawing styles open from a palette button in the left tool rail, and
 tutor actions fan out from the right-edge control. Starting a tutor request
-collapses the action fan and exposes only a transient top-of-canvas status;
-feedback itself remains on the canvas.
+collapses the action fan and exposes a transient navbar status. The current
+feedback summary lives in that navbar; spatial marks alone live on the canvas.
 
 ## 11. Backend Responsibilities
 Backend owns:
@@ -304,16 +305,21 @@ canvas_actions   at most 12
 summary          short plain-language explanation
 ```
 
-`canvas_actions` is a discriminated union of two shapes: `text` says something
-at a normalized point, and `circle` / `check` / `cross` point at a normalized
-box. There is no third shape, and no action carries a label — text is the one
-way to put words on a canvas.
+`canvas_actions` contains target actions: `highlight`, `circle`, `check`, or
+`cross`, each pointing at a normalized box. Prose is never a canvas action; the
+required, concise `summary` is shown in the navbar instead.
 
 Gemini output is schema-constrained, then validated independently with
 Pydantic, then passed through a deterministic safety policy. The renderer never
 receives arbitrary tldraw operations.
 
 The invariant remains: **validated structured output before tldraw rendering**.
+
+The frontend stores the last 10 validated responses per Space as feedback
+layers in local storage. The navbar exposes immediate previous/next navigation
+and a visibility toggle; navigation changes only AI-owned shapes and never
+removes student or system shapes. A new response always selects the newest
+layer.
 
 ## 18. Coordinates
 Prefer normalized image-space coordinates at the AI/API boundary:
@@ -337,12 +343,12 @@ Annotation Renderer
       ↓
 tldraw operations
 ```
-The renderer creates controlled text, circles, checks, and crosses — the four
-implemented actions. `TutorAnnotation` was an earlier name for this and no
-longer exists.
-The whiteboard uses a progressive renderer for tutor feedback: text is revealed
-as a typewriter sequence, while circles, checks, and crosses are emitted as
-freehand draw-shape points at a capped rate. Animation is presentation-only,
+The renderer creates controlled highlights, circles, checks, and crosses — the
+four implemented actions. `TutorAnnotation` was an earlier name for this and
+no longer exists. The whiteboard uses a progressive renderer for tutor
+feedback: circles, checks, and crosses are emitted as freehand draw-shape
+points at a capped rate, while highlights appear immediately. Animation is
+presentation-only,
 ignores the undo history, can be cancelled on teardown, and does not change the
 validated tutor contract or ownership metadata.
 

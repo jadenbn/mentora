@@ -23,11 +23,6 @@ from app.schemas.tutor import NormalizedBounds, TutorMode, TutorPlan
 
 logger = logging.getLogger(__name__)
 
-_POINT = {
-    "type": "object",
-    "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
-    "required": ["x", "y"],
-}
 _BOUNDS = {
     "type": "object",
     "properties": {
@@ -40,8 +35,8 @@ _BOUNDS = {
 }
 
 # Gemini's response_schema endpoint rejects additionalProperties, $defs/$ref,
-# and discriminated unions, so the two action shapes are flattened into one
-# object with nullable fields. TutorPlan remains the real validation boundary.
+# and discriminated unions, so the target action is represented by one flat
+# object with a nullable target. TutorPlan remains the real validation boundary.
 TUTOR_PLAN_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -55,11 +50,9 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "type": {"type": "string", "enum": list(ALLOWED_ACTIONS)},
-                    "position": {**_POINT, "nullable": True},
-                    "text": {"type": "string", "nullable": True},
                     "target": {**_BOUNDS, "nullable": True},
                 },
-                "required": ["type", "position", "text", "target"],
+                "required": ["type", "target"],
             },
         },
         "uncertainties": {
@@ -73,7 +66,7 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
                 "required": ["description", "target"],
             },
         },
-        "summary": {"type": "string", "nullable": True},
+        "summary": {"type": "string"},
     },
     "required": ["status", "canvas_actions", "uncertainties", "summary"],
 }
@@ -83,7 +76,7 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
 #: response can name a field belonging to a different action; extra="forbid"
 #: would reject the whole plan and spend a repair round trip on it.
 _ACTION_FIELDS = {
-    "text": {"type", "position", "text"},
+    "highlight": {"type", "target"},
     "circle": {"type", "target"},
     "check": {"type", "target"},
     "cross": {"type", "target"},

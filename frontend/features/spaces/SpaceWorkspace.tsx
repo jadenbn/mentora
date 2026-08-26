@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Whiteboard } from "@/features/whiteboard/Whiteboard";
 import { getCourse } from "@/lib/spaces/courses";
 import {
@@ -14,6 +14,7 @@ import { useIsClient } from "@/lib/useIsClient";
 
 export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
   const hydrated = useIsClient();
+  const [feedbackHost, setFeedbackHost] = useState<HTMLDivElement | null>(null);
   // Read the index directly so a rename elsewhere is reflected here.
   const all = useSyncExternalStore(
     subscribeToSpaces,
@@ -61,7 +62,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
 
   return (
     <main className="flex h-dvh flex-col bg-white">
-      <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 sm:px-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 sm:px-5">
         <div className="min-w-0">
           <Link
             className="text-sm font-semibold text-blue-700"
@@ -71,6 +72,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
           </Link>
           <p className="truncate text-sm text-slate-600">{space.title}</p>
         </div>
+        <div className="min-w-0 flex-1 basis-full sm:basis-auto" ref={setFeedbackHost} />
         <button
           className="shrink-0 rounded-md border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           onClick={handleRename}
@@ -80,7 +82,12 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
         </button>
       </header>
       <section className="min-h-0 flex-1" aria-label="Whiteboard canvas">
-        <Whiteboard courseId={space.courseId} problem={space.problem} spaceId={space.id} />
+        <Whiteboard
+          courseId={space.courseId}
+          feedbackHost={feedbackHost}
+          problem={space.problem}
+          spaceId={space.id}
+        />
       </section>
     </main>
   );

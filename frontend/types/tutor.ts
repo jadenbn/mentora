@@ -16,38 +16,25 @@ export type { TutorMode };
 
 export type WorkStatus = "correct" | "incorrect" | "partial" | "uncertain";
 
-/** What a mark points with. Text is the only way to put words on the canvas. */
-export type MarkType = "circle" | "check" | "cross";
-
-export interface NormalizedPoint {
+/** Width and height are > 0, and x+width / y+height stay <= 1. */
+export interface NormalizedBounds {
   x: number;
   y: number;
-}
-
-/** Width and height are > 0, and x+width / y+height stay <= 1. */
-export interface NormalizedBounds extends NormalizedPoint {
   width: number;
   height: number;
 }
 
-/** Say something at a point. */
-export interface TextAction {
-  type: "text";
-  position: NormalizedPoint;
-  text: string;
-}
-
-/** Point at a region. */
+/** Point at or highlight a region. Prose remains in the navbar summary. */
 export interface TargetAction {
-  type: MarkType;
+  type: "highlight" | "circle" | "check" | "cross";
   target: NormalizedBounds;
 }
 
-export type CanvasAction = TextAction | TargetAction;
+export type CanvasAction = TargetAction;
 
 export interface TutorResponse {
   interaction_id: string;
   status: WorkStatus;
   canvas_actions: CanvasAction[];
-  summary: string | null;
+  summary: string;
 }

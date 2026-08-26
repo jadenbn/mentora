@@ -1,0 +1,104 @@
+"use client";
+
+import { ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
+import type { FeedbackLayer } from "@/lib/tutor/feedbackHistory";
+
+export function TutorFeedbackBar({
+  busy,
+  error,
+  layer,
+  activeIndex,
+  layerCount,
+  visible,
+  warning,
+  onPrevious,
+  onNext,
+  onToggle,
+}: {
+  busy: boolean;
+  error: string | null;
+  layer: FeedbackLayer | null;
+  activeIndex: number;
+  layerCount: number;
+  visible: boolean;
+  warning: string | null;
+  onPrevious: () => void;
+  onNext: () => void;
+  onToggle: () => void;
+}) {
+  if (!busy && !layer && !warning && !error) return null;
+
+  const hasLayer = layer !== null;
+  const atStart = activeIndex <= 0;
+  const atEnd = activeIndex < 0 || activeIndex >= layerCount - 1;
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-center gap-1.5 text-sm">
+      {busy ? (
+        <span aria-live="polite" className="font-semibold text-slate-600" role="status">
+          Thinking
+          <span aria-hidden="true" className="ml-1 inline-flex gap-0.5">
+            <span className="animate-bounce [animation-delay:-0.2s] motion-reduce:animate-none">.</span>
+            <span className="animate-bounce [animation-delay:-0.1s] motion-reduce:animate-none">.</span>
+            <span className="animate-bounce motion-reduce:animate-none">.</span>
+          </span>
+        </span>
+      ) : error ? (
+        <span aria-live="assertive" className="text-xs font-semibold text-red-700" role="alert">
+          {error}
+        </span>
+      ) : warning ? (
+        <span className="text-xs font-semibold text-amber-700" role="status">
+          {warning}
+        </span>
+      ) : null}
+
+      {hasLayer ? (
+        <>
+          <button
+            aria-label="Previous tutor feedback"
+            className="rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+            disabled={busy || atStart}
+            onClick={onPrevious}
+            title="Previous feedback"
+            type="button"
+          >
+            <ChevronLeft aria-hidden="true" className="size-4" />
+          </button>
+          <span
+            className={`min-w-0 max-w-full flex-1 text-center font-medium ${visible ? "text-slate-800" : "text-slate-400"}`}
+            title={visible ? layer.response.summary : "Feedback hidden"}
+          >
+            {visible ? layer.response.summary : "Feedback hidden"}
+          </span>
+          <button
+            aria-label="Next tutor feedback"
+            className="rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35"
+            disabled={busy || atEnd}
+            onClick={onNext}
+            title="Next feedback"
+            type="button"
+          >
+            <ChevronRight aria-hidden="true" className="size-4" />
+          </button>
+          <span className="shrink-0 text-xs tabular-nums text-slate-400">
+            {activeIndex + 1} / {layerCount}
+          </span>
+          <button
+            aria-label={visible ? "Hide tutor feedback" : "Show tutor feedback"}
+            className="shrink-0 rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            onClick={onToggle}
+            title={visible ? "Hide feedback" : "Show feedback"}
+            type="button"
+          >
+            {visible ? (
+              <Eye aria-hidden="true" className="size-4" />
+            ) : (
+              <EyeOff aria-hidden="true" className="size-4" />
+            )}
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}

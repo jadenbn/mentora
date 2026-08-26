@@ -36,6 +36,8 @@ export interface TutorAnalysisOptions {
     actions: TutorResponse["canvas_actions"],
     context: RenderContext,
   ) => void | Promise<void>;
+  /** Called when the provider response arrives, before presentation animation. */
+  onResponse?: (response: TutorResponse, context: RenderContext) => void;
 }
 
 export async function runTutorAnalysis(
@@ -62,10 +64,12 @@ export async function runTutorAnalysis(
       problem: options.problem,
       signal: options.signal,
     });
-    await renderActions(editor, response.canvas_actions, {
+    const context = {
       bounds,
       interactionId: response.interaction_id,
-    });
+    };
+    options.onResponse?.(response, context);
+    await renderActions(editor, response.canvas_actions, context);
     return response;
   }
 
@@ -78,10 +82,12 @@ export async function runTutorAnalysis(
     signal: options.signal,
   });
 
-  await renderActions(editor, response.canvas_actions, {
+  const context = {
     bounds: capture.bounds,
     interactionId: response.interaction_id,
-  });
+  };
+  options.onResponse?.(response, context);
+  await renderActions(editor, response.canvas_actions, context);
 
   return response;
 }

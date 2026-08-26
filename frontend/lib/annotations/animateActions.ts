@@ -6,10 +6,10 @@
  * next to handwriting reads better than a vector one.
  */
 
-import type { Box, Editor, TLDefaultColorStyle } from "tldraw";
+import { createShapeId } from "tldraw";
+import type { Editor, TLDefaultColorStyle } from "tldraw";
 import {
   animateStrokes,
-  animateText,
   sequence,
   type AnimationHandle,
 } from "@/lib/annotations/animate";
@@ -18,8 +18,8 @@ import {
   crossStrokes,
   ellipseStroke,
   makeJitter,
-  toWorldPoint,
   toWorldRect,
+  type WorldBounds,
   type Stroke,
 } from "@/lib/annotations/geometry";
 import {
@@ -38,14 +38,12 @@ function metaFor(context: RenderContext) {
 
 /** Deterministic wobble seed from the action itself, so a replay looks identical. */
 function seedFor(action: CanvasAction): string {
-  return action.type === "text"
-    ? `text:${action.position.x},${action.position.y}:${action.text}`
-    : `${action.type}:${action.target.x},${action.target.y}`;
+  return `${action.type}:${action.target.x},${action.target.y}`;
 }
 
-/** Strokes for the geometric actions; null for the text-shaped ones. */
-function strokesFor(action: CanvasAction, frame: Box): Stroke[] | null {
-  if (action.type === "text") {
+/** Strokes for hand-drawn actions; highlights use a translucent region. */
+function strokesFor(action: CanvasAction, frame: WorldBounds): Stroke[] | null {
+  if (action.type === "highlight") {
     return null;
   }
   const jitter = makeJitter(seedFor(action), JITTER);
@@ -65,6 +63,7 @@ function strokesFor(action: CanvasAction, frame: Box): Stroke[] | null {
 
 const COLORS: Partial<Record<CanvasAction["type"], TLDefaultColorStyle>> = {
   check: "green",
+  highlight: "yellow",
 };
 
 function colorFor(action: CanvasAction): TLDefaultColorStyle {
@@ -84,9 +83,31 @@ function stepFor(
     return () => animateStrokes(editor, strokes, { meta, color });
   }
 
-  if (action.type === "text") {
-    const at = toWorldPoint(action.position, context.bounds);
-    return () => animateText(editor, at, action.text, { meta, color });
+  if (action.type === "highlight") {
+    const rect = toWorldRect(action.target, context.bounds);
+    return () => {
+      editor.run(
+        () =>
+          editor.createShape({
+            id: createShapeId(),
+            type: "geo",
+            x: rect.x,
+            y: rect.y,
+            meta,
+            props: {
+              geo: "rectangle",
+              w: rect.w,
+              h: rect.h,
+              color,
+              fill: "semi",
+              dash: "solid",
+              size: "s",
+            },
+          }),
+        { history: "ignore" },
+      );
+      return { done: Promise.resolve(), cancel: () => {} };
+    };
   }
 
   // Unrecognised action from a newer backend: skip rather than guess.
