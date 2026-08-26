@@ -83,6 +83,23 @@ _ACTION_FIELDS = {
 }
 
 
+def _canvas_state(canvas_image: bytes | None) -> str:
+    if canvas_image is None:
+        return (
+            "<canvas-state>\n"
+            "No student-work image was supplied because the student has not drawn anything yet. "
+            "Use the structured problem to give the first useful scaffold. Do not say that "
+            "the handwriting is unreadable or ask the student to rewrite a step.\n"
+            "</canvas-state>"
+        )
+    return (
+        "<canvas-state>\n"
+        "A student-work image is supplied above. Base grading and coordinates on what is "
+        "visible in that image.\n"
+        "</canvas-state>"
+    )
+
+
 def normalize_provider_output(value: Any) -> Any:
     """Make provider output validate on the first attempt where it can."""
     plan = drop_nulls(value)
@@ -196,7 +213,7 @@ class GeminiTutorWorkflow:
         prompt += f"<tutor-mode>{mode.value}</tutor-mode>\n\n"
         prompt += "Regions you have already annotated (do not grade them):\n"
         prompt += json.dumps([b.model_dump() for b in prior_annotations])
-        prompt += "\n\n<current-problem>\n"
+        prompt += "\n\n" + _canvas_state(canvas_image) + "\n\n<current-problem>\n"
         prompt += (
             problem.prompt if problem is not None else "No structured problem was supplied."
         )

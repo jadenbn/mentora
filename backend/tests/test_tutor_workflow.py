@@ -16,6 +16,7 @@ pytest.importorskip("google.genai", reason="provider adapter requires google-gen
 from app.agents.tutor_workflow import (  # noqa: E402
     TUTOR_PLAN_RESPONSE_SCHEMA,
     GeminiTutorWorkflow,
+    _canvas_state,
     drop_nulls,
     normalize_provider_output,
 )
@@ -67,6 +68,16 @@ class TestNullPlaceholders:
     def test_falsy_but_present_values_survive(self):
         # 0 and "" are data; only None is a placeholder.
         assert drop_nulls({"x": 0, "y": "", "z": False}) == {"x": 0, "y": "", "z": False}
+
+
+class TestCanvasState:
+    def test_a_problem_only_request_is_explicitly_not_an_unreadable_image(self):
+        state = _canvas_state(None)
+        assert "has not drawn anything yet" in state
+        assert "Do not say that the handwriting is unreadable" in state
+
+    def test_an_image_request_tells_the_model_to_use_the_canvas(self):
+        assert "student-work image is supplied above" in _canvas_state(f.PNG)
 
 
 class TestFirstAttemptValidation:
