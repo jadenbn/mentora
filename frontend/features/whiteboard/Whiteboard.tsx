@@ -28,6 +28,7 @@ import {
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
+import { VoiceControl } from "@/features/tutor/VoiceControl";
 import { animateCanvasActions } from "@/lib/annotations/animateActions";
 import type { AnimationHandle } from "@/lib/annotations/animate";
 import {
@@ -41,6 +42,7 @@ import { ProblemShapeProvider, ProblemShapeUtil } from "@/lib/problems/ProblemSh
 import { ensureProblemShape } from "@/lib/problems/renderProblem";
 import { touchSpace } from "@/lib/spaces/store";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
+import { useVoiceCapture } from "@/lib/voice/useVoiceCapture";
 import type { ProblemContext } from "@/types/domain";
 import type {
   CanvasAction,
@@ -223,8 +225,9 @@ export function Whiteboard({
     [],
   );
 
-  const handleAnalyze = useCallback(
-    async (mode: TutorMode) => {
+  /** One tutor request. Throws, so each caller can surface failure its own way. */
+  const runAnalysis = useCallback(
+    async (mode: TutorMode, transcript?: string) => {
       const current = editor.current;
       if (!current || busyMode !== null) {
         return;
@@ -240,14 +243,9 @@ export function Whiteboard({
           mode,
           courseId,
           problem,
+          transcript,
           renderActions: renderTutorActions,
         });
-      } catch (caught) {
-        setError(
-          caught instanceof EmptyCanvasError || caught instanceof Error
-            ? caught.message
-            : "The tutor request failed.",
-        );
       } finally {
         animation.current = null;
         setIsThinking(false);
@@ -256,6 +254,33 @@ export function Whiteboard({
     },
     [busyMode, courseId, problem, renderTutorActions],
   );
+
+  const handleAnalyze = useCallback(
+    (mode: TutorMode) => {
+      void runAnalysis(mode).catch((caught) => {
+        setError(
+          caught instanceof EmptyCanvasError || caught instanceof Error
+            ? caught.message
+            : "The tutor request failed.",
+        );
+      });
+    },
+    [runAnalysis],
+  );
+
+  /**
+   * A spoken question is context for the existing tutor, not a mode of its own.
+   * Asking about written work is an explanation; asking before writing anything
+   * can only be about the problem, which is what stuck already handles.
+   */
+  const handleSpokenQuestion = useCallback(
+    (transcript: string) =>
+      runAnalysis(hasStudentCanvasWork ? "explain" : "stuck", transcript),
+    [hasStudentCanvasWork, runAnalysis],
+  );
+
+  const voice = useVoiceCapture({ submit: handleSpokenQuestion });
+  const cancelVoice = voice.cancel;
 
   const handleClear = useCallback(() => {
     animation.current?.cancel();
@@ -277,13 +302,15 @@ export function Whiteboard({
       disposeWorkListener.current = null;
       animation.current?.cancel();
       animation.current = null;
+      // Leaving a space must never leave a microphone running behind it.
+      cancelVoice();
       setIsThinking(false);
       if (savedTimer.current !== null) {
         clearTimeout(savedTimer.current);
         savedTimer.current = null;
       }
     };
-  }, [spaceId]);
+  }, [cancelVoice, spaceId]);
 
   /** Flash the indicator, restarting the countdown if saves come back to back. */
   const flashSaved = useCallback(() => {
@@ -341,8 +368,21 @@ export function Whiteboard({
           <CanvasToolbar />
           <SaveIndicator visible={justSaved} />
           <ThinkingIndicator busy={isThinking} error={error} />
+          <VoiceControl
+            disabled={busyMode !== null || (!hasStudentCanvasWork && problem === undefined)}
+            disabledReason="Draw on the board or add a problem before asking out loud."
+            error={voice.error}
+            onCancel={voice.cancel}
+            onStart={voice.start}
+            onStop={voice.stop}
+            startedAt={voice.startedAt}
+            status={voice.status}
+          />
           <TutorControls
             busyMode={busyMode}
+            // One tutor request at a time: a button tapped mid-transcription
+            // would take the busy slot and drop the question already spoken.
+            disabled={voice.status !== "idle"}
             hasFeedback={hasAiCanvasFeedback}
             hasProblem={problem !== undefined}
             hasStudentWork={hasStudentCanvasWork}

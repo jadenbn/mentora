@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { analyzeCanvas, apiBaseUrl, TutorApiError } from "@/lib/api/api";
+import { analyzeCanvas, apiBaseUrl, transcribeSpeech, TutorApiError } from "@/lib/api/api";
 import type { ProblemContext } from "@/types/domain";
 
 const IMAGE = new Blob(["png"], { type: "image/png" });
@@ -184,5 +184,57 @@ describe("failure mapping", () => {
   it("does not translate an unrecognised status into a misleading message", async () => {
     mockFetch(failure(418));
     await expect(call()).rejects.toThrow(/418/);
+  });
+});
+
+describe("voice", () => {
+  const AUDIO = new Blob(["wav"], { type: "audio/wav" });
+  const transcribe = () => transcribeSpeech({ audio: AUDIO });
+
+  it("posts the recording to the transcribe endpoint", async () => {
+    const spy = mockFetch(ok({ transcript: "why is this wrong?" }));
+    await transcribe();
+
+    expect(spy.mock.calls[0][0]).toContain("/api/voice/transcribe");
+    expect(spy.mock.calls[0][1].method).toBe("POST");
+    expect((bodyOf(spy).get("audio") as File).name).toBe("speech.wav");
+  });
+
+  it("returns the transcript rather than the envelope around it", async () => {
+    mockFetch(ok({ transcript: "why is this wrong?" }));
+    await expect(transcribe()).resolves.toBe("why is this wrong?");
+  });
+
+  it("tells the student we did not catch it when no speech was found", async () => {
+    mockFetch(failure(422));
+    await expect(transcribe()).rejects.toThrow(/did not catch/i);
+  });
+
+  it("names the missing configuration without exposing its value", async () => {
+    mockFetch(failure(503, { missing_settings: ["GEMINI_API_KEY"] }));
+    await expect(transcribe()).rejects.toThrow(/GEMINI_API_KEY/);
+  });
+
+  it("maps a provider failure onto something a student can read", async () => {
+    mockFetch(failure(502));
+    await expect(transcribe()).rejects.toBeInstanceOf(TutorApiError);
+    mockFetch(failure(502));
+    await expect(transcribe()).rejects.toThrow(/temporarily unavailable/i);
+  });
+
+  it("sends a spoken question alongside the canvas, not instead of it", async () => {
+    const spy = mockFetch(ok());
+    await call({ transcript: "why can't I cancel the x?" });
+    const body = bodyOf(spy);
+
+    expect(body.get("transcript")).toBe("why can't I cancel the x?");
+    expect(body.get("canvas_image")).not.toBeNull();
+  });
+
+  it("omits the field entirely when the student did not speak", async () => {
+    const spy = mockFetch(ok());
+    await call();
+
+    expect(bodyOf(spy).has("transcript")).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import type { NormalizedBounds, TutorMode, TutorResponse } from "@/types/tutor";
 import type { CourseDocument, DocumentType, ProblemContext } from "@/types/domain";
+import type { TranscriptionResponse } from "@/types/voice";
 
 /** The port the FastAPI backend listens on in development. */
 const DEFAULT_API_PORT = 8000;
@@ -77,6 +78,8 @@ export async function analyzeCanvas(args: {
   canvasImage?: Blob;
   priorAnnotations: NormalizedBounds[];
   problem?: ProblemContext;
+  /** What the student asked out loud, when they used the microphone. */
+  transcript?: string;
   signal?: AbortSignal;
 }): Promise<TutorResponse> {
   const form = new FormData();
@@ -88,6 +91,9 @@ export async function analyzeCanvas(args: {
   form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
   if (args.problem) {
     form.append("problem_context", JSON.stringify(args.problem));
+  }
+  if (args.transcript) {
+    form.append("transcript", args.transcript);
   }
 
   const response = await fetch(`${apiBaseUrl()}/api/tutor/analyze`, {
@@ -111,6 +117,70 @@ export async function analyzeCanvas(args: {
   }
 
   return response.json();
+}
+
+/** Maps the transcribe endpoint's failures onto something a student can read. */
+function messageForTranscriptionStatus(status: number, detail: unknown): string {
+  switch (status) {
+    case 400:
+      return "That recording was empty.";
+    case 413:
+      return "That recording was too long.";
+    case 415:
+      return "That recording format is not supported.";
+    case 422:
+      return "We did not catch that. Try again.";
+    case 502:
+      return "Voice input is temporarily unavailable.";
+    case 503: {
+      const missing = (detail as { missing_settings?: string[] } | null)?.missing_settings;
+      return missing?.length
+        ? `Voice input is not configured. Missing: ${missing.join(", ")}.`
+        : "Voice input is not configured on the server.";
+    }
+    case 504:
+      return "Transcribing took too long.";
+    default:
+      return `Transcribing failed (${status}).`;
+  }
+}
+
+/**
+ * POST /api/voice/transcribe
+ *
+ * Multipart, WAV only — see lib/voice/wav.ts for why the browser re-encodes.
+ * Content-Type is deliberately left unset so the browser supplies the
+ * multipart boundary.
+ */
+export async function transcribeSpeech(args: {
+  audio: Blob;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const form = new FormData();
+  form.append("audio", args.audio, "speech.wav");
+
+  const response = await fetch(`${apiBaseUrl()}/api/voice/transcribe`, {
+    method: "POST",
+    body: form,
+    signal: args.signal,
+  });
+
+  if (!response.ok) {
+    let detail: unknown = null;
+    try {
+      detail = (await response.json())?.detail ?? null;
+    } catch {
+      // Non-JSON error body; the status alone has to carry the meaning.
+    }
+    throw new TutorApiError(
+      messageForTranscriptionStatus(response.status, detail),
+      response.status,
+      detail,
+    );
+  }
+
+  const body: TranscriptionResponse = await response.json();
+  return body.transcript;
 }
 
 async function courseResponse<T>(response: Response, action: string): Promise<T> {

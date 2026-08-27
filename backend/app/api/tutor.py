@@ -19,6 +19,7 @@ from app.config import TutorSettings, missing_settings
 from app.database import CourseRepository
 from app.schemas.problems import ProblemContext
 from app.schemas.tutor import NormalizedBounds, TutorMode, TutorResponse
+from app.schemas.voice import MAX_TRANSCRIPT_CHARS, normalize_transcript
 from app.services.tutor_service import TutorService
 
 router = APIRouter(prefix="/api/tutor", tags=["tutor"])
@@ -110,6 +111,24 @@ def _parse_problem_context(raw: str | None, course_id: str) -> ProblemContext | 
     return problem
 
 
+def _parse_transcript(raw: str | None) -> str | None:
+    """A spoken instruction, or None when voice was not used.
+
+    Absent is the ordinary case and stays silent — including an empty form
+    value, which FastAPI cannot tell apart from an omitted one. A field
+    carrying only whitespace is a client bug rather than a no-op: forwarding it
+    would spend a model call telling the tutor nothing.
+    """
+    if raw is None:
+        return None
+    transcript = normalize_transcript(raw)
+    if transcript is None:
+        raise HTTPException(422, "transcript cannot be blank")
+    if len(transcript) > MAX_TRANSCRIPT_CHARS:
+        raise HTTPException(422, "transcript is too long")
+    return transcript
+
+
 @router.post("/analyze", response_model=TutorResponse)
 async def analyze(
     course_id: Annotated[str, Form(min_length=1)],
@@ -117,9 +136,11 @@ async def analyze(
     canvas_image: Annotated[UploadFile | None, File()] = None,
     prior_annotations: Annotated[str, Form()] = "[]",
     problem_context: Annotated[str | None, Form()] = None,
+    transcript: Annotated[str | None, Form()] = None,
     service: TutorService = Depends(get_tutor_service),
 ) -> TutorResponse:
     problem = _parse_problem_context(problem_context, course_id)
+    spoken = _parse_transcript(transcript)
     if canvas_image is None:
         if mode != TutorMode.stuck or problem is None:
             raise HTTPException(
@@ -138,6 +159,7 @@ async def analyze(
             canvas_mime_type=mime_type,
             prior_annotations=_parse_prior_annotations(prior_annotations),
             problem_context=problem,
+            transcript=spoken,
         )
     except TutorWorkflowTimeout as exc:
         raise HTTPException(504, "The tutor took too long to respond") from exc

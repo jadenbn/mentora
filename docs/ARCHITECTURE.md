@@ -189,6 +189,7 @@ Frontend owns:
 - Select for AI
 - canvas capture/export
 - tutor controls
+- microphone lifecycle and audio encoding for voice input
 - live-tutor timing/detection where appropriate
 Keep backend access behind a small API/client layer.
 Do not call private AI-provider APIs directly from browser code.
@@ -236,6 +237,7 @@ Possible routes:
 ```text
 GET  /health                                  implemented
 POST /api/tutor/analyze                       implemented
+POST /api/voice/transcribe                    implemented
 POST /api/courses/{course_id}/documents       implemented
 POST /api/courses/{course_id}/questions/generate implemented
 GET  /api/courses/{course_id}/search          implemented
@@ -274,16 +276,21 @@ mode               mark | hint | explain | stuck
 canvas_image       optional PNG/JPEG/WebP; maximum 10 MB when present
 prior_annotations  JSON array of normalized bounds; defaults to []
 problem_context    optional validated ProblemContext JSON
+transcript         optional spoken instruction; trimmed, max 1000 chars
 ```
 
-Five fields at most, no JSON request body. Normal work-analysis requests send
+Six fields at most, no JSON request body. Normal work-analysis requests send
 an image, three scalars, and optionally the exact structured problem separately
 from the image. An `stuck` request with `problem_context` may omit the image;
 the tutor then reasons from the structured question and course grounding alone.
 
 Tutor-authored shapes are excluded from the exported image and their positions
 are sent as `prior_annotations` instead, so the model cannot read its own
-handwriting back as student work. See `TUTOR_AGENT.md`.
+handwriting back as student work.
+
+`transcript` is what the student asked out loud, and is optional in the strict
+sense: omitting it leaves the request byte-for-byte what it was before voice
+existed. See `TUTOR_AGENT.md`.
 
 ## 16. Tutor Modes
 Backend-facing enum:
@@ -563,16 +570,52 @@ For 2 Seconds, inactivity detection is straightforward.
 For New Line, a heuristic is acceptable initially.
 
 ## 32. Voice
-Potential flow:
+Implemented as an extra input to the existing tutor call, not a second
+assistant:
 ```text
-audio
+microphone (MediaRecorder)
   ↓
-speech-to-text
+re-encode to 16 kHz mono WAV in the browser
   ↓
-transcript + selected canvas + course/problem context
+POST /api/voice/transcribe   →  Gemini  →  transcript
   ↓
-tutor service
+POST /api/tutor/analyze with transcript + canvas + problem + course
+  ↓
+the same validated canvas actions, drawn by the same renderer
 ```
+Transcription is deliberately a separate round trip rather than audio attached
+to the tutor call. It keeps the tutor at one model call, lets the interface
+show transcribing and thinking as the distinct waits they are, and confines the
+audio to the request that carried it — nothing is persisted and no object URL
+is ever created.
+
+The browser re-encodes because MediaRecorder's container is browser-dependent
+(Safari: AAC in MP4, Chrome: Opus in WebM) and the provider documents neither.
+One format crossing the wire means one signature to verify server-side. The
+sample rate is enforced in the encoder rather than taken on trust, which is
+what keeps the longest allowed recording inside the server's 5 MiB cap.
+
+`getUserMedia` requires a secure context, so voice works on `localhost` and
+over HTTPS but not on a plain-HTTP LAN address — which is how an iPad is
+usually reached in development. See the README.
+
+Frontend layout, deliberately outside `Whiteboard.tsx`:
+```text
+lib/voice/microphone.ts     MediaStream + MediaRecorder, guaranteed teardown
+lib/voice/wav.ts            decode and re-encode
+lib/voice/voiceCapture.ts   the lifecycle state machine, framework-free
+lib/voice/useVoiceCapture.ts  React binding
+features/tutor/VoiceControl.tsx  presentation only
+```
+The provider lives behind `app/agents/transcription_workflow.py`, the one
+module voice may import an SDK into; replacing the speech-to-text service means
+replacing that file. It reuses `GEMINI_API_KEY`, so voice adds no credential
+and no dependency.
+
+Transcripts are untrusted twice: speech the tutor did not choose, and
+provider-generated text. They are trimmed, capped, and delimited before they
+reach a prompt, which states that nothing inside them changes the rules.
+
 Treat transcript as contextual instruction, not a separate chat architecture.
 
 ## 33. Student Model
@@ -700,9 +743,11 @@ Treat model output as untrusted.
 Do not execute arbitrary model instructions.
 Avoid logging sensitive course content unnecessarily.
 
-Tutor readiness requires `GEMINI_API_KEY` and nothing else. `/health` and
-configuration errors report missing variable names only. Image type is verified
-from file signatures rather than trusting multipart headers.
+Tutor readiness — and voice with it — requires `GEMINI_API_KEY` and nothing
+else. `/health` and
+configuration errors report missing variable names only. Image and audio types are
+verified from file signatures rather than trusting multipart headers. Recorded
+audio is never written to disk or persisted.
 
 ## 42. Testing
 Prioritize deterministic tests for:
