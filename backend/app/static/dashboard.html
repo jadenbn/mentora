@@ -81,7 +81,7 @@
 <header>
   <div>
     <h1>Learning Engine · Dev Dashboard</h1>
-    <div class="sub">the tutor's brain has no student-facing UI — this is the only view of it</div>
+    <div class="sub">the tutor's brain has no student-facing UI. This is the only view of it</div>
   </div>
   <div class="controls">
     <label class="sub">course <input id="course" value="calc1" size="8"></label>
@@ -91,15 +91,24 @@
 </header>
 <main>
   <div class="bar" id="stats"></div>
+  <div class="panel" style="margin-top:0">
+    <h2>What the engine would serve next</h2>
+    <p class="sub" style="margin:6px 0 10px">
+      Read-only preview of <code>pick_topic</code>, the same call question
+      generation makes. Looking does not stamp <code>last_served</code>.
+    </p>
+    <div class="row"><button id="bNext" class="ghost">Preview next topic</button>
+      <span id="nextOut" class="sub">—</span></div>
+  </div>
   <table>
     <thead><tr>
-      <th>Topic</th><th>Origin</th><th>Accuracy</th><th>Attempts</th><th>Diff.</th>
+      <th>Topic</th><th>Origin</th><th>Estimate</th><th>Observed</th><th>Attempts</th><th>Diff.</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
 
   <div class="panel">
-    <h2>Drive the loop — synthetic attempt</h2>
+    <h2>Drive the loop with a synthetic attempt</h2>
     <div class="row">
       <span id="selName" class="sub">Selected: <b>none</b> (click a topic)</span>
     </div>
@@ -113,10 +122,30 @@
   </div>
 
   <div class="panel">
+    <h2>Measure the policy with a simulation</h2>
+    <p class="sub" style="margin-bottom:8px">
+      Runs the real <code>pick_topic → record_attempt</code> loop over synthetic
+      students in a throwaway in-memory database. Nothing here touches
+      <code>mentora.db</code>. Difficulty should climb (growth shows up as
+      harder questions, not higher scores, since difficulty tracks the estimate),
+      score should hold steady rather than collapse, coverage should be high
+      (a flat pool has no wall), repeats should be near zero (the recency
+      penalty works), and calibration should fall as difficulty rises.
+    </p>
+    <div class="row">
+      <label class="sub">students <input id="simStudents" value="12" size="4"></label>
+      <label class="sub">questions each <input id="simQuestions" value="24" size="4"></label>
+      <button id="bSimulate">Run simulation</button>
+    </div>
+    <div class="bar" id="simStats" style="margin-top:14px"></div>
+    <div id="simLog"></div>
+  </div>
+
+  <div class="panel">
     <h2>Import topics (dev)</h2>
     <p class="sub" style="margin-bottom:8px">
       Paste a raw topic batch and post it straight into the selected course's
-      skills file — the same build_taxonomy → append_skills path the
+      skills file, the same build_taxonomy → append_skills path the
       piggyback in question generation uses, no model call. Shape:
       <code>{"skills":[{"id","name","description","difficulty_band","keywords","question_forms"}]}</code>.
     </p>
@@ -178,29 +207,31 @@ async function load() {
 
 function render() {
   const skills = data.skills;
-  const touched = skills.filter(s => s.attempts > 0).length;
-  const withSignal = skills.filter(s => s.has_signal);
-  const avg = withSignal.length
-    ? withSignal.reduce((a, s) => a + s.accuracy, 0) / withSignal.length
-    : null;
+  const seen = skills.filter(s => s.attempts > 0);
+  const avg = seen.length ? seen.reduce((a, s) => a + s.observed, 0) / seen.length : null;
   $('#stats').innerHTML = [
     ['Topics', skills.length],
-    ['Touched', touched],
-    ['Avg accuracy', avg === null ? '—' : avg.toFixed(2)],
+    ['Touched', seen.length],
+    ['Coverage', skills.length ? (seen.length / skills.length * 100).toFixed(0) + '%' : '—'],
+    ['Avg observed', avg === null ? '—' : avg.toFixed(2)],
   ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
 
   $('#rows').innerHTML = skills.map(s => {
     const cls = ['skill']; if (selected === s.skill_id) cls.push('sel');
     const origin = `<span class="pill ${s.origin}">${s.origin}</span>` +
       (s.is_recent ? '<span class="badge-new" title="added in the last 15 minutes">new</span>' : '');
-    const accuracyText = s.accuracy === null ? '—' : s.accuracy.toFixed(2);
-    const width = s.accuracy === null ? 0 : s.accuracy * 100;
+    // Two numbers on purpose: `estimate` is what selection acts on (the
+    // window shrunk toward the prior), `observed` is the raw mean. They
+    // converge as attempts accumulate; the gap is the confidence.
+    const observedText = s.observed === null ? '—' : s.observed.toFixed(2);
+    const width = s.estimate * 100;
     return `<tr class="${cls.join(' ')}" data-id="${s.skill_id}">
       <td><div class="name">${s.skill_name}</div><div class="id">${s.skill_id}</div></td>
       <td>${origin}</td>
       <td><div style="display:flex;gap:8px;align-items:center">
-        <div class="track"><div class="fill" style="width:${width.toFixed(0)}%;background:${accuracyColor(s.accuracy)}"></div></div>
-        <span class="pct">${accuracyText}</span></div></td>
+        <div class="track"><div class="fill" style="width:${width.toFixed(0)}%;background:${accuracyColor(s.estimate)}"></div></div>
+        <span class="pct">${s.estimate.toFixed(2)}</span></div></td>
+      <td class="pct">${observedText}</td>
       <td class="pct">${s.attempts}</td>
       <td class="pct">${s.difficulty_band.toFixed(2)}</td>
     </tr>`;
@@ -230,6 +261,7 @@ function renderSelected() {
       <span class="sub" style="margin-left:6px">${new Date(s.created_at).toLocaleString()}</span></dd>
     <dt>Keywords</dt><dd>${chips(s.keywords)}</dd>
     <dt>Question forms</dt><dd>${chips(s.question_forms)}</dd>
+    <dt>Last served</dt><dd>${s.last_served ? new Date(s.last_served).toLocaleString() : '<span class="sub">never</span>'}</dd>
   `;
 }
 
@@ -284,7 +316,51 @@ async function importSkills() {
   await load();
 }
 
+async function previewNext() {
+  const c = encodeURIComponent($('#course').value.trim());
+  const s = encodeURIComponent($('#student').value.trim());
+  try {
+    const r = await fetch(`/dev/courses/${c}/next-topic?student_id=${s}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    $('#nextOut').innerHTML = `<b>${res.skill_id}</b> at difficulty ${res.target_difficulty.toFixed(2)}`;
+  } catch (e) { $('#nextOut').textContent = 'failed: ' + e.message; }
+}
+
+async function runSimulation() {
+  const c = encodeURIComponent($('#course').value.trim());
+  const students = encodeURIComponent($('#simStudents').value.trim());
+  const questions = encodeURIComponent($('#simQuestions').value.trim());
+  $('#bSimulate').disabled = true;
+  log('running…', null, '#simLog');
+  try {
+    const r = await fetch(
+      `/dev/courses/${c}/simulate?students=${students}&questions_each=${questions}`,
+      { method: 'POST' });
+    if (!r.ok) throw new Error(await r.text());
+    const s = await r.json();
+    const growth = s.difficulty_late - s.difficulty_early;
+    $('#simStats').innerHTML = [
+      ['Coverage', (s.coverage * 100).toFixed(0) + '%'],
+      ['Score', s.score_early.toFixed(2) + ' → ' + s.score_late.toFixed(2)],
+      ['Difficulty', s.difficulty_early.toFixed(2) + ' → ' + s.difficulty_late.toFixed(2)],
+      ['Growth', (growth >= 0 ? '+' : '') + growth.toFixed(2)],
+      ['Repeat rate', (s.repeat_rate * 100).toFixed(0) + '%'],
+    ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+    const cal = Object.entries(s.calibration)
+      .map(([k, v]) => `${k} ${v.toFixed(2)}`).join('  ·  ');
+    log(`${s.students} students × ${s.questions_each} questions over ${s.topics} topics. Calibration: ${cal || 'n/a'}`,
+        false, '#simLog');
+  } catch (e) {
+    log('simulation failed: ' + e.message, true, '#simLog');
+  } finally {
+    $('#bSimulate').disabled = false;
+  }
+}
+
 $('#reload').onclick = load;
+$('#bNext').onclick = previewNext;
+$('#bSimulate').onclick = runSimulation;
 $('#course').onchange = load;
 $('#student').onchange = load;
 $('#bCorrect').onclick = () => attempt('correct');

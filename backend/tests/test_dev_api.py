@@ -98,3 +98,69 @@ def test_import_skills_rejects_an_unknown_field():
             },
         )
     assert response.status_code == 422
+
+
+def test_next_topic_previews_the_pick_without_serving_it():
+    """The dashboard's window onto selection. Read-only: looking at the
+    answer must not change it, or the dashboard would be driving the engine
+    it is there to observe."""
+    with TestClient(app) as client:
+        first = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-1"}
+        )
+        second = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-1"}
+        )
+    assert first.status_code == 200
+    assert first.json()["skill_id"] == second.json()["skill_id"]
+
+
+def test_next_topic_is_404_for_a_course_with_no_topics():
+    with TestClient(app) as client:
+        response = client.get(
+            "/dev/courses/nope/next-topic", params={"student_id": "dev-1"}
+        )
+    assert response.status_code == 404
+
+
+def test_simulate_reports_on_the_policy_without_touching_the_database():
+    with TestClient(app) as client:
+        response = client.post(
+            "/dev/courses/calc1/simulate",
+            params={"students": 3, "questions_each": 6},
+        )
+        assert response.status_code == 200
+        report = response.json()
+        assert 0.0 < report["coverage"] <= 1.0
+        assert report["students"] == 3
+
+        # No synthetic student reached the real student model.
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "sim-0"}
+        ).json()
+        assert all(s["attempts"] == 0 for s in overview["skills"])
+
+
+def test_a_synthetic_attempt_also_marks_the_topic_served():
+    """The dashboard has to show selection behaving as it does in production.
+
+    On the real path a topic is served by generation before it is ever
+    marked, so the recency penalty fires. A dev attempt that recorded
+    without serving would let the dashboard hand back the same topic
+    forever, which is not what a student would see.
+    """
+    with TestClient(app) as client:
+        first = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-2"}
+        ).json()["skill_id"]
+        client.post(
+            "/dev/courses/calc1/attempts",
+            json={
+                "student_id": "dev-2", "session_id": "dev", "problem_id": "d1",
+                "expected_skills": [first], "difficulty": 0.5, "correct": False,
+            },
+        )
+        second = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-2"}
+        ).json()["skill_id"]
+    assert second != first

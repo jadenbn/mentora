@@ -19,7 +19,9 @@ from app.api.tutor import get_tutor_service, parse_prior_annotations, read_canva
 from app.database import CourseRepository
 from app.schemas.learning import AttemptCreate, SkillsOverviewResponse, WorkResponse
 from app.schemas.tutor import TutorMode, WorkStatus
-from app.services import attribution, student_model_service
+from app.services import attribution
+from app.services import hints, student_model_service
+from app.services.profile import get_learner_context
 from app.services.student_model_service import UnknownSkillError
 from app.services.tutor_service import TutorService
 
@@ -49,7 +51,6 @@ async def submit_work(
     mode: Annotated[TutorMode, Form()],
     canvas_image: Annotated[UploadFile, File()],
     problem_id: Annotated[str, Form(min_length=1)],
-    hints_used: Annotated[int, Form(ge=0)] = 0,
     prior_annotations: Annotated[str, Form()] = "[]",
     session: Session = Depends(get_session),
     repository: CourseRepository = Depends(get_course_repository),
@@ -63,18 +64,35 @@ async def submit_work(
     decided whether it went up or down, on an API with no authentication. A
     one-line curl could set any student's accuracy to the ceiling.
 
-    Here the tutor's own reading of the canvas decides the outcome, and the
-    difficulty comes from what generation asked for at question-creation
-    time (app.api.questions). The client supplies the canvas and nothing
-    that scores it.
+    Every input to the score is the server's now. The tutor's own reading of
+    the canvas decides the outcome; the difficulty comes from what
+    generation asked for at question-creation time (app.api.questions); and
+    hints are counted here, on the way past, rather than reported by the
+    browser at marking time. The client supplies the canvas and nothing that
+    scores it.
 
-    Only mode="mark" records. A hint request is not a graded attempt, and
-    "uncertain" means the tutor never actually read the canvas -- there is
-    nothing to feed the student model in either case.
+    Only mode="mark" records an attempt. A hint request is not a graded
+    attempt -- it is counted and nothing else -- and "uncertain" means the
+    tutor never actually read the canvas.
     """
     grounded = repository.get_grounded_problem(course_id=course_id, problem_id=problem_id)
     if grounded is None:
         raise HTTPException(404, "Problem was not found in this course")
+
+    # Fetched before the tutor call, not after: the primary skill's estimate
+    # is what the tutor's hint depth calibrates against (services/profile).
+    skills = attribution.get_problem_skills(session, problem_id)
+    learner = (
+        get_learner_context(
+            session,
+            course_id=course_id,
+            student_id=student_id,
+            skill_id=skills[0],
+            problem_id=problem_id,
+        )
+        if skills
+        else None
+    )
 
     image, mime_type = await read_canvas_image(canvas_image)
     try:
@@ -85,15 +103,18 @@ async def submit_work(
             canvas_mime_type=mime_type,
             prior_annotations=parse_prior_annotations(prior_annotations),
             problem_context=grounded.problem,
+            learner=learner,
         )
     except TutorWorkflowTimeout as exc:
         raise HTTPException(504, "The tutor took too long to respond") from exc
     except TutorWorkflowError as exc:
         raise HTTPException(502, "The tutor is temporarily unavailable") from exc
 
+    if mode == TutorMode.hint:
+        hints.record_hint(session, student_id, problem_id)
+
     attempt = None
     if mode == TutorMode.mark and response.status != WorkStatus.uncertain:
-        skills = attribution.get_problem_skills(session, problem_id)
         difficulty = repository.get_problem_difficulty(problem_id)
         if skills and difficulty is not None:
             try:
@@ -108,7 +129,8 @@ async def submit_work(
                         difficulty=difficulty,
                         correct=response.status == WorkStatus.correct,
                         partial=response.status == WorkStatus.partial,
-                        hints_used=hints_used,
+                        hints_used=hints.hints_taken(session, student_id, problem_id),
+                        error_tag=response.error_tag,
                     ),
                 )
             except UnknownSkillError:

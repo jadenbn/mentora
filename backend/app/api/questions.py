@@ -30,14 +30,15 @@ from app.schemas.problems import (
     GeneratedProblemResponse,
 )
 from app.services import attribution
-from app.services.profile import DEFAULT_ACCURACY, difficulty_hint, get_profile
+from app.services.accuracy import PRIOR_ACCURACY, difficulty_bucket
+from app.services.profile import get_profile
+from app.services.selection import mark_served, pick_topic
 from app.services.question_service import (
     ContextRetrievalError,
     ContextRetrievalNotConfigured,
     DocumentNotFoundError,
     QuestionService,
 )
-from app.services.selection import pick_topic
 
 router = APIRouter(prefix="/api/courses/{course_id}/questions", tags=["questions"])
 
@@ -79,14 +80,6 @@ def get_question_service(
     )
 
 
-def _level_word(difficulty: float) -> str:
-    if difficulty < 0.4:
-        return "introductory"
-    if difficulty < 0.7:
-        return "moderate"
-    return "challenging"
-
-
 @dataclass(frozen=True)
 class _Ask:
     question_request: str
@@ -104,10 +97,11 @@ def _build_ask(session: Session, course_id: str, request: GenerateQuestionReques
     """
     typed = request.question_request.strip()
     if typed:
-        profile = get_profile(session, course_id, request.student_id)
-        difficulty = difficulty_hint(profile)
+        # Their words decide the topic, so there is no per-topic estimate to
+        # read; the course-wide one supplies a level instead.
+        difficulty = get_profile(session, course_id, request.student_id).accuracy
         return _Ask(
-            question_request=f"{typed} (write at a {_level_word(difficulty)} "
+            question_request=f"{typed} (write at a {difficulty_bucket(difficulty)} "
             "difficulty for this student)",
             required_skill_id=None,
             target_difficulty=difficulty,
@@ -120,11 +114,11 @@ def _build_ask(session: Session, course_id: str, request: GenerateQuestionReques
         return _Ask(
             question_request="Write a question grounded in this material.",
             required_skill_id=None,
-            target_difficulty=DEFAULT_ACCURACY,
+            target_difficulty=PRIOR_ACCURACY,
         )
 
     parts = [
-        f"Write a {_level_word(topic.target_difficulty)} question on "
+        f"Write a {difficulty_bucket(topic.target_difficulty)} question on "
         f"{topic.skill_name}: {topic.skill_description}"
     ]
     if topic.question_forms:
@@ -182,6 +176,11 @@ async def generate_question(
     repository.set_problem_difficulty(
         problem_id=problem.id, target_difficulty=ask.target_difficulty
     )
+    if ask.required_skill_id is not None:
+        # The topic has now been put in front of the student. Stamped here
+        # rather than inside pick_topic so nothing is recorded for a
+        # question that failed to generate.
+        mark_served(session, course_id, request.student_id, ask.required_skill_id)
 
     skill_ids = attribution.get_problem_skills(session, problem.id)
     skills = (

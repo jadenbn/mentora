@@ -27,6 +27,12 @@ from app.services.taxonomy import (
 logger = logging.getLogger(__name__)
 RETRIEVAL_TOP_K = 12
 
+# How many topics one question may add to a course. The piggyback is how the
+# taxonomy grows, but a single pathological response should not be able to
+# mint four topics at once -- and a question genuinely covering more than one
+# unheard-of topic is a question that is not grounded in the material.
+MAX_NEW_TOPICS_PER_QUESTION = 1
+
 
 class DocumentNotFoundError(LookupError):
     pass
@@ -176,7 +182,12 @@ class QuestionService:
         normalized id, or by a name-similarity key when the model described
         it in different words) or is genuinely new, in which case it is
         appended to the course's skills file and inserted. This is the only
-        place a course's topic list grows outside seeding.
+        place a course's topic list grows outside seeding, and it may add at
+        most MAX_NEW_TOPICS_PER_QUESTION of them.
+
+        Order matters downstream: the first id is the problem's primary
+        skill, and the primary is the only one an attempt's outcome moves.
+        When selection required a topic, that topic leads.
         """
         existing = self.session.exec(
             select(Skill).where(Skill.course_id == course_id)
@@ -201,6 +212,17 @@ class QuestionService:
                     [e.model_dump() for e in to_create],
                     SkillOrigin.GENERATED,
                 )
+                # Capped after validation, not before: truncating first would
+                # let a malformed batch slip through by dropping the entry it
+                # collided with.
+                if len(produced) > MAX_NEW_TOPICS_PER_QUESTION:
+                    logger.info(
+                        "course %s: capping new topics at %d, not creating %s",
+                        course_id,
+                        MAX_NEW_TOPICS_PER_QUESTION,
+                        [s.name for s in produced[MAX_NEW_TOPICS_PER_QUESTION:]],
+                    )
+                    produced = produced[:MAX_NEW_TOPICS_PER_QUESTION]
                 added_ids = append_skills(self.session, course_id, produced)
                 skill_ids.extend(added_ids)
             except TaxonomyError:
@@ -209,6 +231,9 @@ class QuestionService:
                 logger.exception("skill identification failed for course %s", course_id)
                 self.session.rollback()
 
-        if required_skill_id and required_skill_id not in skill_ids:
-            skill_ids.append(required_skill_id)
+        if required_skill_id:
+            # Lead with the topic selection asked for: it is what the
+            # question was written to exercise, so it is what the outcome
+            # should count toward.
+            skill_ids.insert(0, required_skill_id)
         return list(dict.fromkeys(skill_ids))
