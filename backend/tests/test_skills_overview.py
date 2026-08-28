@@ -35,9 +35,8 @@ def test_overview_lists_every_topic_including_untouched(session):
     ids = {s.skill_id for s in ov.skills}
     assert ids == {"calc1.a", "calc1.b"}
     for s in ov.skills:
-        assert s.has_signal is False
         assert s.attempts == 0
-        assert s.accuracy is None
+        assert s.observed is None
 
 
 def test_overview_reflects_recorded_attempts(session):
@@ -51,10 +50,9 @@ def test_overview_reflects_recorded_attempts(session):
     ov = student_model_service.get_skills_overview(session, "calc1", "stu1")
     by_id = {s.skill_id: s for s in ov.skills}
 
-    assert by_id["calc1.a"].accuracy == pytest.approx(1.0)
+    assert by_id["calc1.a"].observed == pytest.approx(1.0)
     assert by_id["calc1.a"].attempts == 3
-    assert by_id["calc1.a"].has_signal is True
-    assert by_id["calc1.b"].accuracy is None
+    assert by_id["calc1.b"].observed is None
 
 
 def test_overview_exposes_origin_keywords_and_recency(session):

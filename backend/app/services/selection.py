@@ -1,11 +1,14 @@
 """Pick which topic a generated question should target, and how hard.
 
-Read-only: nothing here writes state. Called from inside question generation
-(app.api.questions) when the student did not name a topic themselves -- there
-is no student-facing "next problem" surface. Topics are flat: no prerequisite
-graph, no unlock gate. Gating on top of an ability estimate was what starved
-the demo (an average student never clears a fixed threshold); a flat pool
-scored by weakness and staleness does not have that failure mode.
+Called from inside question generation (app.api.questions) when the student
+did not name a topic themselves -- there is no student-facing "next problem"
+surface. Topics are flat: no prerequisite graph, no unlock gate. Gating on
+top of an ability estimate was what starved the demo (an average student
+never clears a fixed threshold); a flat pool scored by weakness and staleness
+does not have that failure mode.
+
+Reading is free of side effects; `mark_served` is the one writer, and the
+generation route calls it after a question actually exists.
 """
 
 from __future__ import annotations
@@ -15,27 +18,37 @@ from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
-from app.models.attempt import Attempt
 from app.models.skill import Skill
 from app.models.skill_state import SkillState
-from app.services.accuracy import accuracy, days_since, has_signal
+from app.services.accuracy import days_since, estimated_accuracy
 
-# A topic with no attempts yet: how much weight "we haven't seen this" gets
-# against "we've seen this and it's weak". Deliberately smaller than a
-# confirmed weakness, so breadth doesn't crowd out remediation.
-W_COVERAGE = 0.20
+# A topic with no outcomes yet. Placed deliberately between two weakness
+# scores: above a topic the student is doing fine on (estimate 0.58 scores
+# 0.25), below one they are struggling with (estimate 0.38 scores 0.37). So
+# new material is served unless something already seen needs remediation.
+#
+# This is the one constant here that was not set by hand. At 0.20 it lost
+# even to topics the student was doing well on, and the simulator measured
+# the consequence: an average student reached 6 of 15 topics in 30
+# questions. Re-measure with POST /dev/courses/{id}/simulate before moving
+# it.
+W_COVERAGE = 0.30
 W_WEAKNESS = 0.60
 W_STALENESS = 0.25
 W_RECENCY_PENALTY = 0.40
-STALENESS_CAP_DAYS = 7.0
 
-# Difficulty the model is asked to write at when the topic has enough
-# attempts to trust its accuracy reading; otherwise a moderate default.
+# How long a topic takes to go fully stale, before scaling. The cap is
+# stretched by how well the topic is known -- a topic at 0.9 gets roughly
+# three times the grace of one at 0.1 -- because "decayed since practice"
+# arrives later for material that was solid to begin with.
+STALENESS_BASE_DAYS = 7.0
+STALENESS_STRENGTH_STRETCH = 2.0
+
+# Difficulty is clamped into the range a question is worth writing at.
 DIFFICULTY_FLOOR = 0.15
 DIFFICULTY_CEIL = 0.85
-DEFAULT_DIFFICULTY = 0.5
 
-RECENT_PICKS_WINDOW = 2  # how many recently-served topics incur the recency penalty
+RECENT_PICKS_WINDOW = 2  # how many recently-served topics incur the penalty
 
 
 @dataclass(frozen=True)
@@ -47,34 +60,52 @@ class TopicPick:
     question_forms: list[str]
 
 
-def _recent_primary_skills(
-    session: Session, course_id: str, student_id: str, limit: int
-) -> list[str]:
-    """The primary (first declared) skill of the most recent attempts."""
-    rows = session.exec(
-        select(Attempt)
-        .where(Attempt.course_id == course_id, Attempt.student_id == student_id)
-        .order_by(Attempt.created_at.desc())
-        .limit(limit)
-    ).all()
-    return [row.expected_skills[0] for row in rows if row.expected_skills]
+def _staleness(state: SkillState, now: datetime, strength: float) -> float:
+    if state.last_seen is None:
+        return 0.0
+    cap = STALENESS_BASE_DAYS * (1 + STALENESS_STRENGTH_STRETCH * strength)
+    return min(days_since(state.last_seen, now) / cap, 1.0)
 
 
-def _target_difficulty(state: SkillState | None) -> float:
-    if state is None or not has_signal(state.attempts):
-        return DEFAULT_DIFFICULTY
-    a = accuracy(state.recent_outcomes)
-    return DEFAULT_DIFFICULTY if a is None else min(max(a, DIFFICULTY_FLOOR), DIFFICULTY_CEIL)
+def _target_difficulty(skill: Skill, state: SkillState | None) -> float:
+    """How hard to write. An untouched topic is written at the difficulty its
+    taxonomy entry claims; after that, at the student's own estimate.
+
+    There is no `mastery + offset` productive-struggle term: the estimate
+    already sits where a residual estimator's fixed point would.
+    """
+    if state is None or not state.recent_outcomes:
+        return skill.difficulty_band
+    return min(max(estimated_accuracy(state.recent_outcomes), DIFFICULTY_FLOOR), DIFFICULTY_CEIL)
 
 
-def pick_topic(session: Session, course_id: str, student_id: str) -> TopicPick | None:
+def _recently_served(states: list[SkillState], limit: int) -> set[str]:
+    """The last `limit` topics *served*, graded or not.
+
+    Served, not attempted: a question the student read and abandoned records
+    no attempt, and keying this off the ledger meant the engine re-served
+    that topic forever to exactly the student who was bouncing off it.
+    """
+    served = [s for s in states if s.last_served is not None]
+    served.sort(key=lambda s: s.last_served, reverse=True)
+    return {s.skill_id for s in served[:limit]}
+
+
+def pick_topic(
+    session: Session, course_id: str, student_id: str, now: datetime | None = None
+) -> TopicPick | None:
     """The topic a question should target next, or None if the course has
-    no topics yet (a fresh course with no generated question to piggyback on)."""
+    no topics yet (a fresh course with no generated question to piggyback on).
+
+    `now` defaults to the wall clock; every production caller leaves it
+    unset. The simulator is the one caller that passes a virtual timestamp,
+    so staleness can be exercised without a real multi-day run.
+    """
     skills = session.exec(select(Skill).where(Skill.course_id == course_id)).all()
     if not skills:
         return None
 
-    now = datetime.now(timezone.utc)
+    now = now or datetime.now(timezone.utc)
     states = session.exec(
         select(SkillState).where(
             SkillState.student_id == student_id,
@@ -82,20 +113,19 @@ def pick_topic(session: Session, course_id: str, student_id: str) -> TopicPick |
         )
     ).all()
     state_by_id = {state.skill_id: state for state in states}
-    recent = set(_recent_primary_skills(session, course_id, student_id, RECENT_PICKS_WINDOW))
+    recent = _recently_served(list(states), RECENT_PICKS_WINDOW)
 
     def priority(skill: Skill) -> float:
         state = state_by_id.get(skill.id)
         if state is None or not state.recent_outcomes:
             base = W_COVERAGE
         else:
-            weakness = 1.0 - (accuracy(state.recent_outcomes) or 0.5)
-            staleness = (
-                0.0
-                if state.last_seen is None
-                else min(days_since(state.last_seen, now) / STALENESS_CAP_DAYS, 1.0)
+            # Smoothed, so one unlucky attempt cannot outrank a topic with
+            # eight attempts of real evidence behind it.
+            strength = estimated_accuracy(state.recent_outcomes)
+            base = W_WEAKNESS * (1.0 - strength) + W_STALENESS * _staleness(
+                state, now, strength
             )
-            base = W_WEAKNESS * weakness + W_STALENESS * staleness
         return base - (W_RECENCY_PENALTY if skill.id in recent else 0.0)
 
     def rank(skill: Skill) -> tuple[float, float]:
@@ -108,6 +138,28 @@ def pick_topic(session: Session, course_id: str, student_id: str) -> TopicPick |
         skill_id=chosen.id,
         skill_name=chosen.name,
         skill_description=chosen.description,
-        target_difficulty=_target_difficulty(state_by_id.get(chosen.id)),
+        target_difficulty=_target_difficulty(chosen, state_by_id.get(chosen.id)),
         question_forms=list(chosen.question_forms),
     )
+
+
+def mark_served(
+    session: Session,
+    course_id: str,
+    student_id: str,
+    skill_id: str,
+    now: datetime | None = None,
+) -> None:
+    """Record that this topic was just put in front of this student.
+
+    Moves `last_served` and nothing else -- no attempt, no outcome, no
+    accuracy. Creates the state row if the topic has never been touched,
+    which is the common case for a first serve. `now` exists for the same
+    reason it does on pick_topic: only the simulator ever passes it.
+    """
+    state = session.get(SkillState, (student_id, skill_id))
+    if state is None:
+        state = SkillState(student_id=student_id, course_id=course_id, skill_id=skill_id)
+    state.last_served = now or datetime.now(timezone.utc)
+    session.add(state)
+    session.commit()

@@ -17,8 +17,9 @@ from app.models.skill_state import SkillState
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.learning import AttemptCreate
 from app.schemas.problems import QuestionPlan
-from app.services import attribution, selection, student_model_service
-from app.services.accuracy import accuracy
+from app.services import attribution
+from app.services import selection, student_model_service
+from app.services.accuracy import observed_accuracy
 from app.services.question_service import QuestionService
 
 
@@ -142,4 +143,4 @@ async def test_pick_generate_tag_grade_record_moves_the_selected_topic(
     assert "calc1.derivatives.chain-rule" in result.updated_skills
     state = session.get(SkillState, ("stu1", "calc1.derivatives.chain-rule"))
     assert state is not None
-    assert accuracy(state.recent_outcomes) == pytest.approx(1.0)
+    assert observed_accuracy(state.recent_outcomes) == pytest.approx(1.0)
