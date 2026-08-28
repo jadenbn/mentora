@@ -41,6 +41,23 @@ class WorkStatus(str, Enum):
     uncertain = "uncertain"
 
 
+class ErrorTag(str, Enum):
+    """A closed vocabulary for what went wrong, not why the model thinks so.
+
+    Deliberately small. This is the seed of a signal nothing reads yet --
+    "recurring mistake" needs something finer than correct/incorrect, and
+    a per-student rollup only becomes useful once it accumulates over weeks
+    of real grading. A large vocabulary would be a vaguer one and never
+    accumulate enough of any single tag to say anything.
+    """
+
+    sign_error = "sign_error"
+    dropped_constant = "dropped_constant"
+    wrong_technique = "wrong_technique"
+    algebra_slip = "algebra_slip"
+    concept_gap = "concept_gap"
+
+
 class NormalizedPoint(StrictModel):
     x: float = Field(ge=0, le=1)
     y: float = Field(ge=0, le=1)
@@ -86,6 +103,10 @@ class TutorPlan(StrictModel):
     status: WorkStatus
     canvas_actions: list[CanvasAction] = Field(default_factory=list)
     summary: str | None = Field(default=None, max_length=1_000)
+    #: Optional; tagging is not required of every incorrect or partial
+    #: answer. The safety policy clears it on any other status -- see
+    #: services/tutor_policy.
+    error_tag: ErrorTag | None = Field(default=None)
 
 
 class TutorResponse(TutorPlan):

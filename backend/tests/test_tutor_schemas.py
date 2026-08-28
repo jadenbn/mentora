@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from app.schemas.tutor import (
     CanvasAction,
+    ErrorTag,
     NormalizedBounds,
     NormalizedPoint,
     TutorMode,
@@ -37,6 +38,17 @@ class TestVocabularies:
             "incorrect",
             "partial",
             "uncertain",
+        }
+
+    def test_error_tag_is_a_small_closed_vocabulary(self):
+        # Deliberately small: a large vocabulary never accumulates enough of
+        # any single tag over real usage to say anything.
+        assert {t.value for t in ErrorTag} == {
+            "sign_error",
+            "dropped_constant",
+            "wrong_technique",
+            "algebra_slip",
+            "concept_gap",
         }
 
 
@@ -150,12 +162,13 @@ class TestStrictness:
 
 
 class TestTutorResponse:
-    def test_a_response_is_four_fields(self):
+    def test_a_response_is_five_fields(self):
         assert set(TutorResponse.model_fields) == {
             "interaction_id",
             "status",
             "canvas_actions",
             "summary",
+            "error_tag",
         }
 
     def test_a_response_with_no_actions_is_valid(self):

@@ -9,6 +9,7 @@ on whichever service happened to be imported along the way.
 
 from app.models.attempt import Attempt
 from app.models.course_taxonomy_version import CourseTaxonomyVersion
+from app.models.hint_usage import HintUsage
 from app.models.problem_skill import ProblemSkill
 from app.models.skill import Skill
 from app.models.skill_state import SkillState
@@ -16,6 +17,7 @@ from app.models.skill_state import SkillState
 __all__ = [
     "Attempt",
     "CourseTaxonomyVersion",
+    "HintUsage",
     "ProblemSkill",
     "Skill",
     "SkillState",

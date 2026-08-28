@@ -24,6 +24,13 @@ class SkillState(SQLModel, table=True):
     attempts: int = Field(default=0)
     hints_used: int = Field(default=0)
     #: Most recent RECENT_WINDOW scores (see services/accuracy.py),
-    #: oldest first. accuracy() is the mean; empty means never attempted.
+    #: oldest first. Empty means never attempted.
     recent_outcomes: list[float] = Field(default_factory=list, sa_column=Column(JSON))
+    #: When this topic was last *graded*. Drives staleness.
     last_seen: datetime | None = Field(default=None)
+    #: When this topic was last *served* -- stamped at question generation,
+    #: before the student has done anything. Drives the recency penalty, so
+    #: an abandoned question still stops the engine re-serving that topic
+    #: forever. A served topic that is never marked moves this and nothing
+    #: else.
+    last_served: datetime | None = Field(default=None)

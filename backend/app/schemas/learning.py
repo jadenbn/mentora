@@ -13,7 +13,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import SkillOrigin
-from app.schemas.tutor import TutorResponse
+from app.schemas.tutor import ErrorTag, TutorResponse
 
 
 class StrictModel(BaseModel):
@@ -30,8 +30,13 @@ class AttemptCreate(StrictModel):
     difficulty: float = Field(ge=0.0, le=1.0)
     correct: bool
     partial: bool = False
+    #: Server-counted on the product path (see services/hints.py). The dev
+    #: route lets a caller state it, which is one of the reasons that route
+    #: is not on the product API.
     hints_used: int = Field(default=0, ge=0)
-    total_time_ms: int | None = None
+    #: Set from the tutor's own reading (schemas.tutor.TutorPlan), never
+    #: client-supplied on the product path. See models.Attempt.error_tag.
+    error_tag: ErrorTag | None = None
 
 
 class AttemptResult(StrictModel):
@@ -49,9 +54,12 @@ class SkillOverviewOut(StrictModel):
     origin: SkillOrigin
     created_at: datetime
     is_recent: bool
-    accuracy: float | None
+    #: What happened: the mean of the recent window, null when untouched.
+    observed: float | None
+    #: What the engine acts on: the same mean shrunk toward the prior.
+    estimate: float
     attempts: int
-    has_signal: bool
+    last_served: datetime | None
 
 
 class SkillsOverviewResponse(StrictModel):

@@ -32,5 +32,10 @@ class Attempt(SQLModel, table=True):
     correct: bool
     partial: bool = Field(default=False)
     hints_used: int = Field(default=0)
-    total_time_ms: int | None = Field(default=None)
+    #: A small controlled vocabulary the tutor may tag an incorrect or
+    #: partial answer with (see schemas.tutor.ErrorTag). Null on a correct
+    #: or uncertain grading, and on anything graded before this existed.
+    #: Nothing reads this yet -- it exists to start accumulating a signal
+    #: that takes weeks of usage to become useful.
+    error_tag: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=_utcnow)
