@@ -29,7 +29,6 @@ export interface TutorAnalysisOptions {
   /** Supplied for a skill-attributed problem, so the server can record. */
   studentId?: string;
   sessionId?: string;
-  hintsUsed?: number;
 }
 
 export async function runTutorAnalysis(
@@ -59,7 +58,6 @@ export async function runTutorAnalysis(
           mode: options.mode,
           canvasImage: capture.blob,
           priorAnnotations,
-          hintsUsed: options.hintsUsed ?? 0,
           signal: options.signal,
         })
       : await analyzeCanvas({

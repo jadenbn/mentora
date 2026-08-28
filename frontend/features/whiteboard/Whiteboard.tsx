@@ -199,11 +199,6 @@ export function Whiteboard({
   const editor = useRef<Editor | null>(null);
   const disposeAutosave = useRef<(() => void) | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Hints given for this problem, across every "mark" so far — feeds
-  // hints_used on the attempt. A ref because it drives what gets posted, not
-  // what renders. problem is fixed for a space's whole life (createSpace sets
-  // it once; nothing reassigns it), so this never needs to reset mid-mount.
-  const hintCount = useRef(0);
   const [drawerHost, setDrawerHost] = useState<HTMLDivElement | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
@@ -231,13 +226,8 @@ export function Whiteboard({
           problem,
           studentId: getStudentId(),
           sessionId: spaceId,
-          hintsUsed: hintCount.current,
         });
         setResponse(result);
-
-        if (mode === "hint") {
-          hintCount.current += 1;
-        }
       } catch (caught) {
         setResponse(null);
         setError(

@@ -229,7 +229,8 @@ export async function generateCourseQuestion(
  * round trip; the difficulty comes from what generation asked for at
  * question-creation time. Nothing the browser sends scores the student's
  * work — it used to send `correct`, which meant anyone could set their own
- * mastery.
+ * mastery, and `hints_used`, which was worth 0.4 of the score. The server
+ * counts hints itself now, on the hint requests it already serves.
  *
  * The server also returns what it recorded (or null, if nothing was), but
  * the engine has no UI, so only the tutor's response is surfaced here.
@@ -242,14 +243,12 @@ export async function submitWork(args: {
   mode: TutorMode;
   canvasImage: Blob;
   priorAnnotations: NormalizedBounds[];
-  hintsUsed: number;
   signal?: AbortSignal;
 }): Promise<TutorResponse> {
   const form = new FormData();
   form.append("session_id", args.sessionId);
   form.append("mode", args.mode);
   form.append("problem_id", args.problemId);
-  form.append("hints_used", String(args.hintsUsed));
   form.append("canvas_image", args.canvasImage, "canvas.png");
   form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
 
