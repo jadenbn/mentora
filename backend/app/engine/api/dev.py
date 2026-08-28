@@ -19,11 +19,11 @@ from sqlmodel import Session, select
 from app.api.dependencies import get_session
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
-from app.schemas.learning import AttemptCreate, AttemptResult
+from app.engine.schemas import AttemptCreate, AttemptResult
 from app.schemas.taxonomy import TaxonomyPlan
-from app.services import simulation, student_model_service
-from app.services.selection import mark_served, pick_topic
-from app.services.student_model_service import UnknownSkillError
+from app.engine import simulation, student_model_service
+from app.engine.selection import mark_served, pick_topic
+from app.engine.student_model_service import UnknownSkillError
 from app.services.taxonomy import TaxonomyError, append_skills, build_taxonomy
 
 router = APIRouter(prefix="/dev", tags=["dev"])

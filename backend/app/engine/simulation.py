@@ -39,10 +39,10 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.models.skill import Skill
-from app.schemas.learning import AttemptCreate
-from app.services.accuracy import difficulty_bucket, score_attempt
-from app.services.selection import mark_served, pick_topic
-from app.services.student_model_service import record_attempt
+from app.engine.schemas import AttemptCreate
+from app.engine.accuracy import difficulty_bucket, score_attempt
+from app.engine.selection import mark_served, pick_topic
+from app.engine.student_model_service import record_attempt
 
 #: How much a difficulty above or below the middle moves the odds.
 DIFFICULTY_EFFECT = 0.6

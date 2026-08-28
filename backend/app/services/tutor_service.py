@@ -20,7 +20,7 @@ from app.schemas.tutor import (
     TutorResponse,
 )
 from app.schemas.problems import GroundedProblem, GroundingChunk, ProblemContext
-from app.services.profile import LearnerContext
+from app.engine import LearnerContext
 from app.services.tutor_policy import apply_safety_policy
 
 logger = logging.getLogger(__name__)

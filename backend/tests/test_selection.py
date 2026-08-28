@@ -14,8 +14,8 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
-from app.services import selection
+from app.engine.models.skill_state import SkillState
+from app.engine import selection
 
 
 @pytest.fixture

@@ -18,11 +18,11 @@ from dataclasses import dataclass
 
 from sqlmodel import Session, select
 
-from app.models.attempt import Attempt
+from app.engine.models.attempt import Attempt
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
-from app.services import hints
-from app.services.accuracy import estimated_accuracy, score_attempt
+from app.engine.models.skill_state import SkillState
+from app.engine import hints
+from app.engine.accuracy import estimated_accuracy, score_attempt
 
 
 @dataclass(frozen=True)

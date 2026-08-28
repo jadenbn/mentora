@@ -7,7 +7,8 @@ import logging
 from sqlalchemy import event
 from sqlmodel import SQLModel, create_engine
 
-import app.models  # noqa: F401  -- registers every table on SQLModel.metadata
+import app.engine.models  # noqa: F401  -- registers the engine's tables
+import app.models  # noqa: F401  -- registers taxonomy + attribution tables
 from app.config import database_path
 
 logger = logging.getLogger(__name__)

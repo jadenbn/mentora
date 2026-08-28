@@ -16,7 +16,7 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.models.skill import Skill
-from app.services.simulation import simulate
+from app.engine.simulation import simulate
 
 
 @pytest.fixture
@@ -147,7 +147,7 @@ def test_simulating_a_course_with_no_topics_is_an_error():
 
 def test_the_simulation_never_writes_to_the_real_database(session):
     """It runs the real record_attempt, so this is worth pinning down."""
-    from app.models.attempt import Attempt
+    from app.engine.models.attempt import Attempt
     from sqlmodel import select
 
     simulate(_course(5), students=2, questions_each=4)

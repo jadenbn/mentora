@@ -30,9 +30,13 @@ from app.schemas.problems import (
     GeneratedProblemResponse,
 )
 from app.services import attribution
-from app.services.accuracy import PRIOR_ACCURACY, difficulty_bucket
-from app.services.profile import get_profile
-from app.services.selection import mark_served, pick_topic
+from app.engine import (
+    PRIOR_ACCURACY,
+    difficulty_bucket,
+    get_profile,
+    mark_served,
+    pick_topic,
+)
 from app.services.question_service import (
     ContextRetrievalError,
     ContextRetrievalNotConfigured,

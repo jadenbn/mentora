@@ -11,7 +11,7 @@ import pytest
 
 from app.schemas.tutor import TutorMode, WorkStatus
 from app.schemas.problems import GroundedProblem, GroundingChunk, ProblemContext
-from app.services.profile import LearnerContext
+from app.engine.profile import LearnerContext
 from app.services.tutor_service import TutorService
 from tests import factories as f
 

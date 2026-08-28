@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.models.attempt import Attempt
+from app.engine.models.attempt import Attempt
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
-from app.services.accuracy import PRIOR_ACCURACY
-from app.services.hints import record_hint
-from app.services.profile import get_learner_context, get_profile
+from app.engine.models.skill_state import SkillState
+from app.engine.accuracy import PRIOR_ACCURACY
+from app.engine.hints import record_hint
+from app.engine.profile import get_learner_context, get_profile
 
 
 @pytest.fixture

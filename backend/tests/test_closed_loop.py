@@ -13,13 +13,13 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.database import CourseRepository
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
+from app.engine.models.skill_state import SkillState
 from app.schemas.documents import ChunkMetadata, DocumentType
-from app.schemas.learning import AttemptCreate
+from app.engine.schemas import AttemptCreate
 from app.schemas.problems import QuestionPlan
 from app.services import attribution
-from app.services import selection, student_model_service
-from app.services.accuracy import observed_accuracy
+from app.engine import selection, student_model_service
+from app.engine.accuracy import observed_accuracy
 from app.services.question_service import QuestionService
 
 

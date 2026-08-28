@@ -8,12 +8,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models.attempt import Attempt
+from app.engine.models.attempt import Attempt
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
-from app.schemas.learning import AttemptCreate
-from app.services import student_model_service as svc
-from app.services.accuracy import observed_accuracy
+from app.engine.models.skill_state import SkillState
+from app.engine.schemas import AttemptCreate
+from app.engine import student_model_service as svc
+from app.engine.accuracy import observed_accuracy
 
 
 @pytest.fixture

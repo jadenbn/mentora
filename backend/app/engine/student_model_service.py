@@ -8,17 +8,17 @@ from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
-from app.models.attempt import Attempt
+from app.engine.models.attempt import Attempt
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
-from app.schemas.learning import (
+from app.engine.models.skill_state import SkillState
+from app.engine.schemas import (
     AttemptCreate,
     AttemptResult,
     SkillOverviewOut,
     SkillsOverviewResponse,
 )
 from app.services import attribution
-from app.services.accuracy import (
+from app.engine.accuracy import (
     estimated_accuracy,
     observed_accuracy,
     push_outcome,

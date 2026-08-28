@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.accuracy import (
+from app.engine.accuracy import (
     PRIOR_ACCURACY,
     estimated_accuracy,
     observed_accuracy,
     push_outcome,
     score_attempt,
 )
-from app.models.skill_state import RECENT_WINDOW
+from app.engine.models.skill_state import RECENT_WINDOW
 
 
 def test_observed_is_undefined_with_nothing_to_average():

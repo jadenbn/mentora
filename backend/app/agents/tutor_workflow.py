@@ -20,7 +20,7 @@ from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
 from app.schemas.problems import GroundingChunk, ProblemContext
 from app.schemas.tutor import ErrorTag, NormalizedBounds, TutorMode, TutorPlan
-from app.services.profile import LearnerContext
+from app.engine import LearnerContext
 
 logger = logging.getLogger(__name__)
 

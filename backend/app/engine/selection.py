@@ -19,8 +19,8 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.models.skill import Skill
-from app.models.skill_state import SkillState
-from app.services.accuracy import days_since, estimated_accuracy
+from app.engine.models.skill_state import SkillState
+from app.engine.accuracy import days_since, estimated_accuracy
 
 # A topic with no outcomes yet. Placed deliberately between two weakness
 # scores: above a topic the student is doing fine on (estimate 0.58 scores

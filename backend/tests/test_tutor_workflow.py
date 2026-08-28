@@ -22,7 +22,7 @@ from app.agents.tutor_workflow import (  # noqa: E402
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout  # noqa: E402
 from app.schemas.tutor import TutorMode  # noqa: E402
 from app.schemas.problems import GroundingChunk, ProblemContext  # noqa: E402
-from app.services.profile import LearnerContext  # noqa: E402
+from app.engine.profile import LearnerContext  # noqa: E402
 from tests import factories as f  # noqa: E402
 
 pytestmark = pytest.mark.provider

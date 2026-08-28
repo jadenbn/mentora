@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
-from app.models.hint_usage import HintUsage
+from app.engine.models.hint_usage import HintUsage
 
 
 def record_hint(session: Session, student_id: str, problem_id: str) -> int:

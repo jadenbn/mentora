@@ -17,12 +17,12 @@ from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.api.dependencies import get_course_repository, get_session
 from app.api.tutor import get_tutor_service, parse_prior_annotations, read_canvas_image
 from app.database import CourseRepository
-from app.schemas.learning import AttemptCreate, SkillsOverviewResponse, WorkResponse
+from app.engine.schemas import AttemptCreate, SkillsOverviewResponse, WorkResponse
 from app.schemas.tutor import TutorMode, WorkStatus
 from app.services import attribution
-from app.services import hints, student_model_service
-from app.services.profile import get_learner_context
-from app.services.student_model_service import UnknownSkillError
+from app.engine import hints, student_model_service
+from app.engine.profile import get_learner_context
+from app.engine.student_model_service import UnknownSkillError
 from app.services.tutor_service import TutorService
 
 logger = logging.getLogger(__name__)

@@ -14,8 +14,8 @@ from fastapi import FastAPI
 from sqlmodel import Session
 
 from app.api.dependencies import get_course_repository
-from app.api.dev import router as dev_router
-from app.api.learning import router as learning_router
+from app.engine.api.dev import router as dev_router
+from app.engine.api.learning import router as learning_router
 from app.db import engine, init_db
 from app.services.taxonomy import seed_all_courses
 

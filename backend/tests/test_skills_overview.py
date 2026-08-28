@@ -9,8 +9,8 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
-from app.schemas.learning import AttemptCreate
-from app.services import student_model_service
+from app.engine.schemas import AttemptCreate
+from app.engine import student_model_service
 
 
 @pytest.fixture

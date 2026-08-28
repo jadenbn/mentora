@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.models.skill_state import RECENT_WINDOW
+from app.engine.models.skill_state import RECENT_WINDOW
 
 #: Outcome scoring: a hint-assisted correct answer counts for less than an
 #: unassisted one. Every accuracy figure in the system is a mean of these,

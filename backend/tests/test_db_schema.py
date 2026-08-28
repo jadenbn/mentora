@@ -14,7 +14,7 @@ import sqlite3
 from sqlmodel import Session, select
 
 from app.db import engine, init_db
-from app.models.skill_state import SkillState
+from app.engine.models.skill_state import SkillState
 
 
 def _columns(table: str) -> set[str]:

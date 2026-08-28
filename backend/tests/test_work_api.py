@@ -8,12 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.api.learning import router as learning_router  # noqa: F401
+from app.engine.api.learning import router as learning_router  # noqa: F401
 from app.api.tutor import get_tutor_service
 from app.db import engine
 from app.main import app
-from app.models.skill_state import SkillState
-from app.services.accuracy import observed_accuracy
+from app.engine.models.skill_state import SkillState
+from app.engine.accuracy import observed_accuracy
 from app.services import attribution
 from app.services.taxonomy import seed_all_courses
 from app.schemas.documents import ChunkMetadata, DocumentType
@@ -128,7 +128,7 @@ def test_difficulty_comes_from_generation_not_the_request(seeded):
     with TestClient(app) as client:
         _post(client)
 
-    from app.models.attempt import Attempt
+    from app.engine.models.attempt import Attempt
     from sqlmodel import select
     with Session(engine) as s:
         attempt = s.exec(select(Attempt)).one()
@@ -208,7 +208,7 @@ def test_the_tutors_error_tag_is_stored_on_the_attempt(seeded):
         body = _post(client).json()
 
     assert body["tutor"]["error_tag"] == "sign_error"
-    from app.models.attempt import Attempt
+    from app.engine.models.attempt import Attempt
     from sqlmodel import select
     with Session(engine) as s:
         attempt = s.exec(select(Attempt)).one()
