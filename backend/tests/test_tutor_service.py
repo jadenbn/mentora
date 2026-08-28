@@ -11,6 +11,7 @@ import pytest
 
 from app.schemas.tutor import TutorMode, WorkStatus
 from app.schemas.problems import GroundedProblem, GroundingChunk, ProblemContext
+from app.services.profile import LearnerContext
 from app.services.tutor_service import TutorService
 from tests import factories as f
 
@@ -56,6 +57,20 @@ class TestWorkflowHandoff:
         svc, stub = service()
         await analyze(svc)
         assert stub.last_call["prior_annotations"] == []
+
+    async def test_no_learner_context_reaches_the_workflow_by_default(self):
+        # /api/tutor/analyze has no student identity, so it never builds one.
+        svc, stub = service()
+        await analyze(svc)
+        assert stub.last_call["learner"] is None
+
+    async def test_a_learner_context_reaches_the_workflow_when_supplied(self):
+        svc, stub = service()
+        learner = LearnerContext(
+            skill_name="Chain rule", estimate=0.3, attempts=5, hints_on_this_problem=1,
+        )
+        await analyze(svc, learner=learner)
+        assert stub.last_call["learner"] is learner
 
     async def test_a_recorded_problem_and_its_exact_sources_reach_the_workflow(self):
         problem = ProblemContext(

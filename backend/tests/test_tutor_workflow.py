@@ -22,6 +22,7 @@ from app.agents.tutor_workflow import (  # noqa: E402
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout  # noqa: E402
 from app.schemas.tutor import TutorMode  # noqa: E402
 from app.schemas.problems import GroundingChunk, ProblemContext  # noqa: E402
+from app.services.profile import LearnerContext  # noqa: E402
 from tests import factories as f  # noqa: E402
 
 pytestmark = pytest.mark.provider
@@ -139,6 +140,22 @@ class TestDirectGeminiRequest:
         assert call["config"].response_mime_type == "application/json"
         assert call["config"].response_schema == TUTOR_PLAN_RESPONSE_SCHEMA
 
+    def test_a_learner_context_reaches_the_prompt(self):
+        workflow, calls = _recording_workflow()
+        learner = LearnerContext(
+            skill_name="Chain rule", estimate=0.22, attempts=6, hints_on_this_problem=2,
+        )
+        asyncio.run(_run(workflow, learner=learner))
+        prompt = calls[0]["contents"].parts[0].text
+        assert "Chain rule" in prompt
+        assert "0.22" in prompt
+
+    def test_with_no_learner_context_the_prompt_says_so(self):
+        workflow, calls = _recording_workflow()
+        asyncio.run(_run(workflow))
+        prompt = calls[0]["contents"].parts[0].text
+        assert "No student history" in prompt
+
 
 # --- helpers ---------------------------------------------------------------
 
@@ -212,10 +229,11 @@ def _recording_workflow():
     return workflow, calls
 
 
-async def _run(workflow):
+async def _run(workflow, *, learner=None):
     return await workflow.run(
         mode=TutorMode.hint,
         canvas_image=f.PNG,
         canvas_mime_type="image/png",
         prior_annotations=[],
+        learner=learner,
     )

@@ -82,6 +82,31 @@ class TestActionBudget:
         assert len(result.canvas_actions) == 1
 
 
+class TestErrorTag:
+    """A tag is only meaningful where there was something to get wrong."""
+
+    def test_a_tag_survives_on_incorrect_work(self):
+        plan = f.plan(status=WorkStatus.incorrect, error_tag="sign_error")
+        assert apply_safety_policy(plan).error_tag == "sign_error"
+
+    def test_a_tag_survives_on_partial_work(self):
+        plan = f.plan(status=WorkStatus.partial, error_tag="algebra_slip")
+        assert apply_safety_policy(plan).error_tag == "algebra_slip"
+
+    def test_a_tag_on_correct_work_is_cleared(self):
+        plan = f.plan(status=WorkStatus.correct, error_tag="sign_error")
+        assert apply_safety_policy(plan).error_tag is None
+
+    def test_a_tag_on_uncertain_work_is_cleared(self):
+        # The canvas was never actually read; a tag here would be pure noise.
+        plan = f.plan(status=WorkStatus.uncertain, error_tag="concept_gap")
+        assert apply_safety_policy(plan).error_tag is None
+
+    def test_no_tag_stays_no_tag(self):
+        plan = f.plan(status=WorkStatus.incorrect, error_tag=None)
+        assert apply_safety_policy(plan).error_tag is None
+
+
 class TestPurity:
     def test_the_policy_does_not_mutate_the_plan_it_was_given(self):
         plan = f.plan(status=WorkStatus.uncertain, actions=[f.check_action()])

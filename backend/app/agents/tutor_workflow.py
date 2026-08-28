@@ -19,7 +19,8 @@ from pydantic import BaseModel, ValidationError
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
 from app.schemas.problems import GroundingChunk, ProblemContext
-from app.schemas.tutor import NormalizedBounds, TutorMode, TutorPlan
+from app.schemas.tutor import ErrorTag, NormalizedBounds, TutorMode, TutorPlan
+from app.services.profile import LearnerContext
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +64,28 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
             },
         },
         "summary": {"type": "string", "nullable": True},
+        "error_tag": {"type": "string", "enum": [t.value for t in ErrorTag], "nullable": True},
     },
-    "required": ["status", "canvas_actions", "summary"],
+    "required": ["status", "canvas_actions", "summary", "error_tag"],
 }
+
+
+def _render_learner(learner: LearnerContext | None) -> str:
+    """The one sentence of student-model context the tutor gets.
+
+    Never a bare number: the prompt in prompts/tutor.py tells the model not
+    to quote this back, and rendering it as a sentence rather than a field
+    named "estimate" is a second layer of the same discipline.
+    """
+    if learner is None:
+        return "No student history is available for this topic."
+    if learner.attempts == 0:
+        return f"This is the student's first attempt on {learner.skill_name}."
+    return (
+        f"On {learner.skill_name}, this student's estimated accuracy is "
+        f"{learner.estimate:.2f} over {learner.attempts} attempt(s). "
+        f"They have taken {learner.hints_on_this_problem} hint(s) on this problem so far."
+    )
 
 
 def drop_nulls(value: Any) -> Any:
@@ -122,6 +142,7 @@ class GeminiTutorWorkflow:
         prior_annotations: list[NormalizedBounds],
         problem: ProblemContext | None = None,
         course_context: list[GroundingChunk] | None = None,
+        learner: LearnerContext | None = None,
     ) -> TutorPlan:
         malformed: Exception | None = None
         try:
@@ -139,6 +160,7 @@ class GeminiTutorWorkflow:
                             prior_annotations=prior_annotations,
                             problem=problem,
                             course_context=course_context or [],
+                            learner=learner,
                             repair=attempt == 1,
                         )
                         return TutorPlan.model_validate(drop_nulls(raw))
@@ -170,6 +192,7 @@ class GeminiTutorWorkflow:
         prior_annotations: list[NormalizedBounds],
         problem: ProblemContext | None,
         course_context: list[GroundingChunk],
+        learner: LearnerContext | None,
         repair: bool,
     ) -> dict:
         """One provider round trip, returning raw structured output."""
@@ -180,6 +203,9 @@ class GeminiTutorWorkflow:
         prompt += "\n\n<current-problem>\n"
         prompt += problem.prompt if problem is not None else "No structured problem was supplied."
         prompt += "\n</current-problem>"
+        prompt += "\n\n<learner>\n"
+        prompt += _render_learner(learner)
+        prompt += "\n</learner>"
         prompt += "\n\n<course-reference-data>\n"
         if course_context:
             prompt += "\n\n".join(

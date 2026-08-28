@@ -20,6 +20,7 @@ from app.schemas.tutor import (
     TutorResponse,
 )
 from app.schemas.problems import GroundedProblem, GroundingChunk, ProblemContext
+from app.services.profile import LearnerContext
 from app.services.tutor_policy import apply_safety_policy
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class TutorWorkflow(Protocol):
         prior_annotations: list[NormalizedBounds],
         problem: ProblemContext | None,
         course_context: list[GroundingChunk],
+        learner: LearnerContext | None = None,
     ) -> TutorPlan: ...
 
 
@@ -63,6 +65,7 @@ class TutorService:
         canvas_mime_type: str,
         prior_annotations: list[NormalizedBounds],
         problem_context: ProblemContext | None = None,
+        learner: LearnerContext | None = None,
     ) -> TutorResponse:
         problem = problem_context
         course_context: list[GroundingChunk] = []
@@ -86,6 +89,7 @@ class TutorService:
             prior_annotations=prior_annotations,
             problem=problem,
             course_context=course_context,
+            learner=learner,
         )
         safe = apply_safety_policy(plan)
         return TutorResponse(interaction_id=uuid4().hex, **safe.model_dump())

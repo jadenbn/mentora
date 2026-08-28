@@ -16,6 +16,17 @@ export type { TutorMode };
 
 export type WorkStatus = "correct" | "incorrect" | "partial" | "uncertain";
 
+/** A closed vocabulary for what went wrong. Optional, and only ever set
+ * when status is "incorrect" or "partial" -- see services/tutor_policy.py.
+ * Nothing on the frontend reads this yet; it exists to keep the wire
+ * mirror accurate. */
+export type ErrorTag =
+  | "sign_error"
+  | "dropped_constant"
+  | "wrong_technique"
+  | "algebra_slip"
+  | "concept_gap";
+
 /** What a mark points with. Text is the only way to put words on the canvas. */
 export type MarkType = "circle" | "check" | "cross";
 
@@ -50,4 +61,5 @@ export interface TutorResponse {
   status: WorkStatus;
   canvas_actions: CanvasAction[];
   summary: string | null;
+  error_tag: ErrorTag | null;
 }

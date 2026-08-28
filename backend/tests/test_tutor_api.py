@@ -44,7 +44,9 @@ class TestHappyPath:
         response = post(client)
         assert response.status_code == 200
         body = response.json()
-        assert set(body) == {"interaction_id", "status", "canvas_actions", "summary"}
+        assert set(body) == {
+            "interaction_id", "status", "canvas_actions", "summary", "error_tag",
+        }
 
     def test_the_mode_is_forwarded_to_the_workflow(self, client, workflow):
         post(client, mode="explain")

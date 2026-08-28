@@ -50,6 +50,7 @@ def plan(
     status: WorkStatus | str = WorkStatus.partial,
     actions: list[dict] | None = None,
     summary: str | None = "A restrained power-rule hint.",
+    error_tag: str | None = None,
 ) -> TutorPlan:
     """A model-produced plan, already validated."""
     return TutorPlan.model_validate(
@@ -57,6 +58,7 @@ def plan(
             "status": status,
             "canvas_actions": [circle_action()] if actions is None else actions,
             "summary": summary,
+            "error_tag": error_tag,
         }
     )
 
