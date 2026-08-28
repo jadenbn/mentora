@@ -26,8 +26,11 @@ one, occasionally two or three for a question that combines techniques.
   near-duplicate of a skill that already exists.
 - If no existing skill fits, propose a new one: a short lowercase hyphenated
   id local to this response (do not prefix it with a course id), a plain-
-  language name and description, difficulty_band in [0, 1], and 3-12
-  keywords a textbook would use for it.
+  language name and description, difficulty_band in [0, 1], 3-12 keywords a
+  textbook would use for it, and 1-3 question_forms describing the shapes a
+  question on it typically takes (e.g. "evaluate a one-sided limit"), so a
+  later question on the same skill can be varied instead of repeating this
+  one's setup.
 - List 1-4 skills total. Prefer the smallest accurate set — most questions
   need exactly one.
 """.strip()
