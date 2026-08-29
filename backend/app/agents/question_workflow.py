@@ -14,10 +14,10 @@ import json
 import logging
 from typing import Any
 
-from google import genai
 from google.genai import types
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
+from app.agents.gemini import create_client, response_object
 from app.schemas.taxonomy import SKILL_ENTRY_SCHEMA
 from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
 from app.prompts.question_generation import QUESTION_INSTRUCTION
@@ -54,21 +54,6 @@ class GeminiQuestionWorkflow:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
-    def _client(self) -> genai.Client:
-        return genai.Client(
-            api_key=self.api_key,
-            http_options=types.HttpOptions(
-                retry_options=types.HttpRetryOptions(
-                    attempts=3,
-                    initial_delay=0.5,
-                    max_delay=4,
-                    exp_base=2,
-                    jitter=0.2,
-                    http_status_codes=[408, 500, 502, 503, 504],
-                )
-            ),
-        )
-
     async def run(
         self,
         *,
@@ -83,7 +68,7 @@ class GeminiQuestionWorkflow:
         malformed: Exception | None = None
         previous_error: str | None = None
         try:
-            async with self._client().aio as client:
+            async with create_client(self.api_key).aio as client:
                 for attempt in range(2):
                     try:
                         raw = await self._request(
@@ -177,15 +162,4 @@ class GeminiQuestionWorkflow:
                 ),
             )
 
-        parsed = response.parsed
-        if isinstance(parsed, BaseModel):
-            return parsed.model_dump(mode="json")
-        if isinstance(parsed, dict):
-            return parsed
-        text = response.text
-        if not text:
-            raise ValueError("provider returned no structured question plan")
-        loaded = json.loads(text)
-        if not isinstance(loaded, dict):
-            raise ValueError("provider question plan was not an object")
-        return loaded
+        return response_object(response)

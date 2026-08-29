@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
+import type { ProblemContext } from "@/types/domain";
 import { box, makeEditor } from "./fakeEditor";
 
 const RESPONSE = {
@@ -18,6 +19,14 @@ const RESPONSE = {
     { type: "text", position: { x: 0.5, y: 0.5 }, text: "What about the 2?" },
     { type: "circle", target: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
   ],
+};
+
+const PROBLEM: ProblemContext = {
+  id: "problem_1",
+  course_id: "course_demo",
+  document_id: "document_1",
+  source: "generated",
+  prompt: "Find the derivative of $f(x)=e^{3x}$.",
 };
 
 const student = (id: string, bounds = box(150, 300, 100, 200)) => ({
@@ -122,6 +131,33 @@ describe("when there is nothing to analyze", () => {
     const fake = makeEditor({ shapes: [priorMark("ai1")] });
     const spy = mockFetch();
     await expect(run(fake.editor)).rejects.toBeInstanceOf(EmptyCanvasError);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("lets a stuck student ask about the problem before drawing", async () => {
+    const fake = makeEditor({ shapes: [] });
+    const spy = mockFetch();
+    await run(fake.editor, { mode: "stuck", problem: PROBLEM });
+    const body = spy.mock.calls[0][1].body as FormData;
+    expect(body.get("canvas_image")).toBeNull();
+    expect(JSON.parse(body.get("problem_context") as string)).toEqual(PROBLEM);
+  });
+
+  it("still requires student work for other modes", async () => {
+    const fake = makeEditor({ shapes: [] });
+    const spy = mockFetch();
+    await expect(run(fake.editor, { mode: "hint", problem: PROBLEM })).rejects.toBeInstanceOf(
+      EmptyCanvasError,
+    );
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("does not hide a student export failure behind the problem-only path", async () => {
+    const fake = makeEditor({ shapes: [student("s1")], image: null });
+    const spy = mockFetch();
+    await expect(run(fake.editor, { mode: "stuck", problem: PROBLEM })).rejects.toBeInstanceOf(
+      EmptyCanvasError,
+    );
     expect(spy).not.toHaveBeenCalled();
   });
 });

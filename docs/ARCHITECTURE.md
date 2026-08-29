@@ -39,7 +39,7 @@ FastAPI
 Pydantic v2
 uvicorn
 ```
-Exact package tooling may follow repository setup.
+Frontend packages are managed with Bun (`frontend/bun.lock`).
 
 ## 3. High-Level System
 ```text
@@ -119,7 +119,8 @@ User
            ├── Canvas State
            └── Tutor Interactions
 ```
-A session may contain a generated or imported problem.
+A session may contain a generated or imported problem. Generated problems are
+stored in backend SQLite and copied into the local Space record for restore.
 
 ## 6. Course
 A Course owns documents, style/coverage metadata, whiteboard sessions, and course-level student progress.
@@ -197,6 +198,12 @@ Frontend owns:
 Keep backend access behind a small API/client layer.
 Do not call private AI-provider APIs directly from browser code.
 
+Whiteboard controls remain canvas-adjacent rather than becoming a second
+workspace: drawing styles open from a palette button in the left tool rail, and
+tutor actions fan out from the right-edge control. Starting a tutor request
+collapses the action fan and exposes only a transient top-of-canvas status;
+feedback itself remains on the canvas.
+
 ## 11. Backend Responsibilities
 Backend owns:
 - provider credentials
@@ -237,6 +244,8 @@ POST /api/tutor/analyze                       implemented
 POST /api/courses/{course_id}/documents       implemented
 GET  /api/courses/{course_id}/documents       implemented
 POST /api/courses/{course_id}/questions/generate implemented
+POST /api/courses/{course_id}/work            implemented
+GET  /api/courses/{course_id}/skills-overview implemented
 GET  /api/courses
 POST /api/courses
 GET  /api/courses/{course_id}
@@ -244,12 +253,12 @@ GET  /api/courses/{course_id}/sessions
 POST /api/courses/{course_id}/sessions
 GET  /api/sessions/{session_id}
 PUT  /api/sessions/{session_id}
-POST /api/questions/generate
 POST /api/problems/import
 GET  /api/courses/{course_id}/student-model
 ```
 
-The marked document, question, health, and tutor routes exist. Sessions
+The marked document, question, health, tutor, and learning-engine routes
+exist; the engine's routes are documented in `LEARNING_ENGINE.md`. Sessions
 ("spaces" in the UI) live in
 browser localStorage, not on the server, so there is no session endpoint.
 Prefer domain operations over one endpoint per prompt.
@@ -270,14 +279,16 @@ When changing a shared schema:
 ```text
 course_id          course and grounded-problem scope
 mode               mark | hint | explain | stuck
-canvas_image       PNG, JPEG, or WebP; maximum 10 MB
+canvas_image       optional PNG/JPEG/WebP; maximum 10 MB when present
 prior_annotations  JSON array of normalized bounds; defaults to []
-problem_context     optional JSON generated-problem entity
+problem_context    optional validated ProblemContext JSON
 ```
 
-The browser sends the student image and small scalar/JSON fields. The backend
-loads recorded document excerpts by problem id; course material never crosses
-the browser tutor boundary.
+Five fields at most, no JSON request body. The browser sends the student image
+and small scalar/JSON fields; the backend loads recorded document excerpts by
+problem id, so course material never crosses the browser tutor boundary. A
+`stuck` request with `problem_context` may omit the image; the tutor then
+reasons from the structured question and course grounding alone.
 
 Tutor-authored shapes are excluded from the exported image and their positions
 are sent as `prior_annotations` instead, so the model cannot read its own
@@ -338,7 +349,11 @@ tldraw operations
 The renderer creates controlled text, circles, checks, and crosses — the four
 implemented actions. `TutorAnnotation` was an earlier name for this and no
 longer exists.
-This boundary also enables future handwriting animation without changing tutor reasoning.
+The whiteboard uses a progressive renderer for tutor feedback: text is revealed
+as a typewriter sequence, while circles, checks, and crosses are emitted as
+freehand draw-shape points at a capped rate. Animation is presentation-only,
+ignores the undo history, can be cancelled on teardown, and does not change the
+validated tutor contract or ownership metadata.
 
 ## 20. Canvas Capture
 Expose a clean frontend boundary conceptually like:
@@ -417,16 +432,17 @@ other
 
 SQLite is the source of truth for document metadata and exact chunk text.
 Pinecone stores `text-embedding-3-small` vectors with `course_id`, `document_id`,
-and `chunk_id` metadata, but never chunk text. Retrieval filters by both course
-and selected document, ranks chunk ids in Pinecone, and hydrates their exact
+and `chunk_id` metadata, but never chunk text. Small documents send full
+context; larger ones retrieve semantically — filtered by both course and
+selected document, ranking chunk ids in Pinecone and hydrating their exact
 text from SQLite. Generated problems still record the one to eight chunks the
 model actually used, so later tutor interactions reuse exact grounding without
 another semantic search.
 
 The Pinecone index is provisioned outside the application with 1,536 dimensions
-and cosine similarity. Upload indexing is synchronous and runs off the FastAPI
-event loop; re-uploading a content-addressed document is the repair path after a
-provider failure.
+and cosine similarity. Upload indexing and semantic search both run in worker
+threads so FastAPI's event loop stays free; re-uploading a content-addressed
+document is the repair path after a provider failure.
 
 ## 25. Course Style Model
 Style may include:
@@ -458,13 +474,27 @@ readable mathematical notation without accepting arbitrary HTML. Request:
   "question_request": "Create a difficult conceptual chain-rule question"
 }
 ```
-Public response:
+Current endpoint: `POST /api/courses/{course_id}/questions/generate` accepts a
+document ID and an optional question request — blank lets the learning engine
+pick the topic and difficulty (see `LEARNING_ENGINE.md`). The direct
+`google-genai` workflow returns a validated plan, checks grounding IDs against
+retrieved chunks, identifies the skill(s) the question exercises, and persists
+the generated problem, its grounding, and its skill attribution in SQLite.
+
+Response:
 ```json
 {
-  "id": "problem_123",
-  "prompt": "Evaluate ...",
-  "source": "generated",
-  "document_id": "doc_123"
+  "problem": {
+    "id": "problem_123",
+    "course_id": "course_demo",
+    "document_id": "doc_123",
+    "source": "generated",
+    "prompt": "Evaluate ...",
+    "created_at": "..."
+  },
+  "skills": [
+    {"id": "calc1.chain-rule", "name": "Chain rule", "difficulty_band": 0.5}
+  ]
 }
 ```
 Do not couple generation to one canvas representation.
@@ -491,9 +521,13 @@ Conceptual representation:
   "metadata": {}
 }
 ```
-Problem import is not built. Generated problems do use a structured record and
-are excluded from the canvas image; an eventual imported problem must join that
-same boundary rather than making the tutor infer it from student pixels.
+Imported-problem reconstruction is not built. Generated problems already use a
+structured record, rendered directly on the canvas as locked system-owned
+tldraw shapes using KaTeX, with a readable fallback for malformed LaTeX.
+Capture excludes system shapes from the analysis image while `problem_context`
+preserves the complete question for Gemini; an eventual imported problem must
+join that same boundary rather than making the tutor infer it from student
+pixels.
 The key boundary is: recognize first, render cleanly second.
 
 ## 28. Persistence
@@ -514,7 +548,9 @@ student-model updates
 preview image
 camera/viewport state
 ```
-Use hackathon-appropriate storage. Product semantics matter more than database sophistication.
+Spaces use browser localStorage for now; course documents, chunks, generated
+problems, and grounding use SQLite. Pinecone is an index, never the canonical
+text store.
 
 ## 29. Autosave
 Desired UX is automatic persistence.
@@ -624,7 +660,7 @@ responsiveness is the product.
 The SDK performs up to three bounded attempts for explicitly transient HTTP
 statuses. The application makes one additional call only when structured output
 is malformed. The same direct boundary powers grounded question generation.
-The model defaults to `gemini-3.7-flash` and is replaceable through
+The model defaults to `gemini-3.5-flash-lite` and is replaceable through
 `GEMINI_MODEL`.
 
 ## 36. Prompt Organization

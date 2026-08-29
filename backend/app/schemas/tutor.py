@@ -97,8 +97,19 @@ class TargetAction(StrictModel):
 CanvasAction = Annotated[TextAction | TargetAction, Field(discriminator="type")]
 
 
-class TutorPlan(StrictModel):
-    """What the model produced. Untrusted until the safety policy has run."""
+class Uncertainty(StrictModel):
+    """One symbol the tutor could not read, and where it sits.
+
+    Naming the symbol and its location is what lets the tutor ask about *that*
+    step rather than shrugging at the whole canvas.
+    """
+
+    description: str = Field(min_length=1, max_length=240)
+    target: NormalizedBounds
+
+
+class _Feedback(StrictModel):
+    """The verdict, what to draw, and what to say — shared by plan and response."""
 
     status: WorkStatus
     canvas_actions: list[CanvasAction] = Field(default_factory=list)
@@ -109,11 +120,17 @@ class TutorPlan(StrictModel):
     error_tag: ErrorTag | None = Field(default=None)
 
 
-class TutorResponse(TutorPlan):
+class TutorPlan(_Feedback):
+    """What the model produced. Untrusted until the safety policy has run."""
+
+    uncertainties: list[Uncertainty] = Field(default_factory=list, max_length=20)
+
+
+class TutorResponse(_Feedback):
     """What the server returns: a policy-checked plan under a server-minted id.
 
-    The id is not on TutorPlan so that model output can never claim one and
-    overwrite a real interaction's shapes on the canvas.
+    Uncertainties do not appear here. The policy has already turned them into
+    a question placed on the canvas, which is the only form the student needs.
     """
 
     interaction_id: str

@@ -16,13 +16,14 @@ vi.mock("@/lib/api/api", () => ({
   uploadCourseDocument: vi.fn(),
 }));
 vi.mock("@/lib/spaces/store", () => ({ createSpace: mocks.createSpace }));
+vi.mock("@/lib/student/identity", () => ({ getStudentId: () => "stu_1" }));
 
 import { CourseMaterials } from "@/features/materials/CourseMaterials";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
 
-const document = {
+const documentRecord = {
   document_id: "doc_1",
   course_id: "course_1",
   filename: "lecture.pdf",
@@ -42,11 +43,11 @@ describe("course-material question request", () => {
     container = window.document.createElement("div");
     window.document.body.append(container);
     root = createRoot(container);
-    mocks.list.mockResolvedValue([document]);
+    mocks.list.mockResolvedValue([documentRecord]);
     mocks.generate.mockResolvedValue({
       id: "problem_1",
-      courseId: "course_1",
-      documentId: "doc_1",
+      course_id: "course_1",
+      document_id: "doc_1",
       source: "generated",
       prompt: "Question",
     });
@@ -59,14 +60,25 @@ describe("course-material question request", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.clearAllMocks();
   });
 
-  it("requires and forwards the requested question type", async () => {
+  it("lets a blank request through, so the engine can pick a topic itself", async () => {
+    const button = container.querySelector("button[type=button]") as HTMLButtonElement;
+    // Empty is a valid request -- there is no separate "practice next
+    // topic" button, this is that feature, implicit.
+    expect(button.disabled).toBe(false);
+
+    await act(async () => button.click());
+    expect(mocks.generate).toHaveBeenCalledWith("course_1", "stu_1", "doc_1", "");
+    expect(mocks.push).toHaveBeenCalledWith("/spaces/space_1");
+  });
+
+  it("forwards a typed question request alongside the student id", async () => {
     const button = container.querySelector("button[type=button]") as HTMLButtonElement;
     const input = container.querySelector(
       'input[aria-label="Question request for lecture.pdf"]',
     ) as HTMLInputElement;
-    expect(button.disabled).toBe(true);
 
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(
@@ -76,13 +88,18 @@ describe("course-material question request", () => {
       setValue?.call(input, "A difficult conceptual question");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(button.disabled).toBe(false);
 
     await act(async () => button.click());
     expect(mocks.generate).toHaveBeenCalledWith(
       "course_1",
+      "stu_1",
       "doc_1",
       "A difficult conceptual question",
+    );
+    expect(mocks.createSpace).toHaveBeenCalledWith(
+      "course_1",
+      "Practice — lecture",
+      expect.objectContaining({ course_id: "course_1" }),
     );
     expect(mocks.push).toHaveBeenCalledWith("/spaces/space_1");
   });

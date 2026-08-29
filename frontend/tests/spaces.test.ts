@@ -60,8 +60,8 @@ describe("createSpace", () => {
   it("persists an optional structured problem with the space", () => {
     const problem = {
       id: "problem_1",
-      courseId: "c",
-      documentId: "doc_1",
+      course_id: "c",
+      document_id: "doc_1",
       source: "generated" as const,
       prompt: "Differentiate x².",
     };
@@ -76,6 +76,18 @@ describe("createSpace", () => {
   it("persists across a reload", () => {
     const space = createSpace("c", "Kept");
     expect(getSpace(space.id)?.title).toBe("Kept");
+  });
+
+  it("persists the canonical generated problem with the Space", () => {
+    const problem = {
+      id: "problem_1",
+      course_id: "c",
+      document_id: "doc_1",
+      source: "generated" as const,
+      prompt: "Solve $x=1$.",
+    };
+    const space = createSpace("c", "Practice", problem);
+    expect(getSpace(space.id)?.problem).toEqual(problem);
   });
 });
 
@@ -220,10 +232,10 @@ describe("hostile storage", () => {
     expect(listSpaces("c")).toEqual([]);
   });
 
-  it("does not throw when the index cannot be written", () => {
+  it("fails explicitly when the index cannot be written", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("QuotaExceededError");
     });
-    expect(() => createSpace("c")).not.toThrow();
+    expect(() => createSpace("c")).toThrow(/save this Space/i);
   });
 });

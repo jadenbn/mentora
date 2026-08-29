@@ -1,5 +1,5 @@
 import type { NormalizedBounds, TutorMode, TutorResponse } from "@/types/tutor";
-import type { CourseDocument, DocumentType, Problem } from "@/types/domain";
+import type { CourseDocument, DocumentType, ProblemContext } from "@/types/domain";
 
 /** The port the FastAPI backend listens on in development. */
 const DEFAULT_API_PORT = 8000;
@@ -64,6 +64,16 @@ function messageForStatus(status: number, detail: unknown): string {
   }
 }
 
+async function tutorApiError(response: Response): Promise<TutorApiError> {
+  let detail: unknown = null;
+  try {
+    detail = (await response.json())?.detail ?? null;
+  } catch {
+    // Non-JSON error body; the status alone has to carry the meaning.
+  }
+  return new TutorApiError(messageForStatus(response.status, detail), response.status, detail);
+}
+
 /**
  * POST /api/tutor/analyze
  *
@@ -74,27 +84,20 @@ function messageForStatus(status: number, detail: unknown): string {
 export async function analyzeCanvas(args: {
   courseId: string;
   mode: TutorMode;
-  canvasImage: Blob;
+  canvasImage?: Blob;
   priorAnnotations: NormalizedBounds[];
-  problem?: Problem;
+  problem?: ProblemContext;
   signal?: AbortSignal;
 }): Promise<TutorResponse> {
   const form = new FormData();
   form.append("course_id", args.courseId);
   form.append("mode", args.mode);
-  form.append("canvas_image", args.canvasImage, "canvas.png");
+  if (args.canvasImage) {
+    form.append("canvas_image", args.canvasImage, "canvas.png");
+  }
   form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
   if (args.problem) {
-    form.append(
-      "problem_context",
-      JSON.stringify({
-        id: args.problem.id,
-        course_id: args.problem.courseId,
-        document_id: args.problem.documentId,
-        source: args.problem.source,
-        prompt: args.problem.prompt,
-      }),
-    );
+    form.append("problem_context", JSON.stringify(args.problem));
   }
 
   const response = await fetch(`${apiBaseUrl()}/api/tutor/analyze`, {
@@ -104,20 +107,56 @@ export async function analyzeCanvas(args: {
   });
 
   if (!response.ok) {
-    let detail: unknown = null;
-    try {
-      detail = (await response.json())?.detail ?? null;
-    } catch {
-      // Non-JSON error body; the status alone has to carry the meaning.
-    }
-    throw new TutorApiError(
-      messageForStatus(response.status, detail),
-      response.status,
-      detail,
-    );
+    throw await tutorApiError(response);
   }
 
   return response.json();
+}
+
+/**
+ * POST /api/courses/{course_id}/work
+ *
+ * Submit the canvas for a graded check-in. The tutor's own reading of the
+ * work decides the outcome and the server records the attempt in the same
+ * round trip; the difficulty comes from what generation asked for at
+ * question-creation time. Nothing the browser sends scores the student's
+ * work — it used to send `correct`, which meant anyone could set their own
+ * mastery, and `hints_used`, which was worth 0.4 of the score. The server
+ * counts hints itself now, on the hint requests it already serves.
+ *
+ * The server also returns what it recorded (or null, if nothing was), but
+ * the engine has no UI, so only the tutor's response is surfaced here.
+ */
+export async function submitWork(args: {
+  courseId: string;
+  studentId: string;
+  sessionId: string;
+  problemId: string;
+  mode: TutorMode;
+  canvasImage: Blob;
+  priorAnnotations: NormalizedBounds[];
+  signal?: AbortSignal;
+}): Promise<TutorResponse> {
+  const form = new FormData();
+  form.append("session_id", args.sessionId);
+  form.append("mode", args.mode);
+  form.append("problem_id", args.problemId);
+  form.append("canvas_image", args.canvasImage, "canvas.png");
+  form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
+
+  const url =
+    `${apiBaseUrl()}/api/courses/${args.courseId}/work` +
+    `?student_id=${encodeURIComponent(args.studentId)}`;
+  const response = await fetch(url, { method: "POST", body: form, signal: args.signal });
+
+  if (!response.ok) {
+    throw await tutorApiError(response);
+  }
+
+  // The server also returns `attempt` (what it recorded, or null); the
+  // engine has no UI, so the caller only needs the tutor's response.
+  const data = (await response.json()) as { tutor: TutorResponse };
+  return data.tutor;
 }
 
 async function courseResponse<T>(response: Response, action: string): Promise<T> {
@@ -159,23 +198,9 @@ export async function uploadCourseDocument(args: {
   return courseResponse<CourseDocument>(response, "Uploading the document");
 }
 
-interface ProblemResponse {
-  id: string;
-  course_id: string;
-  document_id: string;
-  source: "generated";
-  prompt: string;
-}
-
-interface AttributedSkillResponse {
-  id: string;
-  name: string;
-  difficulty_band: number;
-}
-
 interface GeneratedProblemResponse {
-  problem: ProblemResponse;
-  skills: AttributedSkillResponse[];
+  problem: ProblemContext;
+  skills: { id: string; name: string; difficulty_band: number }[];
 }
 
 /**
@@ -193,7 +218,7 @@ export async function generateCourseQuestion(
   studentId: string,
   documentId: string,
   questionRequest: string,
-): Promise<Problem> {
+): Promise<ProblemContext> {
   const response = await fetch(
     `${apiBaseUrl()}/api/courses/${courseId}/questions/generate`,
     {
@@ -210,69 +235,5 @@ export async function generateCourseQuestion(
     response,
     "Generating a question",
   );
-  const primary = data.skills[0];
-  return {
-    id: data.problem.id,
-    courseId: data.problem.course_id,
-    documentId: data.problem.document_id,
-    source: data.problem.source,
-    prompt: data.problem.prompt,
-    skill: primary ? { skillId: primary.id, skillName: primary.name } : undefined,
-  };
-}
-
-/**
- * POST /api/courses/{course_id}/work
- *
- * Submit the canvas for a graded check-in. The tutor's own reading of the
- * work decides the outcome and the server records the attempt in the same
- * round trip; the difficulty comes from what generation asked for at
- * question-creation time. Nothing the browser sends scores the student's
- * work — it used to send `correct`, which meant anyone could set their own
- * mastery, and `hints_used`, which was worth 0.4 of the score. The server
- * counts hints itself now, on the hint requests it already serves.
- *
- * The server also returns what it recorded (or null, if nothing was), but
- * the engine has no UI, so only the tutor's response is surfaced here.
- */
-export async function submitWork(args: {
-  courseId: string;
-  studentId: string;
-  sessionId: string;
-  problemId: string;
-  mode: TutorMode;
-  canvasImage: Blob;
-  priorAnnotations: NormalizedBounds[];
-  signal?: AbortSignal;
-}): Promise<TutorResponse> {
-  const form = new FormData();
-  form.append("session_id", args.sessionId);
-  form.append("mode", args.mode);
-  form.append("problem_id", args.problemId);
-  form.append("canvas_image", args.canvasImage, "canvas.png");
-  form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
-
-  const url =
-    `${apiBaseUrl()}/api/courses/${args.courseId}/work` +
-    `?student_id=${encodeURIComponent(args.studentId)}`;
-  const response = await fetch(url, { method: "POST", body: form, signal: args.signal });
-
-  if (!response.ok) {
-    let detail: unknown = null;
-    try {
-      detail = (await response.json())?.detail ?? null;
-    } catch {
-      // Non-JSON error body; the status alone has to carry the meaning.
-    }
-    throw new TutorApiError(
-      messageForStatus(response.status, detail),
-      response.status,
-      detail,
-    );
-  }
-
-  // The server also returns `attempt` (what it recorded, or null); the
-  // engine has no UI, so the caller only needs the tutor's response.
-  const data = (await response.json()) as { tutor: TutorResponse };
-  return data.tutor;
+  return { ...data.problem, skill: data.skills[0] };
 }

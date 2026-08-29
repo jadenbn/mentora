@@ -1,5 +1,4 @@
-/** Canonical ownership tags for every kind of whiteboard content. */
-
+/** Canonical ownership tags for whiteboard content. */
 export const SYSTEM_SHAPE_OWNER = "system";
 export const STUDENT_SHAPE_OWNER = "student";
 export const AI_SHAPE_OWNER = "ai";

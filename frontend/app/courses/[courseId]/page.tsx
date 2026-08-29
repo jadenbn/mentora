@@ -23,7 +23,7 @@ export default async function CoursePage({
           ← My courses
         </Link>
         <h1 className="mt-1 text-3xl font-bold text-slate-950">{course.name}</h1>
-        <p className="mt-1 text-slate-600">{course.description}</p>
+      <p className="mt-1 text-slate-600">{course.description}</p>
       </header>
       <CourseMaterials courseId={course.id} />
       <SpaceGrid courseId={course.id} />

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   AI_SHAPE_OWNER,
   clearAiShapes,
+  hasAiShapes,
   renderCanvasActions,
 } from "@/lib/annotations/renderCanvasActions";
 import type { CanvasAction } from "@/types/tutor";
@@ -129,6 +130,14 @@ describe("replacing earlier feedback", () => {
 });
 
 describe("clearAiShapes", () => {
+  it("reports whether tutor feedback is present", () => {
+    const fake = makeEditor({
+      shapes: [{ id: "ai", type: "text", meta: { owner: AI_SHAPE_OWNER } }],
+    });
+    expect(hasAiShapes(fake.editor)).toBe(true);
+    expect(hasAiShapes(makeEditor({ shapes: [] }).editor)).toBe(false);
+  });
+
   it("removes tutor feedback from every interaction", () => {
     const fake = makeEditor({
       shapes: [

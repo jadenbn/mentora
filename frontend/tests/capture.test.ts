@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   captureCanvasForAnalysis,
   collectPriorAnnotations,
+  hasStudentWork,
   toNormalizedBounds,
 } from "@/lib/canvas/capture";
 import { box, makeEditor } from "./fakeEditor";
@@ -33,11 +34,11 @@ const aiShape = (id: string, bounds = box(300, 600, 100, 200)) => ({
   pageBounds: bounds,
 });
 
-const systemShape = (id: string, bounds = box(100, 200, 200, 150)) => ({
+const systemShape = (id: string) => ({
   id,
-  type: "note",
+  type: "mentora-problem",
   meta: { owner: "system", problemId: "problem_1" },
-  pageBounds: bounds,
+  pageBounds: box(120, 220, 600, 160),
 });
 
 describe("toNormalizedBounds", () => {
@@ -106,9 +107,9 @@ describe("captureCanvasForAnalysis", () => {
     expect(toImageCalls[0].ids).toEqual(["s1"]);
   });
 
-  it("excludes the structured problem from the student-work image", async () => {
+  it("excludes the system problem from the student image", async () => {
     const { editor, toImageCalls } = makeEditor({
-      shapes: [systemShape("problem"), studentShape("s1")],
+      shapes: [studentShape("s1"), systemShape("problem")],
     });
     await captureCanvasForAnalysis(editor);
     expect(toImageCalls[0].ids).toEqual(["s1"]);
@@ -162,6 +163,14 @@ describe("captureCanvasForAnalysis", () => {
   it("returns nothing when the export produces no image", async () => {
     const { editor } = makeEditor({ shapes: [studentShape("s1")], image: null });
     expect(await captureCanvasForAnalysis(editor)).toBeNull();
+  });
+});
+
+describe("hasStudentWork", () => {
+  it("ignores system and tutor-owned shapes", () => {
+    const { editor } = makeEditor({ shapes: [aiShape("ai1"), systemShape("problem")] });
+    expect(hasStudentWork(editor)).toBe(false);
+    expect(hasStudentWork(makeEditor({ shapes: [studentShape("s1")] }).editor)).toBe(true);
   });
 });
 

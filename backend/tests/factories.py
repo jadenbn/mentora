@@ -7,7 +7,13 @@ keyword overrides for the one field a test cares about. Tests should read as
 
 from __future__ import annotations
 
-from app.schemas.tutor import CanvasAction, NormalizedBounds, TutorPlan, WorkStatus
+from app.schemas.tutor import (
+    CanvasAction,
+    NormalizedBounds,
+    TutorPlan,
+    Uncertainty,
+    WorkStatus,
+)
 
 # --- image bytes -----------------------------------------------------------
 # Real magic numbers: the API sniffs content rather than trusting the client's
@@ -45,12 +51,21 @@ def cross_action(**over) -> dict:
     return {"type": "cross", "target": bounds(), **over}
 
 
+def uncertainty(
+    description: str = "This symbol is unclear.",
+    x: float = 0.3,
+    y: float = 0.4,
+) -> dict:
+    return {"description": description, "target": bounds(x=x, y=y)}
+
+
 def plan(
     *,
     status: WorkStatus | str = WorkStatus.partial,
     actions: list[dict] | None = None,
     summary: str | None = "A restrained power-rule hint.",
     error_tag: str | None = None,
+    uncertainties: list[dict] | None = None,
 ) -> TutorPlan:
     """A model-produced plan, already validated."""
     return TutorPlan.model_validate(
@@ -59,6 +74,7 @@ def plan(
             "canvas_actions": [circle_action()] if actions is None else actions,
             "summary": summary,
             "error_tag": error_tag,
+            "uncertainties": uncertainties or [],
         }
     )
 

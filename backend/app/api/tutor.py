@@ -114,12 +114,22 @@ def _parse_problem_context(raw: str | None, course_id: str) -> ProblemContext | 
 async def analyze(
     course_id: Annotated[str, Form(min_length=1)],
     mode: Annotated[TutorMode, Form()],
-    canvas_image: Annotated[UploadFile, File()],
+    canvas_image: Annotated[UploadFile | None, File()] = None,
     prior_annotations: Annotated[str, Form()] = "[]",
     problem_context: Annotated[str | None, Form()] = None,
     service: TutorService = Depends(get_tutor_service),
 ) -> TutorResponse:
-    image, mime_type = await read_canvas_image(canvas_image)
+    problem = _parse_problem_context(problem_context, course_id)
+    if canvas_image is None:
+        if mode != TutorMode.stuck or problem is None:
+            raise HTTPException(
+                422,
+                "canvas_image is required unless a stuck request includes problem_context",
+            )
+        image = None
+        mime_type = None
+    else:
+        image, mime_type = await read_canvas_image(canvas_image)
     try:
         return await service.analyze(
             course_id=course_id,
@@ -127,7 +137,7 @@ async def analyze(
             canvas_image=image,
             canvas_mime_type=mime_type,
             prior_annotations=parse_prior_annotations(prior_annotations),
-            problem_context=_parse_problem_context(problem_context, course_id),
+            problem_context=problem,
         )
     except TutorWorkflowTimeout as exc:
         raise HTTPException(504, "The tutor took too long to respond") from exc

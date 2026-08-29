@@ -29,4 +29,3 @@ def search_document(
         and chunk.course_id == course_id
         and chunk.document_id == document_id
     ]
-

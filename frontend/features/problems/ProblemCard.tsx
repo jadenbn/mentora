@@ -1,5 +1,5 @@
 import katex from "katex";
-import type { Problem } from "@/types/domain";
+import type { ProblemContext, ProblemSkill } from "@/types/domain";
 
 export type ProblemSegment =
   | { kind: "text"; value: string }
@@ -15,25 +15,15 @@ function isEscaped(value: string, index: number): boolean {
 
 function nextDollar(value: string, from: number): number {
   for (let cursor = from; cursor < value.length; cursor += 1) {
-    if (value[cursor] === "$" && !isEscaped(value, cursor)) {
-      return cursor;
-    }
+    if (value[cursor] === "$" && !isEscaped(value, cursor)) return cursor;
   }
   return -1;
 }
 
-function closingDelimiter(
-  value: string,
-  from: number,
-  display: boolean,
-): number {
+function closingDelimiter(value: string, from: number, display: boolean): number {
   for (let cursor = from; cursor < value.length; cursor += 1) {
-    if (value[cursor] !== "$" || isEscaped(value, cursor)) {
-      continue;
-    }
-    if (display ? value[cursor + 1] === "$" : value[cursor + 1] !== "$") {
-      return cursor;
-    }
+    if (value[cursor] !== "$" || isEscaped(value, cursor)) continue;
+    if (display ? value[cursor + 1] === "$" : value[cursor + 1] !== "$") return cursor;
   }
   return -1;
 }
@@ -42,46 +32,106 @@ function readableText(value: string): string {
   return value.replace(/\\\$/g, "$");
 }
 
-/** Split a safe, deliberately small plain-text + dollar-math format. */
-export function parseProblemPrompt(prompt: string): ProblemSegment[] {
+function escapeLatexText(value: string): string {
+  const escaped = value.replace(/[\\{}#$%&_~^]/g, (character) => {
+    switch (character) {
+      case "\\":
+        return "\\textbackslash{}";
+      case "~":
+        return "\\textasciitilde{}";
+      case "^":
+        return "\\^{}";
+      default:
+        return `\\${character}`;
+    }
+  });
+  return escaped.split("\n").join("} \\\\ \\text{");
+}
+
+function parseDelimitedPrompt(prompt: string): ProblemSegment[] {
   const segments: ProblemSegment[] = [];
   let cursor = 0;
-
   while (cursor < prompt.length) {
     const opening = nextDollar(prompt, cursor);
     if (opening < 0) {
       segments.push({ kind: "text", value: readableText(prompt.slice(cursor)) });
       break;
     }
-
     const display = prompt[opening + 1] === "$";
     const delimiterLength = display ? 2 : 1;
     const contentStart = opening + delimiterLength;
     const closing = closingDelimiter(prompt, contentStart, display);
-
     if (closing < 0) {
       segments.push({ kind: "text", value: readableText(prompt.slice(cursor)) });
       break;
     }
-
     if (opening > cursor) {
-      segments.push({
-        kind: "text",
-        value: readableText(prompt.slice(cursor, opening)),
-      });
+      segments.push({ kind: "text", value: readableText(prompt.slice(cursor, opening)) });
     }
-
     const source = prompt.slice(opening, closing + delimiterLength);
     const math = prompt.slice(contentStart, closing);
-    if (math.trim()) {
-      segments.push({ kind: "math", value: math, display, source });
-    } else {
-      segments.push({ kind: "text", value: source });
-    }
+    segments.push(
+      math.trim()
+        ? { kind: "math", value: math, display, source }
+        : { kind: "text", value: source },
+    );
     cursor = closing + delimiterLength;
   }
+  return segments;
+}
 
-  return segments.length > 0 ? segments : [{ kind: "text", value: "" }];
+/** Accept raw TeX from providers that omit dollar delimiters. */
+function parseRawMathPrompt(prompt: string): ProblemSegment[] | null {
+  const marker = /\\[a-zA-Z]+|[A-Za-z0-9)\]}][_^]/g;
+  const match = marker.exec(prompt);
+  if (!match) return null;
+
+  // In a sentence such as "... function f(x) = e^{3x} \\cos(x^2).", keep
+  // the prose in the browser font but render the complete mathematical clause.
+  const equals = prompt.lastIndexOf("=", match.index);
+  const leftHandSide =
+    equals >= 0
+      ? /([A-Za-z][A-Za-z0-9]*(?:\s*\([^()\n]*\))?\s*=\s*)$/.exec(
+          prompt.slice(0, equals + 1),
+        )
+      : null;
+  const start = leftHandSide?.index ?? (equals >= 0 ? equals + 1 : match.index);
+  let end = prompt.length;
+  for (const punctuation of [".", "?", "!"]) {
+    const candidate = prompt.indexOf(punctuation, match.index);
+    if (candidate >= 0) end = Math.min(end, candidate);
+  }
+  const math = prompt.slice(start, end).trim();
+  if (!math) return null;
+  const prefixEnd = start + prompt.slice(start).search(/\S/);
+  const prefix = prompt.slice(0, prefixEnd);
+  const suffixStart = start + prompt.slice(start).indexOf(math) + math.length;
+  return [
+    ...(prefix ? [{ kind: "text", value: readableText(prefix) } as const] : []),
+    { kind: "math", value: math, display: false, source: math },
+    ...(suffixStart < prompt.length
+      ? [{ kind: "text", value: readableText(prompt.slice(suffixStart)) } as const]
+      : []),
+  ];
+}
+
+export function parseProblemPrompt(prompt: string): ProblemSegment[] {
+  const delimited = parseDelimitedPrompt(prompt);
+  if (delimited.some((segment) => segment.kind === "math")) return delimited;
+  return parseRawMathPrompt(prompt) ?? delimited;
+}
+
+function promptAsLatex(segments: ProblemSegment[]): string {
+  return segments
+    .map((segment) => {
+      if (segment.kind === "text") {
+        return segment.value ? `\\text{${escapeLatexText(segment.value)}}` : "";
+      }
+      return segment.display
+        ? `{\\displaystyle ${segment.value}}`
+        : segment.value;
+    })
+    .join("");
 }
 
 function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "math" }> }) {
@@ -94,26 +144,20 @@ function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "ma
       strict: "warn",
     });
   } catch {
-    // Fall through to the readable source expression below.
+    markup = null;
   }
-
   if (markup !== null) {
     const Element = segment.display ? "div" : "span";
     return (
       <Element
-        className={segment.display ? "my-2 overflow-x-auto py-1" : "inline-math"}
+        className={segment.display ? "my-3 overflow-x-auto py-1" : "inline-math"}
         dangerouslySetInnerHTML={{ __html: markup }}
       />
     );
   }
-
   return (
     <code
-      className={
-        segment.display
-          ? "my-3 block overflow-x-auto rounded bg-stone-100 px-2 py-1 font-mono text-[0.9em]"
-          : "rounded bg-stone-100 px-1 font-mono text-[0.9em]"
-      }
+      className={segment.display ? "my-3 block overflow-x-auto rounded bg-stone-100 px-2 py-1 font-mono text-[0.9em]" : "rounded bg-stone-100 px-1 font-mono text-[0.9em]"}
       data-math-error
     >
       {segment.source}
@@ -122,9 +166,31 @@ function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "ma
 }
 
 export function ProblemBody({ prompt }: { prompt: string }) {
+  const segments = parseProblemPrompt(prompt);
+  let markup: string | null = null;
+  try {
+    markup = katex.renderToString(promptAsLatex(segments), {
+      displayMode: false,
+      throwOnError: true,
+      trust: false,
+      strict: "warn",
+    });
+  } catch {
+    // Preserve the readable per-segment fallback for malformed provider math.
+  }
+
+  if (markup !== null) {
+    return (
+      <div
+        className="problem-katex whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]"
+        dangerouslySetInnerHTML={{ __html: markup }}
+      />
+    );
+  }
+
   return (
-    <div className="whitespace-pre-wrap text-[clamp(1rem,1.55vw,1.3rem)] leading-relaxed text-[#202620]">
-      {parseProblemPrompt(prompt).map((segment, index) =>
+    <div className="whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]">
+      {segments.map((segment, index) =>
         segment.kind === "math" ? (
           <MathSegment key={`${index}-${segment.source}`} segment={segment} />
         ) : (
@@ -135,28 +201,24 @@ export function ProblemBody({ prompt }: { prompt: string }) {
   );
 }
 
-export function ProblemCard({ problem }: { problem: Problem }) {
+/** The topic this generated problem was attributed to -- surfaced so the
+ * student can see what they're practicing without the engine ever showing
+ * a mastery score. Omitted entirely when the engine couldn't tie the
+ * problem to a topic. */
+export function ProblemSkillBadge({ skill }: { skill?: ProblemSkill }) {
+  if (!skill) return null;
   return (
-    <section
-      aria-labelledby="workspace-problem-heading"
-      className="shrink-0 border-b border-[#d9d6cc] bg-[#f5f2e9] px-4 py-3 sm:px-6 sm:py-4"
-    >
-      <div className="mx-auto max-h-[32dvh] max-w-5xl overflow-y-auto rounded-2xl border border-[#d8d3c6] border-l-[6px] border-l-[#607d6c] bg-[#fffdf8] px-5 py-4 shadow-[0_10px_30px_rgba(48,58,48,0.08)] sm:px-8 sm:py-5">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <p
-            className="text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[#607d6c]"
-            id="workspace-problem-heading"
-          >
-            Problem
-          </p>
-          {problem.skill ? (
-            <span className="rounded-full bg-[#e8f2ea] px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#2f5a41]">
-              {problem.skill.skillName}
-            </span>
-          ) : null}
-        </div>
-        <ProblemBody prompt={problem.prompt} />
-      </div>
-    </section>
+    <span className="mb-1 inline-block rounded-full bg-[#e8f2ea] px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#2f5a41]">
+      {skill.name}
+    </span>
+  );
+}
+
+export function ProblemCard({ problem }: { problem: ProblemContext }) {
+  return (
+    <>
+      <ProblemSkillBadge skill={problem.skill} />
+      <ProblemBody prompt={problem.prompt} />
+    </>
   );
 }

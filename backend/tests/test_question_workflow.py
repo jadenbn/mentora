@@ -70,7 +70,7 @@ def test_more_than_four_skills_is_rejected():
     assert workflow.attempts == 2
 
 
-def test_direct_request_sends_grounding_and_schema_configuration():
+def test_direct_request_sends_grounding_and_schema_configuration(monkeypatch):
     calls: list[dict] = []
 
     class Models:
@@ -94,12 +94,15 @@ def test_direct_request_sends_grounding_and_schema_configuration():
         async def __aexit__(self, *_args):
             return None
 
+    monkeypatch.setattr(
+        "app.agents.question_workflow.create_client",
+        lambda _api_key: SimpleNamespace(aio=AsyncClient()),
+    )
     workflow = GeminiQuestionWorkflow(
         api_key="test-key",
         model="test-model",
         timeout_seconds=1,
     )
-    workflow._client = lambda: SimpleNamespace(aio=AsyncClient())
     asyncio.run(
         workflow.run(
             chunks=CHUNKS,
@@ -114,5 +117,5 @@ def test_direct_request_sends_grounding_and_schema_configuration():
     assert "chunk_1" in prompt
     assert "calc1.a" in prompt
     assert call["config"].response_schema == QUESTION_PLAN_RESPONSE_SCHEMA
-    assert "dollar-delimited LaTeX" in call["config"].system_instruction
+    assert "Wrap inline mathematics" in call["config"].system_instruction
     assert "identify every skill it exercises" in call["config"].system_instruction

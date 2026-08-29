@@ -2,7 +2,7 @@
 
 ```bash
 python -m pytest -q                    # default: everything runnable
-python -m pytest -q -m "not provider"  # no google-genai installed
+python -m pytest -q -m "not provider"  # skip live provider calls
 RUN_LIVE_GEMINI=1 python -m pytest -q -m live -s
 ```
 
@@ -19,7 +19,7 @@ RUN_LIVE_GEMINI=1 python -m pytest -q -m live -s
 | `test_tutor_api.py` | HTTP boundary: multipart, image sniffing, status mapping, leak guards | fastapi |
 | `test_prompts.py` | mode policy distinctness and the allowed action set | — |
 | `test_config.py` | one required credential | — |
-| `test_tutor_workflow.py` | direct provider request, schema dialect, repair, failure translation | google-genai |
+| `test_tutor_workflow.py` | direct google-genai adapter: schema parsing, null stripping, repair, failure translation | google-genai |
 | `test_database.py` | additive SQLite schema, document replacement, problem grounding | sqlite3 |
 | `test_documents_api.py` | document upload validation and listing | fastapi |
 | `test_question_workflow.py` | direct provider request, source-id validation, bounded repair | google-genai |
@@ -49,8 +49,10 @@ no "next problem" route to test because there is no such route.
 ## Why the dependency column matters
 
 Only the tutor and question provider adapters may import `google.genai`.
-Everything else — schemas, policy, services, database, and APIs — remains
-testable without making a provider call.
+Everything else — schemas, policy, services, database, and APIs — must be
+testable with pydantic, sqlite3, and fastapi alone, so the fast suite stays
+fast and a provider SDK change cannot break tests that have nothing to do
+with the provider.
 
 That constraint is a design constraint, not a testing trick: it forces the
 `TutorWorkflow` port to be declared by the service that consumes it rather than

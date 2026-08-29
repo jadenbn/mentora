@@ -18,11 +18,13 @@ from app.agents.tutor_workflow import (  # noqa: E402
     TUTOR_PLAN_RESPONSE_SCHEMA,
     GeminiTutorWorkflow,
     drop_nulls,
+    normalize_provider_output,
 )
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout  # noqa: E402
 from app.schemas.tutor import TutorMode  # noqa: E402
 from app.schemas.problems import GroundingChunk, ProblemContext  # noqa: E402
 from app.engine.profile import LearnerContext  # noqa: E402
+from google.genai import types  # noqa: E402
 from tests import factories as f  # noqa: E402
 
 pytestmark = pytest.mark.provider
@@ -39,6 +41,13 @@ class TestProviderSchemaDialect:
     )
     def test_the_provider_schema_avoids_unsupported_keywords(self, keyword):
         assert keyword not in _walk_keys(TUTOR_PLAN_RESPONSE_SCHEMA)
+
+    def test_generation_is_tuned_for_an_interactive_path(self):
+        config = GeminiTutorWorkflow(model="m")._generation_config(TutorMode.hint)
+        assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
+        assert config.max_output_tokens == 1_024
+        # Vision tokens dominate; medium keeps handwriting legible for less.
+        assert config.media_resolution == types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
 
     def test_the_provider_schema_offers_only_renderable_actions(self):
         action_types = _find_enum(TUTOR_PLAN_RESPONSE_SCHEMA, "type")
@@ -64,6 +73,46 @@ class TestNullPlaceholders:
     def test_falsy_but_present_values_survive(self):
         # 0 and "" are data; only None is a placeholder.
         assert drop_nulls({"x": 0, "y": "", "z": False}) == {"x": 0, "y": "", "z": False}
+
+
+class TestFirstAttemptValidation:
+    """Every avoidable repair attempt is a second round trip on an
+    interactive path, so provider output is normalised before validating."""
+
+    def test_a_field_from_another_action_is_dropped(self):
+        plan = normalize_provider_output(
+            {"status": "partial", "canvas_actions": [
+                {"type": "text", "position": {"x": 0.1, "y": 0.1},
+                 "text": "hi", "target": {"x": 0, "y": 0, "width": 1, "height": 1}}]}
+        )
+        assert set(plan["canvas_actions"][0]) == {"type", "position", "text"}
+
+    def test_a_marking_action_keeps_only_its_target(self):
+        plan = normalize_provider_output(
+            {"status": "partial", "canvas_actions": [
+                {"type": "circle", "target": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+                 "text": "stray", "position": {"x": 0.5, "y": 0.5}}]}
+        )
+        assert set(plan["canvas_actions"][0]) == {"type", "target"}
+
+    def test_nulls_are_still_stripped(self):
+        plan = normalize_provider_output(
+            {"status": "partial", "canvas_actions": [
+                {"type": "text", "position": {"x": 0.1, "y": 0.1}, "text": "hi", "target": None}],
+             "summary": None}
+        )
+        assert "summary" not in plan
+
+    def test_an_unknown_action_is_left_for_validation_to_reject(self):
+        plan = normalize_provider_output(
+            {"status": "partial", "canvas_actions": [{"type": "hologram", "beam": 1}]}
+        )
+        assert plan["canvas_actions"][0]["type"] == "hologram"
+
+    def test_a_plan_without_actions_is_untouched(self):
+        assert normalize_provider_output({"status": "correct", "canvas_actions": []})[
+            "canvas_actions"
+        ] == []
 
 
 class TestFailureTranslation:
@@ -99,8 +148,8 @@ class TestMalformedOutput:
 
 
 class TestDirectGeminiRequest:
-    def test_required_tutor_context_and_image_are_sent_together(self):
-        workflow, calls = _recording_workflow()
+    def test_required_tutor_context_and_image_are_sent_together(self, monkeypatch):
+        workflow, calls = _recording_workflow(monkeypatch)
         problem = ProblemContext(
             id="problem_1",
             course_id="course_demo",
@@ -130,8 +179,8 @@ class TestDirectGeminiRequest:
         assert message.parts[1].inline_data.data == f.PNG
         assert message.parts[1].inline_data.mime_type == "image/png"
 
-    def test_direct_call_uses_mode_instruction_and_structured_output(self):
-        workflow, calls = _recording_workflow()
+    def test_direct_call_uses_mode_instruction_and_structured_output(self, monkeypatch):
+        workflow, calls = _recording_workflow(monkeypatch)
         asyncio.run(_run(workflow))
 
         call = calls[0]
@@ -140,8 +189,8 @@ class TestDirectGeminiRequest:
         assert call["config"].response_mime_type == "application/json"
         assert call["config"].response_schema == TUTOR_PLAN_RESPONSE_SCHEMA
 
-    def test_a_learner_context_reaches_the_prompt(self):
-        workflow, calls = _recording_workflow()
+    def test_a_learner_context_reaches_the_prompt(self, monkeypatch):
+        workflow, calls = _recording_workflow(monkeypatch)
         learner = LearnerContext(
             skill_name="Chain rule", estimate=0.22, attempts=6, hints_on_this_problem=2,
         )
@@ -150,8 +199,8 @@ class TestDirectGeminiRequest:
         assert "Chain rule" in prompt
         assert "0.22" in prompt
 
-    def test_with_no_learner_context_the_prompt_says_so(self):
-        workflow, calls = _recording_workflow()
+    def test_with_no_learner_context_the_prompt_says_so(self, monkeypatch):
+        workflow, calls = _recording_workflow(monkeypatch)
         asyncio.run(_run(workflow))
         prompt = calls[0]["contents"].parts[0].text
         assert "No student history" in prompt
@@ -203,7 +252,7 @@ def _workflow(*, raises: Exception | None = None, malformed_responses: int = 0):
     return Harness()
 
 
-def _recording_workflow():
+def _recording_workflow(monkeypatch):
     calls: list[dict] = []
 
     class Models:
@@ -220,12 +269,15 @@ def _recording_workflow():
         async def __aexit__(self, *_args):
             return None
 
+    monkeypatch.setattr(
+        "app.agents.tutor_workflow.create_client",
+        lambda _api_key: SimpleNamespace(aio=AsyncClient()),
+    )
     workflow = GeminiTutorWorkflow(
         api_key="test-key",
         model="test-model",
         timeout_seconds=1,
     )
-    workflow._client = lambda: SimpleNamespace(aio=AsyncClient())
     return workflow, calls
 
 

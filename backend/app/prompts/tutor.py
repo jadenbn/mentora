@@ -44,24 +44,36 @@ Rules:
   the single closest label for what went wrong: sign_error, dropped_constant,
   wrong_technique, algebra_slip, or concept_gap. Leave it unset rather than
   force a label that does not fit. It is never shown to the student.
+- If a symbol you need in order to grade the work is unreadable, add it to
+  `uncertainties` with a short description and the box it occupies. Naming the
+  symbol lets the tutor ask about that step instead of the whole canvas. Do
+  not guess at it and do not mark the work right or wrong.
+- An answer is complete when it is mathematically equivalent to a correct one.
+  Constants or factors left uncombined are still correct; ask for tidying only
+  if the problem demands that form. If the work is finished, say so and add no
+  correction.
 """.strip()
 
 _MODE_POLICY = {
     TutorMode.mark: (
         "Evaluate the work so far. Mark correct and incorrect regions and "
-        "recognize partial progress. Do not reveal future solution steps."
+        "recognize partial progress. Do not reveal future solution steps. If "
+        "the work is already complete, confirm it rather than finding fault."
     ),
     TutorMode.hint: (
         "Give the smallest useful nudge. Prefer a targeted question or a "
-        "pointer over supplying the next step."
+        "pointer over supplying the next step. If the work is already "
+        "complete, say that no further step is needed."
     ),
     TutorMode.explain: (
         "Explain the selected line or error in the student's own notation. "
-        "Stay local to the canvas rather than delivering a lecture."
+        "Stay local to the canvas rather than delivering a lecture. For "
+        "complete work, explain briefly why it is right."
     ),
     TutorMode.stuck: (
         "Scaffold more strongly: name the method or the next meaningful step, "
-        "without completing the whole problem."
+        "without completing the whole problem. If the work is already "
+        "complete, do not manufacture more scaffolding."
     ),
 }
 

@@ -41,8 +41,15 @@ One required credential:
 GEMINI_API_KEY
 ```
 
-Optional: `GEMINI_MODEL` (default `gemini-3.7-flash`),
+Optional: `GEMINI_MODEL` (default `gemini-3.5-flash-lite`),
 `TUTOR_REQUEST_TIMEOUT_SECONDS` (default 45), and `MENTORA_DB_PATH`.
+
+The model choice dominates latency: a lite model answers a canvas request in
+about 1.5s where `gemini-3.7-flash` takes about 10s, and the tutor's job is
+small enough that the trade reads as free. Measure with
+`scripts/bench_tutor.py` before changing it. Note that `ThinkingLevel.MINIMAL`
+is rejected by some models, so the code uses `LOW`, which is universally
+supported and measurably no slower here.
 
 `GET /health` is always available and reports missing variable *names*, never
 values.
@@ -58,7 +65,7 @@ Content-Type: multipart/form-data
 | --- | --- | --- |
 | `course_id` | yes | Course and grounded-problem scope. |
 | `mode` | yes | `mark`, `hint`, `explain`, or `stuck`. |
-| `canvas_image` | yes | PNG, JPEG, or WebP. Maximum 10 MB. |
+| `canvas_image` | usually | PNG, JPEG, or WebP, maximum 10 MB. Omittable only for a `stuck` request that includes `problem_context` — scaffolding before the first stroke needs no canvas to read. |
 | `prior_annotations` | no | JSON array of normalized bounds. Defaults to `[]`. |
 | `problem_context` | no | JSON generated-problem entity. Defaults to absent. |
 
@@ -159,9 +166,6 @@ Not built:
 - **Arbitrary course retrieval.** Generated problems reuse the exact chunks
   chosen during generation; free-form semantic search across every course
   material remains deferred.
-- **Learning events.** The tutor observes plenty worth recording; the learning
-  engine on `ren/learning-engine` wants closed-vocabulary, slug-identified,
-  float-typed facts. That adapter is a design decision, not a merge.
 - **Voice context.** Folds in as another input to the single model call.
 
 ## Extension points

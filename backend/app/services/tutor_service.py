@@ -31,8 +31,8 @@ class TutorWorkflow(Protocol):
         self,
         *,
         mode: TutorMode,
-        canvas_image: bytes,
-        canvas_mime_type: str,
+        canvas_image: bytes | None,
+        canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
         problem: ProblemContext | None,
         course_context: list[GroundingChunk],
@@ -61,8 +61,8 @@ class TutorService:
         *,
         course_id: str,
         mode: TutorMode,
-        canvas_image: bytes,
-        canvas_mime_type: str,
+        canvas_image: bytes | None,
+        canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
         problem_context: ProblemContext | None = None,
         learner: LearnerContext | None = None,
@@ -92,4 +92,7 @@ class TutorService:
             learner=learner,
         )
         safe = apply_safety_policy(plan)
-        return TutorResponse(interaction_id=uuid4().hex, **safe.model_dump())
+        return TutorResponse(
+            interaction_id=uuid4().hex,
+            **safe.model_dump(exclude={"uncertainties"}),
+        )

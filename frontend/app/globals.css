@@ -29,3 +29,19 @@ button:disabled { cursor: not-allowed; }
 .sidebar-style-panel .tlui-row {
   justify-content: space-between;
 }
+
+.sidebar-style-panel .tlui-style-panel__section {
+  padding-block: 2px;
+}
+
+.sidebar-style-panel .tlui-button {
+  min-height: 36px;
+}
+
+.sidebar-style-panel .tlui-slider__container {
+  margin-block: 4px;
+}
+
+.tlui-toolbar .tlui-button:hover {
+  cursor: grab;
+}

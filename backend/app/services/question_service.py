@@ -3,6 +3,7 @@ attribute it to the skill(s) it exercises."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from time import perf_counter
 from typing import Protocol
@@ -120,7 +121,8 @@ class QuestionService:
         else:
             strategy = "pinecone"
             try:
-                context = self.retriever.search(
+                context = await asyncio.to_thread(
+                    self.retriever.search,
                     query=question_request,
                     course_id=course_id,
                     document_id=document_id,

@@ -67,9 +67,10 @@ cd backend && PYTHONPATH=. .venv/bin/python scripts/seed_course.py --reset
 
 ### From a phone or tablet on the same network
 
-The frontend targets whatever host served the page, so no frontend config is
-needed. The backend must be told to accept that origin, and to listen beyond
-loopback:
+The frontend points itself at whatever host served the page, so the API base
+URL needs no configuration. Two things do: the backend must accept that origin
+and listen beyond loopback, and Next must allow the origin to reach its dev
+server.
 
 ```bash
 # backend, in place of the command above
@@ -77,8 +78,12 @@ CORS_ALLOW_ORIGINS=http://localhost:3000,http://YOUR-IP:3000 \
   .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # frontend
-bun dev --hostname 0.0.0.0
+ALLOWED_DEV_ORIGINS=YOUR-IP bun dev --hostname 0.0.0.0
 ```
+
+`ALLOWED_DEV_ORIGINS` is a comma-separated list of hostnames; without it Next
+blocks the tablet's cross-origin requests for dev-only assets. It can live in
+`frontend/.env.local` instead of the command line.
 
 `--host 0.0.0.0` exposes the API to your whole network, and on a machine with
 a public address, to the internet. There is no authentication and every
