@@ -179,7 +179,7 @@ export function CourseMaterials({ courseId }: { courseId: string }) {
                       [document.document_id]: event.target.value,
                     }))
                   }
-                  placeholder="Optional — describe a question, or leave blank to let it pick a topic"
+                  placeholder="Describe a question, or blank to let the tutor decide"
                   type="text"
                   value={questionRequests[document.document_id] ?? ""}
                 />
