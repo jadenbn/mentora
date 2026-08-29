@@ -2,31 +2,51 @@
   "course_id": "course_demo",
   "skills": [
     {
-      "id": "course_demo.chain-rule-differentiation",
-      "name": "Chain Rule for Differentiation",
-      "description": "Differentiating composite functions using the formula \\frac{d}{dx} F(u(x)) = F'(u(x)) \\cdot u'(x).",
-      "difficulty_band": 0.4,
+      "id": "course_demo.partial-fraction-coefficients",
+      "name": "Partial Fraction Coefficients",
+      "description": "Determine the unknown constant coefficients in a partial fraction decomposition of a rational function with linear and repeated linear factors.",
+      "difficulty_band": 0.5,
       "keywords": [
-        "chain rule",
-        "composite function",
-        "differentiation",
-        "derivative",
-        "calculus"
+        "partial fractions",
+        "rational functions",
+        "decomposition",
+        "repeated linear factors",
+        "matching coefficients"
       ],
-      "question_forms": []
+      "question_forms": [
+        "find the constants in a given partial fraction decomposition",
+        "determine the partial fraction decomposition of a rational function"
+      ]
+    },
+    {
+      "id": "course_demo.polynomial-integer-roots-factoring",
+      "name": "Integer Root Test and Polynomial Factoring",
+      "description": "Identifying potential integer roots of a polynomial with integer coefficients and factoring the polynomial using root testing and coefficient matching or division.",
+      "difficulty_band": 0.5,
+      "keywords": [
+        "integer roots",
+        "polynomial factoring",
+        "constant term",
+        "rational root theorem"
+      ],
+      "question_forms": [
+        "List all candidate integer roots of a polynomial and factor it completely"
+      ]
     },
     {
       "id": "course_demo.product-rule-differentiation",
       "name": "Product Rule for Differentiation",
-      "description": "Applying the product rule to compute the derivative of a product of two differentiable functions.",
+      "description": "Compute the derivative of a product of two differentiable functions using the product rule.",
       "difficulty_band": 0.3,
       "keywords": [
         "product rule",
+        "derivative",
         "differentiation",
-        "derivatives",
-        "calculus"
+        "product of functions"
       ],
-      "question_forms": []
+      "question_forms": [
+        "calculate the derivative of a product of two functions"
+      ]
     }
   ]
 }
