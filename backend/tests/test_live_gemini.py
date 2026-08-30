@@ -38,6 +38,7 @@ def workflow():
     return GeminiTutorWorkflow(
         api_key=settings.gemini_api_key,
         model=settings.gemini_model,
+        thinking_level=settings.gemini_thinking_level,
         timeout_seconds=60,
     )
 

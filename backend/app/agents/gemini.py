@@ -27,6 +27,11 @@ def create_client(api_key: str) -> genai.Client:
     )
 
 
+def as_thinking_level(value: str) -> types.ThinkingLevel:
+    """Translate the environment-friendly value to the provider enum."""
+    return types.ThinkingLevel(value.upper())
+
+
 def response_object(response: Any) -> dict[str, Any]:
     """Read Gemini's structured response across SDK parsed/text variants."""
     parsed = response.parsed

@@ -41,8 +41,10 @@ class TestProviderSchemaDialect:
         assert keyword not in _walk_keys(TUTOR_PLAN_RESPONSE_SCHEMA)
 
     def test_generation_is_tuned_for_an_interactive_path(self):
-        config = GeminiTutorWorkflow(model="m")._generation_config(TutorMode.hint)
-        assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
+        config = GeminiTutorWorkflow(
+            model="m", thinking_level="high"
+        )._generation_config(TutorMode.hint)
+        assert config.thinking_config.thinking_level == types.ThinkingLevel.HIGH
         assert config.max_output_tokens == 1_024
         # Vision tokens dominate; medium keeps handwriting legible for less.
         assert config.media_resolution == types.MediaResolution.MEDIA_RESOLUTION_MEDIUM

@@ -9,10 +9,21 @@ pytest.importorskip("google.genai", reason="provider adapter requires google-gen
 from app.agents.question_workflow import GeminiQuestionWorkflow  # noqa: E402
 from app.agents.workflow_errors import QuestionWorkflowError  # noqa: E402
 from app.schemas.problems import GroundingChunk  # noqa: E402
+from google.genai import types  # noqa: E402
 
 pytestmark = pytest.mark.provider
 
 CHUNKS = [GroundingChunk(chunk_id="chunk_1", page=1, text="The chain rule applies.")]
+
+
+def test_thinking_level_reaches_question_generation_config():
+    workflow = GeminiQuestionWorkflow(
+        api_key="test-key", model="test", thinking_level="medium"
+    )
+    assert (
+        workflow._generation_config().thinking_config.thinking_level
+        == types.ThinkingLevel.MEDIUM
+    )
 
 
 class Harness(GeminiQuestionWorkflow):

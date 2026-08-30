@@ -15,7 +15,7 @@ from typing import Any
 from google.genai import types
 from pydantic import ValidationError
 
-from app.agents.gemini import create_client, response_object
+from app.agents.gemini import as_thinking_level, create_client, response_object
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
 from app.schemas.problems import GroundingChunk, ProblemContext
@@ -132,10 +132,16 @@ class GeminiTutorWorkflow:
     """Reads the canvas and plans annotations in a single model call."""
 
     def __init__(
-        self, *, api_key: str = "", model: str, timeout_seconds: float = 45
+        self,
+        *,
+        api_key: str = "",
+        model: str,
+        thinking_level: str = "low",
+        timeout_seconds: float = 45,
     ) -> None:
         self.api_key = api_key
         self.model = model
+        self.thinking_level = thinking_level
         self.timeout_seconds = timeout_seconds
 
     async def run(
@@ -191,7 +197,7 @@ class GeminiTutorWorkflow:
             response_schema=TUTOR_PLAN_RESPONSE_SCHEMA,
             max_output_tokens=1_024,
             thinking_config=types.ThinkingConfig(
-                thinking_level=types.ThinkingLevel.LOW
+                thinking_level=as_thinking_level(self.thinking_level)
             ),
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
         )
