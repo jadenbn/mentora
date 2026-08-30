@@ -27,6 +27,7 @@ import {
   useValue,
 } from "tldraw";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
+import { StatusPill } from "@/features/tutor/StatusPill";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { VoiceControl } from "@/features/tutor/VoiceControl";
 import { animateCanvasActions } from "@/lib/annotations/animateActions";
@@ -151,21 +152,8 @@ function CanvasToolbar() {
 function ThinkingIndicator({ busy, error }: { busy: boolean; error: string | null }) {
   if (busy) {
     return (
-      <div
-        aria-live="polite"
-        className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
-        role="status"
-      >
-        Thinking
-        <span aria-hidden="true" className="ml-1 inline-flex gap-0.5">
-          <span className="animate-bounce [animation-delay:-0.2s] motion-reduce:animate-none">
-            .
-          </span>
-          <span className="animate-bounce [animation-delay:-0.1s] motion-reduce:animate-none">
-            .
-          </span>
-          <span className="animate-bounce motion-reduce:animate-none">.</span>
-        </span>
+      <div className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2">
+        <StatusPill label="Thinking" />
       </div>
     );
   }
@@ -369,25 +357,26 @@ export function Whiteboard({
           <SaveIndicator visible={justSaved} />
           <ThinkingIndicator busy={isThinking} error={error} />
           <VoiceControl
-            disabled={busyMode !== null || (!hasStudentCanvasWork && problem === undefined)}
-            disabledReason="Draw on the board or add a problem before asking out loud."
             error={voice.error}
+            onAsk={voice.ask}
             onCancel={voice.cancel}
-            onStart={voice.start}
+            onEdit={voice.edit}
+            onRerecord={voice.rerecord}
             onStop={voice.stop}
-            startedAt={voice.startedAt}
-            status={voice.status}
+            phase={voice.phase}
           />
           <TutorControls
             busyMode={busyMode}
-            // One tutor request at a time: a button tapped mid-transcription
-            // would take the busy slot and drop the question already spoken.
-            disabled={voice.status !== "idle"}
+            // One tutor request at a time: a button tapped while a question is
+            // being recorded, transcribed, or reviewed would take the busy slot
+            // and drop the question already spoken.
+            disabled={voice.phase.status !== "idle"}
             hasFeedback={hasAiCanvasFeedback}
             hasProblem={problem !== undefined}
             hasStudentWork={hasStudentCanvasWork}
             onAnalyze={handleAnalyze}
             onClear={handleClear}
+            onStartVoice={voice.start}
           />
         </Tldraw>
       </ProblemShapeProvider>

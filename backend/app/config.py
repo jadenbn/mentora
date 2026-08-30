@@ -79,6 +79,6 @@ class TranscriptionSettings:
     def from_environment(cls) -> "TranscriptionSettings":
         return cls(
             gemini_api_key=os.getenv("GEMINI_API_KEY") or "",
-            gemini_model=os.getenv("GEMINI_TRANSCRIPTION_MODEL") or "gemini-3.5-flash-lite",
+            gemini_model=os.getenv("GEMINI_TRANSCRIPTION_MODEL") or "gemini-3.5-transcribe",
             request_timeout_seconds=float(os.getenv("VOICE_REQUEST_TIMEOUT_SECONDS") or "30"),
         )

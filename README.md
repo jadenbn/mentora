@@ -50,8 +50,10 @@ cp .env.example .env.local        # already points at localhost:8000
 bun dev
 ```
 
-Then open `localhost:3000` → My courses → a course → New space → draw → tap a
-tutor button, or the microphone in the bottom-right corner.
+Then open `localhost:3000` → My courses → a course → New space → draw → open
+the tutor control on the right edge and pick an action, or the microphone
+beside them. A spoken question is transcribed and shown to you first: edit
+anything it misheard, then tap Ask to send it to the tutor.
 
 ### From a phone or tablet on the same network
 
@@ -107,16 +109,19 @@ transcript         optional spoken question; maximum 1000 characters
 ```
 
 Speech reaches it through `POST /api/voice/transcribe`, which takes one WAV
-recording (16 kHz mono, maximum 5 MiB) and returns the words. See
-`docs/TUTOR_AGENT.md`.
+recording (16 kHz mono, maximum 5 MiB) and returns the words. It uses a
+dedicated speech-to-text model, `GEMINI_TRANSCRIPTION_MODEL` (default
+`gemini-3.5-transcribe`), and the recording it uploads is deleted again within
+the request. The transcript goes to the student for confirmation, not straight
+to the tutor. See `docs/TUTOR_AGENT.md`.
 
 Full contract in `docs/TUTOR_AGENT.md`.
 
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest -q -m "not live"    # 101, no provider calls
-cd frontend && bun run test                                    # 166
+cd backend  && .venv/bin/python -m pytest -q -m "not live"    # 226, no provider calls
+cd frontend && bun run test                                    # 299
 ```
 
 The opt-in live check spends one real Gemini request:

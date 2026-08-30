@@ -14,6 +14,8 @@ student draws  ->  taps a mode button, or asks out loud
         |                                     |
         |                    POST /api/voice/transcribe -> words
         |                                     |
+        |                    student reads them, edits them, taps Ask
+        |                                     |
 capture: student's shapes only, exported as one PNG
         |
 POST /api/tutor/analyze   (multipart)
@@ -100,6 +102,8 @@ that nothing inside `student_question` can change the rules or the action set.
 
 Recording, permission, and teardown belong to the browser —
 `frontend/lib/voice/`. See "Speech to text" below for where the words come from.
+A transcript only reaches this field after the student has seen it and tapped
+Ask; transcribing alone spends no tutor call.
 
 ### prior_annotations
 
@@ -176,13 +180,33 @@ see the README.
 
 Transcription is a Gemini call behind its own adapter,
 `app/agents/transcription_workflow.py`, configured by
-`GEMINI_TRANSCRIPTION_MODEL` (default `gemini-3.5-flash-lite`) and
+`GEMINI_TRANSCRIPTION_MODEL` (default `gemini-3.5-transcribe`) and
 `VOICE_REQUEST_TIMEOUT_SECONDS` (default 30). It reuses `GEMINI_API_KEY`, so
 voice adds no credential. Swapping in a different speech-to-text service means
 replacing that one module.
 
-The audio is material to transcribe, never instructions to obey; the prompt
-says so, and the transcript is validated again before it can reach the tutor.
+`gemini-3.5-transcribe` is a dedicated speech-to-text model reached through the
+Interactions API, not the general multimodal model behind a different name:
+
+```text
+files.upload(WAV)                   -> a temporary provider file
+interactions.create(model, [audio]) -> interaction.output_text
+files.delete(name)                  -> the recording is gone again
+```
+
+It takes no prompt, no response schema, and no thinking budget, and rejects all
+three, so the adapter sends none of them and reads the transcript from the
+documented text output. The uploaded file is temporary storage for one request
+and is deleted in a `finally`, including when the request times out. A failed
+delete is logged and not raised: the provider expires uploads on its own, and
+losing the student's answer over housekeeping would be the wrong trade.
+
+Dropping the prompt does not weaken the old guarantee that audio is material to
+transcribe rather than instructions to obey — it makes it structural. A
+transcription model has no action available to it but transcribing, so speech
+saying "ignore your instructions" comes back as those words. The transcript is
+still validated again before it can reach the tutor, and the student sees it
+before it goes anywhere.
 
 | Status | Meaning |
 | --- | --- |
@@ -238,6 +262,8 @@ Not built, deliberately, until the canvas loop works end to end:
 - `app/services/tutor_policy.py` — what is safe to render.
 - `app/agents/tutor_workflow.py` — the only module that may import a provider.
 - `app/agents/transcription_workflow.py` — the same rule, for speech to text.
+  There is no matching `app/prompts/voice.py`: the transcription model takes no
+  instruction, so there is nothing for one to hold.
 
 Changing an action's fields, coordinate semantics, or the allowed set is a
 breaking change on both sides of the wire. `ALLOWED_ACTIONS` and the renderer

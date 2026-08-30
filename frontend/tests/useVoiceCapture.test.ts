@@ -35,7 +35,11 @@ let root: Root;
 
 function Harness() {
   const voice = useVoiceCapture({ submit: async () => {} });
-  return createElement("button", { onClick: voice.start, type: "button" }, voice.status);
+  return createElement(
+    "button",
+    { onClick: voice.start, type: "button" },
+    voice.phase.status,
+  );
 }
 
 const button = () => container.querySelector("button") as HTMLButtonElement;

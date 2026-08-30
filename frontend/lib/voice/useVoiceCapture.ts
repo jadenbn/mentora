@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { createVoiceCapture, type VoiceState } from "@/lib/voice/voiceCapture";
 
-const SERVER_STATE: VoiceState = { status: "idle", error: null, startedAt: null };
+const SERVER_STATE: VoiceState = { phase: { status: "idle" }, error: null };
+
+export interface VoiceControls {
+  start: () => void;
+  stop: () => void;
+  cancel: () => void;
+  edit: (transcript: string) => void;
+  ask: () => void;
+  rerecord: () => void;
+}
 
 /**
  * React binding for the recording lifecycle.
@@ -19,7 +28,7 @@ const SERVER_STATE: VoiceState = { status: "idle", error: null, startedAt: null 
  */
 export function useVoiceCapture(options: {
   submit: (transcript: string) => Promise<void>;
-}): VoiceState & { start: () => void; stop: () => void; cancel: () => void } {
+}): VoiceState & VoiceControls {
   const [capture] = useState(() => createVoiceCapture({ submit: options.submit }));
 
   useEffect(() => {
@@ -39,5 +48,8 @@ export function useVoiceCapture(options: {
     start: useCallback(() => capture.start(), [capture]),
     stop: useCallback(() => capture.stop(), [capture]),
     cancel: useCallback(() => capture.cancel(), [capture]),
+    edit: useCallback((transcript: string) => capture.edit(transcript), [capture]),
+    ask: useCallback(() => capture.ask(), [capture]),
+    rerecord: useCallback(() => capture.rerecord(), [capture]),
   };
 }

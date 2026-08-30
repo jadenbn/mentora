@@ -1,56 +1,48 @@
 /**
- * The microphone as a student sees it.
+ * A spoken question as a student sees it.
  *
- * The rule under test is that no state is communicated by colour alone: every
- * one of them says in words what is happening and what can be done about it.
+ * Two rules under test. No state is communicated by colour alone: every one of
+ * them says in words what is happening and what can be done about it. And
+ * nothing reaches the tutor without being shown first — the confirmation step
+ * has to offer the words, a way to fix them, and all three ways out.
  */
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { VoiceControl } from "@/features/tutor/VoiceControl";
-import type { VoiceStatus } from "@/lib/voice/voiceCapture";
+import type { VoicePhase } from "@/lib/voice/voiceCapture";
 
-function render(
-  status: VoiceStatus,
-  over: { error?: string | null; startedAt?: number | null; disabled?: boolean } = {},
-): string {
+function render(phase: VoicePhase, error: string | null = null): string {
   return renderToStaticMarkup(
     createElement(VoiceControl, {
-      status,
-      error: over.error ?? null,
-      startedAt: over.startedAt ?? null,
-      disabled: over.disabled ?? false,
-      disabledReason: "Draw on the board first.",
-      onStart: () => undefined,
+      phase,
+      error,
       onStop: () => undefined,
       onCancel: () => undefined,
+      onEdit: () => undefined,
+      onAsk: () => undefined,
+      onRerecord: () => undefined,
     }),
   );
 }
 
 describe("idle", () => {
-  it("offers a labelled microphone button", () => {
-    expect(render("idle")).toContain('aria-label="Ask the tutor out loud"');
+  it("shows nothing at all, so a quiet board stays quiet", () => {
+    // The microphone that starts this lives in the tutor fan now.
+    expect(render({ status: "idle" })).toBe("");
   });
 
-  it("says why it is unavailable rather than just greying out", () => {
-    const html = render("idle", { disabled: true });
+  it("still shows a failure the student has not seen yet", () => {
+    const html = render({ status: "idle" }, "Microphone access is blocked.");
 
-    expect(html).toMatch(/disabled=""/);
-    expect(html).toContain("Draw on the board first.");
-  });
-
-  it("shows nothing to stop or cancel", () => {
-    const html = render("idle");
-
-    expect(html).not.toContain("Cancel");
-    expect(html).not.toContain(">Stop<");
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Microphone access is blocked.");
   });
 });
 
 describe("recording", () => {
-  const html = () => render("recording", { startedAt: Date.now() });
+  const html = () => render({ status: "recording", startedAt: Date.now() });
 
   it("says it is recording in words, not only in colour", () => {
     expect(html()).toContain("Recording");
@@ -61,7 +53,7 @@ describe("recording", () => {
   });
 
   it("offers both stop and cancel", () => {
-    expect(html()).toContain('aria-label="Stop recording and ask the tutor"');
+    expect(html()).toContain('aria-label="Stop recording"');
     expect(html()).toContain('aria-label="Cancel recording"');
   });
 
@@ -70,43 +62,76 @@ describe("recording", () => {
   });
 });
 
-describe("the states between recording and an answer", () => {
+describe("the states between recording and a transcript", () => {
   it("names what it is doing while transcribing", () => {
-    expect(render("transcribing")).toContain("Transcribing");
+    expect(render({ status: "transcribing" })).toContain("Transcribing");
   });
 
   it("stays cancellable while transcribing", () => {
-    expect(render("transcribing")).toContain('aria-label="Cancel recording"');
+    expect(render({ status: "transcribing" })).toContain('aria-label="Cancel recording"');
   });
 
   it("names what it is doing while the recorder finishes", () => {
-    expect(render("stopping")).toContain("Finishing the recording");
+    expect(render({ status: "stopping" })).toContain("Finishing the recording");
   });
 
   it("explains the permission prompt instead of appearing stuck", () => {
-    expect(render("requesting")).toContain("Waiting for microphone permission");
+    expect(render({ status: "requesting" })).toContain(
+      "Waiting for microphone permission",
+    );
+  });
+});
+
+describe("confirming", () => {
+  const phase: VoicePhase = { status: "confirming", transcript: "why is this wrong?" };
+  const html = () => render(phase);
+
+  it("shows what the tutor heard", () => {
+    expect(html()).toContain("why is this wrong?");
+  });
+
+  it("offers the transcript in a labelled, editable field", () => {
+    expect(html()).toContain("<textarea");
+    expect(html()).toContain('for="voice-transcript"');
+    expect(html()).toContain('id="voice-transcript"');
+  });
+
+  it("offers ask, rerecord, and cancel", () => {
+    expect(html()).toContain('aria-label="Ask the tutor this question"');
+    expect(html()).toContain('aria-label="Record the question again"');
+    expect(html()).toContain('aria-label="Discard this question"');
+  });
+
+  it("shows no waiting indicator, because nothing is being waited on", () => {
+    expect(html()).not.toContain('role="status"');
+  });
+
+  it("shows a refused question as an alert without losing the words", () => {
+    const refused = render(phase, "There is nothing to ask yet.");
+
+    expect(refused).toContain('role="alert"');
+    expect(refused).toContain("why is this wrong?");
+  });
+});
+
+describe("submitting", () => {
+  const html = () =>
+    render({ status: "submitting", transcript: "why is this wrong?" });
+
+  it("keeps the question on screen so the student sees what was sent", () => {
+    expect(html()).toContain("why is this wrong?");
+  });
+
+  it("locks the question rather than letting it be edited mid-flight", () => {
+    expect(html()).toMatch(/<textarea[^>]*disabled=""/);
   });
 
   it("leaves the tutor call to the whiteboard's own indicator", () => {
     // Two live regions for one request would talk over each other.
-    const html = render("submitting");
-
-    expect(html).not.toContain('role="status"');
-    expect(html).toMatch(/disabled=""/);
-  });
-});
-
-describe("errors", () => {
-  it("shows the message as an alert the student can act on", () => {
-    const html = render("idle", { error: "Microphone access is blocked." });
-
-    expect(html).toContain('role="alert"');
-    expect(html).toContain("Microphone access is blocked.");
+    expect(html()).not.toContain('role="status"');
   });
 
-  it("still offers the microphone so the student can try again", () => {
-    expect(render("idle", { error: "We did not catch that." })).toContain(
-      'aria-label="Ask the tutor out loud"',
-    );
+  it("offers nothing to cancel, because the request is already gone", () => {
+    expect(html()).not.toContain("Cancel");
   });
 });

@@ -189,7 +189,7 @@ Frontend owns:
 - Select for AI
 - canvas capture/export
 - tutor controls
-- microphone lifecycle and audio encoding for voice input
+- microphone lifecycle, audio encoding, and transcript confirmation for voice
 - live-tutor timing/detection where appropriate
 Keep backend access behind a small API/client layer.
 Do not call private AI-provider APIs directly from browser code.
@@ -579,10 +579,20 @@ re-encode to 16 kHz mono WAV in the browser
   ↓
 POST /api/voice/transcribe   →  Gemini  →  transcript
   ↓
+the student reads it, edits it, and taps Ask   ← nothing is sent before this
+  ↓
 POST /api/tutor/analyze with transcript + canvas + problem + course
   ↓
 the same validated canvas actions, drawn by the same renderer
 ```
+
+A transcript is never submitted to the tutor on arrival. Speech recognition is
+wrong often enough that spending a tutor call on a misheard question costs more
+than one extra tap, and the student is the only one who knows what they meant.
+Rerecord and Cancel leave from the same step. Which tutor mode the confirmed
+question uses is unchanged: `explain` when there is written work to look at,
+`stuck` when there is not.
+
 Transcription is deliberately a separate round trip rather than audio attached
 to the tutor call. It keeps the tutor at one model call, lets the interface
 show transcribing and thinking as the distinct waits they are, and confines the
@@ -605,16 +615,39 @@ lib/voice/microphone.ts     MediaStream + MediaRecorder, guaranteed teardown
 lib/voice/wav.ts            decode and re-encode
 lib/voice/voiceCapture.ts   the lifecycle state machine, framework-free
 lib/voice/useVoiceCapture.ts  React binding
-features/tutor/VoiceControl.tsx  presentation only
+features/tutor/TutorControls.tsx  the microphone, on the tutor action fan
+features/tutor/VoiceControl.tsx   recording and confirmation, presentation only
+features/tutor/StatusPill.tsx     the shared "we are waiting" indicator
 ```
+The lifecycle is one discriminated union rather than a set of flags:
+`idle | requesting | recording | stopping | transcribing | confirming |
+submitting`, each carrying only the data that step owns — an elapsed clock
+exists exactly while the microphone is open, a transcript exactly while there
+is one to review or send.
+
+Starting a spoken question is a tutor action, so the microphone fans out of the
+same right-edge control as Mark, Hint, Explain, and I'm Stuck rather than
+occupying its own corner. While a question is being recorded, transcribed,
+reviewed, or sent, the other tutor actions are disabled: they share one busy
+slot, and a button tapped mid-question would drop the words already spoken.
+`StatusPill` exists so that "Thinking" and "Transcribing" are the same object
+rather than two indicators that resemble each other, and only one of them is
+ever on screen — the tutor call is announced once, by the whiteboard.
+
 The provider lives behind `app/agents/transcription_workflow.py`, the one
 module voice may import an SDK into; replacing the speech-to-text service means
 replacing that file. It reuses `GEMINI_API_KEY`, so voice adds no credential
-and no dependency.
+and no dependency. It calls a dedicated speech-to-text model
+(`gemini-3.5-transcribe`) through the Interactions API: the WAV is uploaded,
+transcribed, and deleted again within the request. That model takes no prompt,
+no response schema, and no thinking configuration, so the adapter sends none —
+see `TUTOR_AGENT.md`.
 
 Transcripts are untrusted twice: speech the tutor did not choose, and
 provider-generated text. They are trimmed, capped, and delimited before they
-reach a prompt, which states that nothing inside them changes the rules.
+reach a prompt, which states that nothing inside them changes the rules. The
+confirmation step adds a third check that no provider can bypass: a person read
+the words before they were sent.
 
 Treat transcript as contextual instruction, not a separate chat architecture.
 

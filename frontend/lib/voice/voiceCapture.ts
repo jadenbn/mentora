@@ -9,6 +9,11 @@
  * Voice is an input to the canvas tutor, not a conversation. Nothing is kept:
  * the recording exists as one Blob inside a single run, no object URL is ever
  * created, and the transcript is handed to `submit` and dropped.
+ *
+ * Transcribing does not ask the tutor anything. The words go to a confirmation
+ * step first, where the student can correct what the model heard, because
+ * speech recognition is wrong often enough that spending a tutor call on a
+ * misheard question is worse than one extra tap.
  */
 
 import { transcribeSpeech } from "@/lib/api/api";
@@ -17,6 +22,7 @@ import {
   type Recording,
 } from "@/lib/voice/microphone";
 import { encodeRecordingAsWav } from "@/lib/voice/wav";
+import { MAX_TRANSCRIPT_CHARS } from "@/types/voice";
 
 /**
  * Long enough for any question a student asks a tutor, short enough that a
@@ -24,20 +30,31 @@ import { encodeRecordingAsWav } from "@/lib/voice/wav";
  */
 export const MAX_RECORDING_MS = 60_000;
 
-export type VoiceStatus =
-  | "idle"
-  | "requesting"
-  | "recording"
-  | "stopping"
-  | "transcribing"
-  | "submitting";
+/**
+ * What the machine is doing, and the data that step owns.
+ *
+ * A union rather than a widening bag of optional fields: a transcript exists
+ * exactly while there is one to review or send, and an elapsed clock exists
+ * exactly while the microphone is open. Neither can be read from a step that
+ * does not have one.
+ */
+export type VoicePhase =
+  | { status: "idle" }
+  | { status: "requesting" }
+  | { status: "recording"; startedAt: number }
+  | { status: "stopping" }
+  | { status: "transcribing" }
+  | { status: "confirming"; transcript: string }
+  | { status: "submitting"; transcript: string };
 
 export interface VoiceState {
-  status: VoiceStatus;
-  /** Why the last attempt ended badly. Cleared when the next one starts. */
+  phase: VoicePhase;
+  /**
+   * Why the last attempt ended badly. Orthogonal to the phase: it outlives the
+   * step that produced it so the student can still read it, and is cleared
+   * when the next attempt starts.
+   */
   error: string | null;
-  /** `Date.now()` when recording began, for the elapsed-time readout. */
-  startedAt: number | null;
 }
 
 export interface VoiceCapture {
@@ -46,8 +63,14 @@ export interface VoiceCapture {
   start(): void;
   stop(): void;
   cancel(): void;
+  /** Correct what the model heard. Only meaningful while confirming. */
+  edit(transcript: string): void;
+  /** Send the reviewed transcript to the tutor. The only path that does. */
+  ask(): void;
+  /** Throw the transcript away and record the question again. */
+  rerecord(): void;
   /**
-   * Re-point where finished transcripts go.
+   * Re-point where confirmed transcripts go.
    *
    * The machine outlives any one render, so the React binding refreshes this
    * rather than rebuilding the machine and stranding a live microphone.
@@ -67,9 +90,10 @@ export interface VoiceCapture {
 
 export interface VoiceCaptureOptions {
   /**
-   * Runs the transcript through the tutor. Rejecting here is a tutor failure
-   * and is reported as one; succeeding returns the machine to idle, because
-   * the canvas itself is the confirmation.
+   * Runs the confirmed transcript through the tutor. Rejecting here is a tutor
+   * failure and is reported as one, leaving the question under review so it
+   * can be sent again; succeeding returns the machine to idle, because the
+   * canvas itself is the confirmation.
    */
   submit: (transcript: string) => Promise<void>;
   /** Overridden in tests; there is no microphone to record from there. */
@@ -96,7 +120,7 @@ class EmptyTranscriptError extends Error {
   }
 }
 
-const IDLE: VoiceState = { status: "idle", error: null, startedAt: null };
+const IDLE: VoiceState = { phase: { status: "idle" }, error: null };
 
 const BROWSER_DEPS: VoiceCaptureDeps = {
   startRecording: () => startBrowserRecording(),
@@ -121,8 +145,8 @@ export function createVoiceCapture(options: VoiceCaptureOptions): VoiceCapture {
   let limit: ReturnType<typeof setTimeout> | null = null;
   let inFlight: AbortController | null = null;
 
-  const set = (next: Partial<VoiceState>) => {
-    state = { ...state, ...next };
+  const set = (next: VoiceState) => {
+    state = next;
     for (const listener of listeners) {
       listener();
     }
@@ -147,17 +171,17 @@ export function createVoiceCapture(options: VoiceCaptureOptions): VoiceCapture {
 
   const fail = (caught: unknown) => {
     teardown();
-    set({ status: "idle", error: messageFor(caught), startedAt: null });
+    set({ phase: { status: "idle" }, error: messageFor(caught) });
   };
 
   const start = () => {
     // The only entry point, so this is the whole duplicate-recording guard.
-    if (retired || state.status !== "idle") {
+    if (retired || state.phase.status !== "idle") {
       return;
     }
     teardown();
     const attempt = run;
-    set({ status: "requesting", error: null, startedAt: null });
+    set({ phase: { status: "requesting" }, error: null });
 
     deps.startRecording().then(
       (started) => {
@@ -167,7 +191,7 @@ export function createVoiceCapture(options: VoiceCaptureOptions): VoiceCapture {
           return;
         }
         recording = started;
-        set({ status: "recording", startedAt: Date.now() });
+        set({ phase: { status: "recording", startedAt: Date.now() }, error: null });
         limit = setTimeout(stop, MAX_RECORDING_MS);
       },
       (caught) => {
@@ -180,14 +204,14 @@ export function createVoiceCapture(options: VoiceCaptureOptions): VoiceCapture {
 
   const stop = () => {
     const active = recording;
-    if (state.status !== "recording" || !active) {
+    if (state.phase.status !== "recording" || !active) {
       return;
     }
     clearLimit();
     const attempt = run;
     const controller = new AbortController();
     inFlight = controller;
-    set({ status: "stopping" });
+    set({ phase: { status: "stopping" }, error: null });
 
     void (async () => {
       try {
@@ -196,7 +220,7 @@ export function createVoiceCapture(options: VoiceCaptureOptions): VoiceCapture {
           return;
         }
         recording = null;
-        set({ status: "transcribing", startedAt: null });
+        set({ phase: { status: "transcribing" }, error: null });
 
         const wav = await deps.encode(audio);
         if (attempt !== run) {
@@ -211,13 +235,9 @@ export function createVoiceCapture(options: VoiceCaptureOptions): VoiceCapture {
           return;
         }
 
-        set({ status: "submitting" });
-        await submit(transcript);
-        if (attempt !== run) {
-          return;
-        }
-        teardown();
-        set(IDLE);
+        // The words stop here. Nothing reaches the tutor until `ask`.
+        inFlight = null;
+        set({ phase: { status: "confirming", transcript }, error: null });
       } catch (caught) {
         if (attempt === run) {
           fail(caught);
@@ -226,9 +246,72 @@ export function createVoiceCapture(options: VoiceCaptureOptions): VoiceCapture {
     })();
   };
 
+  const edit = (transcript: string) => {
+    if (state.phase.status !== "confirming") {
+      return;
+    }
+    // Typing is the student acting on whatever went wrong, so the complaint
+    // goes with the keystroke rather than sitting over the fix.
+    set({ phase: { status: "confirming", transcript }, error: null });
+  };
+
+  const ask = () => {
+    if (state.phase.status !== "confirming") {
+      return;
+    }
+    const reviewing = state.phase.transcript;
+    const question = reviewing.trim();
+    if (!question) {
+      set({
+        phase: { status: "confirming", transcript: reviewing },
+        error: "There is nothing to ask yet.",
+      });
+      return;
+    }
+    if (question.length > MAX_TRANSCRIPT_CHARS) {
+      set({
+        phase: { status: "confirming", transcript: reviewing },
+        error: `Questions are limited to ${MAX_TRANSCRIPT_CHARS} characters.`,
+      });
+      return;
+    }
+
+    const attempt = run;
+    set({ phase: { status: "submitting", transcript: question }, error: null });
+
+    void (async () => {
+      try {
+        await submit(question);
+        if (attempt !== run) {
+          return;
+        }
+        teardown();
+        set(IDLE);
+      } catch (caught) {
+        if (attempt !== run) {
+          return;
+        }
+        // The question survives a tutor failure: it was already correct, and
+        // retyping it would be the interface's fault rather than the model's.
+        set({
+          phase: { status: "confirming", transcript: question },
+          error: messageFor(caught),
+        });
+      }
+    })();
+  };
+
   const cancel = () => {
     teardown();
     set(IDLE);
+  };
+
+  const rerecord = () => {
+    if (state.phase.status !== "confirming") {
+      return;
+    }
+    cancel();
+    start();
   };
 
   return {
@@ -240,6 +323,9 @@ export function createVoiceCapture(options: VoiceCaptureOptions): VoiceCapture {
     start,
     stop,
     cancel,
+    edit,
+    ask,
+    rerecord,
     setSubmit: (next) => {
       submit = next;
     },
