@@ -1,0 +1,24 @@
+# Normalize to LF in the repository, and check out LF for the files that break
+# with CRLF. core.autocrlf is per-developer and defaults to true on Windows;
+# these rules are per-repository, so every clone agrees.
+
+* text=auto
+
+# Docker reads these inside a Linux container, where a trailing CR becomes part
+# of the value. A CRLF .dockerignore matches nothing, which silently ships
+# node_modules and .venv into the build context.
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+.dockerignore   text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.sh            text eol=lf
+.env.example    text eol=lf
+
+# Lockfiles: keep byte-identical across platforms so they do not churn.
+bun.lock          text eol=lf
+package-lock.json text eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary

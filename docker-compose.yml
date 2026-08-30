@@ -1,0 +1,78 @@
+# Mentora, both halves, one command:
+#
+#   cp backend/.env.example backend/.env   # paste a real GEMINI_API_KEY
+#   docker compose up
+#
+# Then open http://localhost:3000.
+#
+# This is the development setup: source is bind-mounted and both servers
+# reload on edit, so the containers track your working tree rather than a
+# snapshot taken at build time.
+#
+# Runs on macOS (Intel and Apple Silicon), Linux, and Windows. Nothing here
+# pins an architecture: both base images are multi-arch, so an M-series Mac
+# builds arm64 natively. Do not add `platform: linux/amd64` to "fix" a build
+# error -- it forces every container through emulation.
+#
+# Needs Docker Compose v2.24 or newer, for the `env_file: path/required` form
+# below. `docker compose version` to check; Docker Desktop ships newer.
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    # Optional so `docker compose up` still starts without a .env — the API
+    # comes up and /health reports GEMINI_API_KEY missing, which is a clearer
+    # failure than Compose refusing to start.
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      # Where the browser is served from, which is what CORS judges.
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
+      # inotify events do not always cross the bind mount into the Linux VM on
+      # macOS and Windows, so --reload can miss edits there. Native Linux
+      # bind mounts deliver them fine, which is why polling is off by default:
+      # it costs constant CPU. Set to true if your edits are not picked up.
+      WATCHFILES_FORCE_POLLING: ${WATCHFILES_FORCE_POLLING:-false}
+    volumes:
+      - ./backend:/app
+    # --reload is added here rather than in the Dockerfile so the image stays
+    # usable for a non-reloading run.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      # python rather than curl: the slim base image has no curl, and adding
+      # one for a healthcheck is not worth the layer.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Deliberately unset by default. api.ts falls back to the host that
+      # served the page on port 8000 — for a browser on http://localhost:3000
+      # that resolves to the backend's published port above. Setting this to
+      # http://backend:8000 would break the app: "backend" is a name on
+      # Compose's network, and the code that calls it runs in your browser,
+      # which is not on that network.
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
+      # Comma-separated hostnames, for opening the dev server from a phone or
+      # tablet on the LAN. See frontend/next.config.ts.
+      ALLOWED_DEV_ORIGINS: ${ALLOWED_DEV_ORIGINS:-}
+      # Next's watcher, same bind-mount caveat as WATCHFILES_FORCE_POLLING.
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-false}
+    volumes:
+      - ./frontend:/app
+      # Anonymous volumes: keep the image's Linux-built node_modules and the
+      # container's build output from being shadowed by the host directory.
+      # They outlive `docker compose up --build`, so after changing package.json
+      # refresh them explicitly:
+      #   docker compose up --build --renew-anon-volumes
+      - /app/node_modules
+      - /app/.next

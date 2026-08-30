@@ -1,0 +1,13 @@
+# Reinstalled inside the image; host modules are built for the host's OS and
+# would break the container at runtime.
+node_modules/
+
+# Build output belongs to whoever built it.
+.next/
+*.tsbuildinfo
+
+.env.local
+
+.DS_Store
+.idea/
+.vscode/

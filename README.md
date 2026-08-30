@@ -13,6 +13,83 @@ actions for the whiteboard renderer to draw.
 - `docs/ARCHITECTURE.md`: system boundaries and shared contracts.
 - `docs/TUTOR_AGENT.md`: the tutor API contract.
 
+## Run with Docker
+
+The whole stack, one command. Needs Docker Desktop and nothing else — no
+Python, no Bun, no local installs.
+
+```bash
+cp backend/.env.example backend/.env   # then paste a real GEMINI_API_KEY into it
+docker compose up
+```
+
+Then open `localhost:3000`. The API is on `localhost:8000`; check it came up
+configured with `curl -s localhost:8000/health`.
+
+Source is bind-mounted, so both servers reload on edit — this is the
+development setup, not a production image. Stop with Ctrl-C, or `docker
+compose down`. After changing `requirements.txt` or `package.json`, rebuild:
+`docker compose up --build`.
+
+Leave `NEXT_PUBLIC_API_BASE_URL` unset. The frontend calls the backend from
+your browser, not from inside the container, so it needs `localhost:8000` —
+the published port — and the code already defaults there. Pointing it at
+`http://backend:8000` breaks the app: that name only resolves on Compose's
+internal network.
+
+To reach it from a phone or tablet on the same network, set both origins on
+the host before `docker compose up`:
+
+```bash
+CORS_ALLOW_ORIGINS=http://localhost:3000,http://YOUR-IP:3000 \
+  ALLOWED_DEV_ORIGINS=YOUR-IP docker compose up
+```
+
+The same warning as below applies: published ports reach your whole network,
+there is no authentication, and every request spends Gemini quota.
+
+### Platform notes
+
+The setup runs on macOS, Linux, and Windows from the same two files. Nothing
+pins an architecture, and both base images are multi-arch, so an Apple Silicon
+Mac builds arm64 natively. If a build fails, do not reach for
+`platform: linux/amd64` — that forces every container through emulation and
+hides the real error.
+
+Needs Docker Compose v2.24+ (`docker compose version`). Docker Desktop ships
+newer; a Linux box on a distro-packaged plugin may not.
+
+**Edits not reloading?** On macOS and Windows the containers run in a Linux VM,
+and filesystem events do not always cross the bind mount into it. Turn on
+polling — it costs constant CPU, which is why it is off by default, and why
+native Linux does not need it:
+
+```bash
+WATCHFILES_FORCE_POLLING=true WATCHPACK_POLLING=true docker compose up
+```
+
+**After changing `package.json` or `requirements.txt`**, rebuild *and* refresh
+the anonymous volumes — `node_modules` survives a plain `--build`, so a new
+dependency appears installed but is not there:
+
+```bash
+docker compose up --build --renew-anon-volumes
+```
+
+**On Linux**, bind mounts pass your host UID straight through instead of
+mapping it as Docker Desktop does, and both containers run as root. Anything a
+container creates in `backend/` or `frontend/` is therefore root-owned on the
+host. Little is written there — `node_modules` and `.next` live in volumes, and
+`PYTHONDONTWRITEBYTECODE` suppresses `__pycache__` — but `backend/mentora.db`
+is one to watch. `sudo chown -R "$USER" backend frontend` if it happens.
+
+Line endings are pinned to LF for `Dockerfile`, `.dockerignore`, and the
+compose file in `.gitattributes`. They are read inside a Linux container, where
+a trailing CR becomes part of the value: a CRLF `.dockerignore` matches
+nothing, silently shipping `node_modules/` and `.venv/` into the build context.
+
+The rest of this section is the manual setup, for working without Docker.
+
 ## Setup on a new machine
 
 Four things are gitignored and must be recreated: `backend/.venv`,

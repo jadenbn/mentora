@@ -1,0 +1,18 @@
+# Recreated inside the image; a host venv is built for the host's OS.
+.venv/
+venv/
+
+# Real credentials never belong in an image layer. Compose supplies them at
+# run time via env_file.
+.env
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local SQLite state.
+*.db
+
+.DS_Store
+.idea/
+.vscode/
