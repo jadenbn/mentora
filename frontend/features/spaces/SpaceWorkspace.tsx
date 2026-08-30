@@ -64,7 +64,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
   return (
     <main className="relative h-dvh bg-white">
       <header className="pointer-events-none absolute inset-0 z-50 bg-transparent px-3 py-2 sm:px-5">
-        <div className="pointer-events-auto absolute bottom-4 left-3 min-w-0 sm:bottom-5 sm:left-5">
+        <div className="mentora-workspace-info pointer-events-auto absolute bottom-4 left-3 min-w-0 sm:bottom-5 sm:left-5">
           <Link
             className="text-sm font-semibold text-blue-700"
             href={`/courses/${space.courseId}`}

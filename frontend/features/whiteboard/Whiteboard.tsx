@@ -126,7 +126,7 @@ function CanvasToolbar() {
   return (
     <>
       <TldrawUiToolbar
-        className="absolute! left-4! top-1/2! z-40! -translate-y-1/2!"
+        className="mentora-drawing-toolbar absolute! left-4! top-1/2! z-40! -translate-y-1/2!"
         label="Drawing tools"
         orientation="vertical"
         tooltipSide="right"

@@ -99,7 +99,7 @@ export function TutorFeedbackBar({
           </div>
           {visible ? (
             <div
-              className="feedback-glass-pulse pointer-events-auto min-w-0 max-w-full overflow-hidden rounded-full border border-blue-100/70 bg-white/65 px-4 py-1.5 text-center text-slate-950 shadow-[0_2px_12px_rgba(37,99,235,0.12)] ring-1 ring-blue-100/40 backdrop-blur-md"
+              className="pointer-events-auto min-w-0 max-w-full overflow-hidden rounded-full border border-slate-200 bg-white/70 px-4 py-1.5 text-center text-slate-950 shadow-sm backdrop-blur-lg"
               title={layer.response.summary}
             >
               <ProblemBody

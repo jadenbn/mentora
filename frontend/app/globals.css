@@ -26,27 +26,6 @@ body {
   display: block;
 }
 
-.feedback-glass-pulse {
-  animation: feedback-glass-pulse 3.5s ease-in-out infinite;
-}
-
-@keyframes feedback-glass-pulse {
-  0%,
-  100% {
-    box-shadow: 0 2px 12px rgb(37 99 235 / 12%);
-  }
-
-  50% {
-    box-shadow: 0 2px 17px rgb(37 99 235 / 20%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .feedback-glass-pulse {
-    animation: none;
-  }
-}
-
 button:disabled { cursor: not-allowed; }
 
 .sidebar-style-panel .tlui-style-panel {
@@ -83,7 +62,26 @@ button:disabled { cursor: not-allowed; }
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #c4c6c9;
+  background: #606267;
+}
+
+.mentora-drawing-toolbar {
+  border: 1px solid rgb(15 23 42 / 12%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 24%);
+  padding: 4px;
+  backdrop-filter: blur(12px);
+}
+
+.mentora-workspace-info {
+  max-width: min(280px, calc(100vw - 24px));
+  border: 1px solid rgb(15 23 42 / 12%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 24%);
+  padding: 10px 12px;
+  backdrop-filter: blur(12px);
 }
 
 .mentora-document-page {
