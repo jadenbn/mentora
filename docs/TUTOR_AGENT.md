@@ -12,7 +12,7 @@ file and the schema win.
 ```text
 student draws  ->  taps a mode button
         |
-capture: student's shapes only, exported as one PNG
+capture: student's shapes only, content-cropped and exported as one PNG
         |
 POST /api/tutor/analyze   (multipart)
         |
@@ -109,9 +109,18 @@ All coordinates are normalized to the submitted image, `[0, 1]` from its
 top-left. `frontend/lib/annotations/renderCanvasActions.ts` is the only place
 that converts them to tldraw world space.
 
+In development, the frontend logs a temporary object URL for the exact image
+blob sent as `canvas_image`; the URL is revoked after five minutes and the image
+is never written to disk. Set `TUTOR_DEBUG_LOG_REQUESTS=1` for a structured
+backend-console log of the exact Gemini system instruction, user text parts,
+problem/course/prior-annotation context, image metadata, and generation config.
+Raw image bytes are not printed; use the frontend object URL to inspect them.
+
 `interaction_id` is server-minted. The whiteboard stores each response as a
-feedback layer and renders only the selected layer's shapes; switching layers
-replaces AI shapes without touching system or student content.
+tutor checkpoint with the document-only tldraw snapshot captured when the
+request began. Selecting a historical checkpoint restores that canvas state
+read-only without moving the viewport and renders its feedback; returning to
+the newest checkpoint restores the live canvas.
 
 ## The safety policy
 

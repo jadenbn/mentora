@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 from google.genai import types
@@ -233,6 +234,48 @@ class GeminiTutorWorkflow:
                 raise ValueError("canvas_mime_type is required with canvas_image")
             parts.insert(0, types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type))
         message = types.Content(role="user", parts=parts)
+        if os.getenv("TUTOR_DEBUG_LOG_REQUESTS") == "1":
+            request_log = {
+                "model": self.model,
+                "mode": mode.value,
+                "repair": repair,
+                "system_instruction": tutor_instruction(mode),
+                "contents": {
+                    "role": "user",
+                    "parts": [
+                        *(
+                            [
+                                {
+                                    "type": "image",
+                                    "mime_type": canvas_mime_type,
+                                    "bytes": len(canvas_image or b""),
+                                }
+                            ]
+                            if canvas_image is not None
+                            else []
+                        ),
+                        {"type": "text", "text": prompt},
+                    ],
+                },
+                "context": {
+                    "prior_annotations": [b.model_dump(mode="json") for b in prior_annotations],
+                    "problem": problem.model_dump(mode="json") if problem else None,
+                    "course_context": [
+                        chunk.model_dump(mode="json") for chunk in course_context
+                    ],
+                },
+                "generation_config": {
+                    "response_mime_type": "application/json",
+                    "response_schema": TUTOR_PLAN_RESPONSE_SCHEMA,
+                    "max_output_tokens": 1_024,
+                    "thinking_level": "LOW",
+                    "media_resolution": "MEDIUM",
+                },
+            }
+            print(
+                "tutor_gemini_request=" + json.dumps(request_log, ensure_ascii=False),
+                flush=True,
+            )
         async with asyncio.timeout(self.timeout_seconds):
             response = await client.models.generate_content(
                 model=self.model,

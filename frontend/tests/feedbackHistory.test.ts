@@ -15,6 +15,7 @@ const layer = (id: string): FeedbackLayer => ({
   mode: "hint",
   createdAt: id,
   bounds: { x: 10, y: 20, w: 300, h: 400 },
+  snapshot: { document: { shapes: [id] } },
   response: {
     interaction_id: id,
     status: "partial",

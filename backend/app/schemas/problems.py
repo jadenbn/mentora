@@ -31,7 +31,6 @@ class ProblemContext(StrictModel):
 class GeneratedProblem(ProblemContext):
     created_at: datetime
 
-
 class GroundingChunk(StrictModel):
     chunk_id: str
     page: int = Field(ge=1)

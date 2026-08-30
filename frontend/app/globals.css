@@ -26,6 +26,27 @@ body {
   display: block;
 }
 
+.feedback-glass-pulse {
+  animation: feedback-glass-pulse 3.5s ease-in-out infinite;
+}
+
+@keyframes feedback-glass-pulse {
+  0%,
+  100% {
+    box-shadow: 0 2px 12px rgb(37 99 235 / 12%);
+  }
+
+  50% {
+    box-shadow: 0 2px 17px rgb(37 99 235 / 20%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feedback-glass-pulse {
+    animation: none;
+  }
+}
+
 button:disabled { cursor: not-allowed; }
 
 .sidebar-style-panel .tlui-style-panel {
@@ -55,4 +76,20 @@ button:disabled { cursor: not-allowed; }
 
 .tlui-toolbar .tlui-button:hover {
   cursor: grab;
+}
+
+/* The page stays finite while the surrounding camera remains freely pannable. */
+.mentora-canvas-background {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #c4c6c9;
+}
+
+.mentora-document-page {
+  position: absolute;
+  background-color: #fff;
+  background-image: radial-gradient(circle, #aeb7c4 1px, transparent 1.2px);
+  background-position: 0 0;
+  box-shadow: 0 3px 18px rgb(15 23 42 / 18%);
 }

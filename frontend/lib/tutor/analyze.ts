@@ -17,6 +17,23 @@ import {
 import type { TutorMode, TutorResponse } from "@/types/tutor";
 import type { ProblemContext } from "@/types/domain";
 
+const IMAGE_URL_TTL_MS = 5 * 60 * 1_000;
+
+/** Log the exact blob sent in canvas_image without persisting it to disk. */
+function logSentImage(blob: Blob): void {
+  if (
+    process.env.NODE_ENV === "production" ||
+    typeof URL === "undefined" ||
+    typeof URL.createObjectURL !== "function"
+  ) {
+    return;
+  }
+  const imageUrl = URL.createObjectURL(blob);
+  console.log("[tutor] image sent for Gemini analysis");
+  console.log(imageUrl);
+  setTimeout(() => URL.revokeObjectURL(imageUrl), IMAGE_URL_TTL_MS);
+}
+
 export class EmptyCanvasError extends Error {
   constructor() {
     super("There is nothing on the canvas to analyze yet.");
@@ -37,7 +54,11 @@ export interface TutorAnalysisOptions {
     context: RenderContext,
   ) => void | Promise<void>;
   /** Called when the provider response arrives, before presentation animation. */
-  onResponse?: (response: TutorResponse, context: RenderContext) => void;
+  onResponse?: (
+    response: TutorResponse,
+    context: RenderContext,
+    snapshot: unknown,
+  ) => void;
 }
 
 export async function runTutorAnalysis(
@@ -45,6 +66,7 @@ export async function runTutorAnalysis(
 ): Promise<TutorResponse> {
   const { editor } = options;
   const renderActions = options.renderActions ?? renderCanvasActions;
+  const snapshot = editor.getSnapshot().document;
 
   // A canvas holding only the tutor's own earlier feedback has nothing of the
   // student's left to analyze, even though the page is not empty.
@@ -58,8 +80,8 @@ export async function runTutorAnalysis(
     // structured problem without fabricating a provider image.
     const bounds = editor.getCurrentPageBounds() ?? editor.getViewportPageBounds();
     const response = await analyzeCanvas({
-      courseId: options.courseId,
       mode: options.mode,
+      courseId: options.courseId,
       priorAnnotations: collectPriorAnnotations(editor, bounds),
       problem: options.problem,
       signal: options.signal,
@@ -68,11 +90,12 @@ export async function runTutorAnalysis(
       bounds,
       interactionId: response.interaction_id,
     };
-    options.onResponse?.(response, context);
+    options.onResponse?.(response, context, snapshot);
     await renderActions(editor, response.canvas_actions, context);
     return response;
   }
 
+  logSentImage(capture.blob);
   const response = await analyzeCanvas({
     courseId: options.courseId,
     mode: options.mode,
@@ -86,7 +109,7 @@ export async function runTutorAnalysis(
     bounds: capture.bounds,
     interactionId: response.interaction_id,
   };
-  options.onResponse?.(response, context);
+  options.onResponse?.(response, context, snapshot);
   await renderActions(editor, response.canvas_actions, context);
 
   return response;

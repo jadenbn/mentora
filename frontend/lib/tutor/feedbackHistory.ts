@@ -2,7 +2,7 @@ import type { TutorMode, TutorResponse } from "@/types/tutor";
 import type { WorldBounds } from "@/lib/annotations/geometry";
 
 export const MAX_FEEDBACK_LAYERS = 10;
-const VERSION = 1;
+const VERSION = 2;
 const KEY_PREFIX = "mentora:feedback:";
 
 export interface FeedbackLayer {
@@ -10,6 +10,7 @@ export interface FeedbackLayer {
   mode: TutorMode;
   createdAt: string;
   bounds: WorldBounds;
+  snapshot: unknown;
   response: TutorResponse;
 }
 
@@ -54,6 +55,7 @@ function isLayer(value: unknown): value is FeedbackLayer {
     typeof bounds.y === "number" &&
     typeof bounds.w === "number" &&
     typeof bounds.h === "number" &&
+    isRecord(value.snapshot) &&
     typeof response.interaction_id === "string" &&
     typeof response.status === "string" &&
     Array.isArray(response.canvas_actions) &&

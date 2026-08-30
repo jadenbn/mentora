@@ -8,7 +8,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
+import type { RenderContext } from "@/lib/annotations/renderCanvasActions";
 import type { ProblemContext } from "@/types/domain";
+import type { TutorResponse } from "@/types/tutor";
 import { box, makeEditor } from "./fakeEditor";
 
 const RESPONSE = {
@@ -78,6 +80,23 @@ describe("the happy path", () => {
     mockFetch();
     await run(fake.editor);
     expect(fake.created[0].meta).toMatchObject({ interactionId: "interaction_7" });
+  });
+
+  it("captures the canvas before tutor marks are rendered", async () => {
+    const fake = makeEditor({
+      shapes: [
+        student("s1"),
+        { ...student("highlight"), type: "draw" },
+      ],
+    });
+    mockFetch();
+    let snapshot: unknown;
+    await run(fake.editor, {
+      onResponse: (_response: TutorResponse, _context: RenderContext, captured: unknown) => {
+        snapshot = captured;
+      },
+    });
+    expect(snapshot).toEqual({ shapes: ["s1", "highlight"] });
   });
 });
 

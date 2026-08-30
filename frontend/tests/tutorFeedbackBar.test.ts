@@ -9,6 +9,7 @@ const layer: FeedbackLayer = {
   mode: "hint",
   createdAt: "2026-01-01T00:00:00Z",
   bounds: { x: 0, y: 0, w: 100, h: 100 },
+  snapshot: { document: { shapes: [] } },
   response: {
     interaction_id: "interaction_1",
     status: "partial",

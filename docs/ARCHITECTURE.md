@@ -47,7 +47,7 @@ Frontend packages are managed with Bun (`frontend/bun.lock`).
 │ React / Next.js / tldraw              │
 │ Course UI                             │
 │ Session grid                          │
-│ Infinite whiteboard                   │
+│ Vertical whiteboard                   │
 │ Problem rendering                     │
 │ Tutor controls                        │
 │ Select for AI                         │
@@ -160,6 +160,15 @@ Preserve student strokes, system/problem shapes, AI shapes, positions, styles, a
 Camera/viewport state may also be stored.
 Avoid inventing a parallel graphics document model unless necessary.
 
+The current student-facing surface is a page-like vertical document implemented
+with one locked, system-owned transparent boundary shape in the tldraw document.
+The frontend renders the white dotted page against a neutral workspace and
+keeps the tldraw camera freely pannable and zoomable around it. The writing
+surface starts at a readable minimum height and grows downward in chunks when
+student content approaches its bottom safety margin. This is intentionally not
+multi-page navigation yet; the persisted tldraw document remains the source of
+truth.
+
 ## 9. Shape Ownership
 At minimum:
 ```text
@@ -172,11 +181,13 @@ Potential metadata:
 type ShapeOwner = "system" | "student" | "ai";
 ```
 Shapes the tutor draws carry `owner: "ai"` and the `interaction_id` that
-produced them. Each response is also stored as a per-Space feedback layer in
-browser storage; the selected layer is rendered and switching layers replaces
-AI shapes without disturbing system or student content. Ownership no longer
-crosses the wire as a shape list: capture excludes tutor-authored shapes from
-the image and sends their bounds as `prior_annotations`.
+produced them. Each response is also stored as a per-Space tutor checkpoint in
+browser storage, including a document-only tldraw snapshot captured when the
+request began; the selected checkpoint restores that canvas state without
+moving the current viewport and renders its feedback.
+History viewing is read-only and does not overwrite the live session. Ownership
+no longer crosses the wire as a shape list: capture excludes tutor-authored
+shapes from the image and sends their bounds as `prior_annotations`.
 The critical invariant is that the system can distinguish what the problem said, what the student wrote, and what the AI wrote.
 
 ## 10. Frontend Responsibilities
@@ -317,11 +328,13 @@ receives arbitrary tldraw operations.
 
 The invariant remains: **validated structured output before tldraw rendering**.
 
-The frontend stores the last 10 validated responses per Space as feedback
-layers in local storage. The navbar exposes immediate previous/next navigation
-and a visibility toggle; navigation changes only AI-owned shapes and never
-removes student or system shapes. A new response always selects the newest
-layer.
+The frontend stores the last 10 validated responses per Space as tutor
+checkpoints in local storage. Each checkpoint includes the document snapshot at
+request time, while AI shapes remain renderable separately and user highlights
+remain part of the document. The navbar exposes
+immediate previous/next navigation and a visibility toggle; historical
+navigation restores the checkpoint read-only, and the newest response always
+selects the live canvas.
 
 ## 18. Coordinates
 Prefer normalized image-space coordinates at the AI/API boundary:
@@ -360,7 +373,14 @@ Expose a clean frontend boundary conceptually like:
 async function captureCanvasForAnalysis(): Promise<Blob>
 ```
 Hide low-level tldraw export details from unrelated code.
-Where useful, send image plus structured metadata.
+The implementation captures student work plus relevant prior tutor marks,
+adds a bounded padding margin, and excludes system/problem shapes from the
+image. The returned world-space frame is the same frame used to normalize
+tutor coordinates and render them back onto tldraw. Development builds log a
+temporary object URL for the exact outgoing image; the image is not persisted.
+When `TUTOR_DEBUG_LOG_REQUESTS=1`, the backend also logs the assembled Gemini
+request as structured JSON, including prompts, context, image metadata, and
+generation config. Raw image bytes are intentionally omitted.
 
 ## 21. Select for AI
 Conceptual representation:

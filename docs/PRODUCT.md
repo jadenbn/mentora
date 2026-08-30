@@ -22,7 +22,7 @@ Courses / Spaces
       ↓
 Saved Whiteboard Sessions
       ↓
-Infinite Whiteboard
+Vertical Whiteboard
 ```
 A course/space might be `MATH 101`, `PHYS 101`, `Calculus I`, or `Interview Prep`.
 A course is a persistent learning context containing course materials, course-specific AI context, instructor-style signals, saved whiteboards, and eventually student analytics.
@@ -73,8 +73,9 @@ The navbar says "Check this sign"
 Keep prose out of the student's working area. Feedback is chronological: the
 current concise guidance appears in the transparent navbar, rendered in the
 same KaTeX document as its mathematical notation, while spatial marks appear
-on the canvas. Previous layers can be revisited with navbar arrows without
-changing student work.
+on the canvas. Previous steps can be revisited with navbar arrows at the
+canvas state where that feedback was given; history viewing is read-only and
+does not change the current student work.
 
 ## 5. Two Core Problem Entry Flows
 ### 5.1 AI-Generated Practice
@@ -276,7 +277,7 @@ AI tutor content
 This enables:
 - analyze student work without confusing AI output
 - hide the current AI feedback layer
-- revisit the last 10 feedback layers
+- revisit the last 10 tutor checkpoints, including their canvas state
 - undo tutor interventions
 - preserve problem content
 - advanced layer controls later
@@ -325,10 +326,15 @@ For the MVP, prioritize structured/typeset math and predictable navbar prose.
 A polish goal is realistic AI handwriting, including animated pen strokes and natural drawing motion.
 Treat handwriting as a renderer/presentation improvement so tutor reasoning does not need to be rewritten later.
 
-## 21. Infinite Canvas
-Each whiteboard session is conceptually an infinite canvas.
-A new problem normally begins in a new session within the same course.
-Do not redesign around fixed notebook pages unless the team intentionally changes this decision.
+## 21. Vertical Whiteboard
+Each session presents a page-like vertical writing surface that grows downward
+as the student's work approaches the lower safety margin. The student sees a
+bounded, responsive page with neutral space outside it; pinch zoom and pan are
+available freely around the page. tldraw remains an internal editing engine,
+while the page remains the only writing surface exposed by the product. A new
+problem normally begins in a new session within the same course. Discrete
+multi-page navigation remains a separate decision and should be added only if
+students need it after the vertical surface is tested.
 
 ## 22. Rich Student Model
 Long term, the product should model how the student thinks, not just topic percentages.

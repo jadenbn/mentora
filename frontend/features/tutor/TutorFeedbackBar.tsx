@@ -34,13 +34,20 @@ export function TutorFeedbackBar({
   const atEnd = activeIndex < 0 || activeIndex >= layerCount - 1;
 
   return (
-    <div className="pointer-events-none mx-auto flex w-full max-w-6xl min-w-0 flex-col items-center gap-1 text-sm">
+    <div className="pointer-events-none mx-auto flex w-fit max-w-full min-w-0 flex-col items-center gap-1 text-sm">
       {error ? (
-        <span aria-live="assertive" className="text-xs font-semibold text-red-700" role="alert">
+        <span
+          aria-live="assertive"
+          className="rounded-full border border-blue-100/70 bg-white/65 px-3 py-1 text-xs font-semibold text-red-700 shadow-[0_2px_12px_rgba(37,99,235,0.12)] ring-1 ring-blue-100/40 backdrop-blur-md"
+          role="alert"
+        >
           {error}
         </span>
       ) : warning ? (
-        <span className="text-xs font-semibold text-amber-700" role="status">
+        <span
+          className="rounded-full border border-blue-100/70 bg-white/65 px-3 py-1 text-xs font-semibold text-amber-700 shadow-[0_2px_12px_rgba(37,99,235,0.12)] ring-1 ring-blue-100/40 backdrop-blur-md"
+          role="status"
+        >
           {warning}
         </span>
       ) : null}
@@ -92,7 +99,7 @@ export function TutorFeedbackBar({
           </div>
           {visible ? (
             <div
-              className="pointer-events-auto min-w-0 max-w-full overflow-hidden text-center text-slate-950"
+              className="feedback-glass-pulse pointer-events-auto min-w-0 max-w-full overflow-hidden rounded-full border border-blue-100/70 bg-white/65 px-4 py-1.5 text-center text-slate-950 shadow-[0_2px_12px_rgba(37,99,235,0.12)] ring-1 ring-blue-100/40 backdrop-blur-md"
               title={layer.response.summary}
             >
               <ProblemBody
