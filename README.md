@@ -18,6 +18,30 @@ actions for the whiteboard renderer to draw.
 The whole stack, one command. Needs Docker Desktop and nothing else — no
 Python, no Bun, no local installs.
 
+**On Windows, install WSL2 first.** Docker Desktop alone is not enough. A
+container is a process the *Linux* kernel isolates, not a virtual machine, so
+a Linux image needs a Linux kernel to run on — and WSL2 is what supplies one
+on Windows. Without it Docker Desktop starts but its engine does not, and
+every command fails with a 500 from the daemon. In an **Administrator**
+PowerShell:
+
+```powershell
+wsl --install --no-distribution
+```
+
+Then restart the machine (a full Restart, not Shut down — Fast Startup can
+skip pending component changes) and launch Docker Desktop, which is ready when
+the whale icon reads "Engine running". `--no-distribution` skips Ubuntu, about
+1 GB nobody here needs: Docker Desktop ships its own `docker-desktop` distro.
+Budget ~1.5 GB for WSL2 and ~8 GB once the images are built.
+
+Windows 11 Home has no other option — Docker Desktop's old Hyper-V backend is
+deprecated, and Hyper-V is a Pro/Enterprise feature. WSL2 works on Home
+because it uses Virtual Machine Platform, a smaller component Home does ship.
+
+macOS and Linux need nothing extra: Docker Desktop supplies its own Linux VM
+on macOS, and on Linux the host kernel already is one.
+
 ```bash
 cp backend/.env.example backend/.env   # then paste a real GEMINI_API_KEY into it
 docker compose up
