@@ -52,6 +52,7 @@ def get_question_service(
         workflow=GeminiQuestionWorkflow(
             api_key=settings.gemini_api_key,
             model=settings.gemini_model,
+            thinking_level=settings.gemini_thinking_level,
             timeout_seconds=settings.request_timeout_seconds,
         ),
         retriever=Retriever(),

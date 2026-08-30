@@ -35,14 +35,17 @@ GEMINI_API_KEY
 ```
 
 Optional: `GEMINI_MODEL` (default `gemini-3.5-flash-lite`),
+`GEMINI_THINKING_LEVEL` (default `low`; accepts `minimal`, `low`, `medium`, or
+`high`),
 `TUTOR_REQUEST_TIMEOUT_SECONDS` (default 45).
 
 The model choice dominates latency: a lite model answers a canvas request in
 about 1.5s where `gemini-3.7-flash` takes about 10s, and the tutor's job is
 small enough that the trade reads as free. Measure with
-`scripts/bench_tutor.py` before changing it. Note that `ThinkingLevel.MINIMAL`
-is rejected by some models, so the code uses `LOW`, which is universally
-supported and measurably no slower here.
+`scripts/bench_tutor.py` before changing it. Note that `minimal` is rejected by
+some models; `low` is the compatible default and was measurably no slower in
+the current benchmark. The configured model and thinking level apply to both
+tutoring and grounded question generation.
 
 `GET /health` is always available and reports missing variable *names*, never
 values.

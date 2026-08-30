@@ -29,8 +29,15 @@ SPACING_SECONDS = 12
 def main(runs: int = 3) -> None:
     image = base64.b64decode(FIXTURE.read_text())
     settings = TutorSettings.from_environment()
-    workflow = GeminiTutorWorkflow(model=settings.gemini_model, timeout_seconds=90)
-    print(f"model {settings.gemini_model}, {len(image)} byte canvas, {runs} runs\n")
+    workflow = GeminiTutorWorkflow(
+        model=settings.gemini_model,
+        thinking_level=settings.gemini_thinking_level,
+        timeout_seconds=90,
+    )
+    print(
+        f"model {settings.gemini_model}, thinking {settings.gemini_thinking_level}, "
+        f"{len(image)} byte canvas, {runs} runs\n"
+    )
 
     timings: list[float] = []
     for i in range(runs):

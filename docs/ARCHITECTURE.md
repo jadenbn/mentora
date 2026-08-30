@@ -637,12 +637,12 @@ AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
 
-The tutor is one Gemini call through a single ADK agent:
+The tutor is one direct Gemini call through the `google-genai` SDK:
 
 ```text
 canvas image + mode + prior annotations
         ↓
-LlmAgent (Gemini multimodal, TutorPlan response schema)
+Gemini multimodal generation (TutorPlan response schema)
         ↓ independent Pydantic validation and safety policy
 TutorResponse
 ```
@@ -651,9 +651,12 @@ Reading the canvas and deciding what to draw are the same judgement, so
 splitting them only bought a second round trip on the path where
 responsiveness is the product.
 
-ADK performs up to three bounded transient HTTP attempts. The application makes
-one additional attempt only when structured output is malformed. The model
-defaults to `gemini-3.5-flash-lite` and is replaceable through `GEMINI_MODEL`.
+The SDK performs up to three bounded transient HTTP attempts for 408 and
+5xx responses. The application makes one additional request only when
+structured output is malformed. The model defaults to
+`gemini-3.5-flash-lite` and is replaceable through `GEMINI_MODEL`; thinking
+defaults to `low` and is replaceable through `GEMINI_THINKING_LEVEL`. These
+settings are shared by tutoring and grounded question generation.
 
 ## 36. Prompt Organization
 Possible layout:
