@@ -1,0 +1,97 @@
+# Proves the Docker setup actually works, on a machine that has Docker.
+#
+# Deliberately needs no secrets: /health answers without GEMINI_API_KEY and
+# reports it as missing, so the stack can be booted and probed end to end
+# without spending Gemini quota or putting a key in CI.
+
+name: docker
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A newer push to the same branch makes the in-flight run irrelevant.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versions
+        run: |
+          docker --version
+          docker compose version
+
+      # These are read inside a Linux container, where a trailing CR becomes
+      # part of the value: a CRLF .dockerignore matches nothing and ships
+      # node_modules/ into the build context. .gitattributes pins them to LF;
+      # this catches a commit that escaped it. The index is what matters --
+      # a Linux runner checks out whatever was stored.
+      - name: No CRLF in files read inside containers
+        run: |
+          bad=$(git ls-files --eol -- '*Dockerfile' '*.dockerignore' 'docker-compose.yml' '*.env.example' | grep 'i/crlf' || true)
+          if [ -n "$bad" ]; then
+            echo "CRLF committed in files that must be LF:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "all LF"
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Start the stack
+        run: docker compose up -d
+
+      # Polls rather than trusting a fixed sleep: the backend healthcheck has a
+      # 20s start_period, and image size varies with the runner.
+      - name: Backend answers /health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/health -o health.json; then
+              echo "responded after $((i * 5))s"
+              cat health.json
+              # Reports not_ready without a key, which is expected here. The
+              # claim under test is that the app booted and serves.
+              grep -q '"status":"ok"' health.json && exit 0
+              echo "unexpected body"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "no response from :8000 after 300s"
+          exit 1
+
+      # `next dev` compiles the route on first request, so the first hit is
+      # slow. A 200 here proves bun install resolved and the CMD flags were
+      # accepted -- the container would have exited otherwise.
+      - name: Frontend serves a page
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ || true)
+            if [ "$code" = "200" ]; then
+              echo "200 after $((i * 5))s"
+              exit 0
+            fi
+            echo "attempt $i: $code"
+            sleep 5
+          done
+          echo "no 200 from :3000 after 300s"
+          exit 1
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --no-color --tail=200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
