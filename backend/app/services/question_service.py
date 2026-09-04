@@ -55,6 +55,7 @@ class QuestionWorkflow(Protocol):
         *,
         chunks: list[GroundingChunk],
         question_request: str,
+        difficulty_word: str | None = None,
         existing_skills: list[dict[str, str]] | None = None,
     ) -> QuestionPlan: ...
 
@@ -96,9 +97,17 @@ class QuestionService:
         course_id: str,
         document_id: str,
         question_request: str,
+        difficulty_word: str | None = None,
         required_skill_id: str | None = None,
     ) -> GeneratedProblem:
-        """required_skill_id: a topic this problem must be attributed to
+        """difficulty_word: the level the engine believes suits this student,
+        offered to the generator as a preference. It never overrides a
+        difficulty the question_request states itself -- see
+        api/questions.py::_build_ask for which of the two authored the
+        request, and prompts/question_generation.py for the rule the model
+        is given.
+
+        required_skill_id: a topic this problem must be attributed to
         regardless of what the model's own reading returns -- set when a
         topic was picked for the student (services/selection.py) rather than
         named by them, so a generated question always counts toward the
@@ -145,6 +154,7 @@ class QuestionService:
         plan = await self.workflow.run(
             chunks=context,
             question_request=question_request,
+            difficulty_word=difficulty_word,
             existing_skills=self._existing_skill_context(course_id),
         )
         problem = ProblemContext(

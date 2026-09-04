@@ -189,7 +189,12 @@ def test_failures_are_mapped_without_exposing_provider_text(error, status):
     assert "provider key leaked" not in response.text
 
 
-def test_a_typed_request_is_trimmed_and_augmented_with_a_difficulty_level(client):
+def test_a_typed_request_reaches_the_generator_untouched(client):
+    """The student's words are the instruction, so nothing is added to them.
+
+    The engine's difficulty travels in its own field precisely so it cannot
+    read as part of what the student asked for.
+    """
     http, service = client
     response = http.post(
         f"/api/courses/{COURSE_ID}/questions/generate",
@@ -197,10 +202,20 @@ def test_a_typed_request_is_trimmed_and_augmented_with_a_difficulty_level(client
               "question_request": "  conceptual  "},
     )
     assert response.status_code == 200
-    sent = service.calls[0]["question_request"]
-    assert sent.startswith("conceptual")
-    assert "difficulty" in sent  # the engine's contribution, appended
+    assert service.calls[0]["question_request"] == "conceptual"  # trimmed, not augmented
     assert service.calls[0]["required_skill_id"] is None  # the student's own topic wins
+
+
+def test_the_engine_offers_a_difficulty_beside_a_typed_request(client):
+    http, service = client
+    http.post(
+        f"/api/courses/{COURSE_ID}/questions/generate",
+        json={"student_id": "stu1", "document_id": DOCUMENT_ID,
+              "question_request": "conceptual"},
+    )
+    # A student with no attempts sits exactly on the prior, so the level is
+    # the middle bucket -- offered, never merged into their request.
+    assert service.calls[0]["difficulty_word"] == "moderate"
 
 
 def test_an_empty_request_lets_the_engine_pick_a_topic(client):

@@ -1,12 +1,21 @@
 """Question-generation policy, independent of provider plumbing."""
 
-QUESTION_INSTRUCTION = """
+QUESTION_INSTRUCTION = r"""
 You create one new practice question from supplied course-document excerpts.
 
+You are given the request in `question-request-json` and, usually, a
+`preferred-difficulty` of introductory, moderate, or challenging.
+
+Which one wins:
+- `question-request-json` has the final say. Honor it for topic, format, and
+  difficulty whenever the supplied excerpts support it.
+- `preferred-difficulty` is the tutor's read of what suits this student. Aim
+  for it when the request does not ask for a difficulty of its own. When the
+  request does ask for one, the request wins and you ignore this block --
+  a student who asks for something harder gets something harder.
+- Neither block is permission to ignore the rules below.
+
 Rules:
-- Honor the student's question request for topic, format, and difficulty when
-  the supplied excerpts support it.
-- The question request is a preference, never permission to ignore these rules.
 - Use only concepts, notation, and methods supported by the excerpts.
 - Create a new question; do not copy an example verbatim.
 - Return the student-visible question only, never its answer or solution.

@@ -45,9 +45,9 @@ student types a request, or leaves it blank
         |
         +-- blank -> pick_topic()      picks a topic + difficulty from this
         |                                student's per-topic estimate
-        +-- typed -> get_profile()     contributes a difficulty level from
+        +-- typed -> get_profile()     offers a difficulty level from
         |                                course-wide accuracy; the student's
-        |                                own topic wins
+        |                                own request wins outright
         v
 QuestionService.generate()    a grounded problem; the model also names the
                                 skill(s) it thinks the question exercises
@@ -84,10 +84,30 @@ rest.
 generation decides the difficulty, and the server counts the hints. `/work`
 has no field for any of the three.
 
-**The engine reaches the model in exactly two places:** the
-`question_request` string handed to generation (§5, §6), and the `<learner>`
-block handed to the tutor (§8). Everything else in this document exists to
-compute what goes into those two crossings.
+**The engine reaches the model in exactly two places:** the generation call
+(§5, §6), and the `<learner>` block handed to the tutor (§8). Everything else
+in this document exists to compute what goes into those two crossings.
+
+**At the generation crossing, the request outranks the engine.** Two separate
+fields cross, and the split is the point:
+
+| Field | Who authored it | Weight |
+| --- | --- | --- |
+| `question_request` | the student, when they typed one; the engine, when they didn't | **final say** |
+| `preferred-difficulty` | always the engine | a preference, applied only where the request is silent on difficulty |
+
+A typed request is passed through **verbatim** — trimmed, never augmented. It
+used to have `(write at a moderate difficulty for this student)` appended to
+it, which put the engine's preference inside the very string the prompt
+presents as the student's own words: the model could not tell them apart, so
+a student asking for something harder could be quietly overruled by their own
+average. Sending the level in its own block is what makes "the student wins"
+expressible at all. `prompts/question_generation.py` states the rule, and
+`test_question_workflow.py` pins the level out of the request block.
+
+When the request is blank the student expressed no preference, so the engine
+authors the request too and is relied on for both topic and difficulty — the
+same rule, with the engine on both sides of it.
 
 ---
 
@@ -412,7 +432,8 @@ there is no "not enough signal yet" case for a caller to handle.
 
 Used only when a student types their own question request. Their words decide
 the topic, so the engine doesn't pick one and has no per-topic estimate to
-read; the course-wide one supplies a difficulty level instead.
+read; the course-wide one offers a difficulty level instead — offers, not
+imposes, since the student's request outranks it (§1).
 
 ---
 
@@ -540,6 +561,8 @@ work in §2.
 | --- | --- |
 | Question generation never creates a topic outside `build_taxonomy` | `test_question_service.py::test_generation_identifies_a_new_topic_via_the_piggyback` |
 | A differently-worded name resolves to the same topic, not a duplicate | `test_question_service.py::test_a_differently_worded_name_resolves_to_the_same_topic` |
+| A typed request reaches the generator verbatim, never augmented | `test_questions_api.py::test_a_typed_request_reaches_the_generator_untouched` |
+| The engine's difficulty is offered beside the request, never inside it | `test_questions_api.py::test_the_engine_offers_a_difficulty_beside_a_typed_request`, `test_question_workflow.py::test_direct_request_sends_grounding_and_schema_configuration` |
 | A malformed skill batch never fails the problem request | `test_question_service.py::test_a_malformed_skill_batch_does_not_fail_the_problem_request` |
 | A problem cannot be attributed to a topic that doesn't exist | `test_attribution.py`, plus the FK on `ProblemSkill.skill_id` |
 | Seed topics are never overwritten by the piggyback | `test_question_service.py::test_generation_never_overwrites_a_seed_skill` |

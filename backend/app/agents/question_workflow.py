@@ -59,9 +59,14 @@ class GeminiQuestionWorkflow:
         *,
         chunks: list[GroundingChunk],
         question_request: str,
+        difficulty_word: str | None = None,
         existing_skills: list[dict[str, str]] | None = None,
     ) -> QuestionPlan:
-        """existing_skills: [{"id": ..., "name": ...}, ...] already in the
+        """difficulty_word: the engine's preferred level, sent in its own
+        block rather than inside the request, so the model can tell a
+        preference from the instruction it must honour.
+
+        existing_skills: [{"id": ..., "name": ...}, ...] already in the
         course, offered as skill-attribution targets so the model reuses an
         id instead of proposing a near-duplicate."""
         allowed = {chunk.chunk_id for chunk in chunks}
@@ -75,6 +80,7 @@ class GeminiQuestionWorkflow:
                             client=client,
                             chunks=chunks,
                             question_request=question_request,
+                            difficulty_word=difficulty_word,
                             existing_skills=existing_skills or [],
                             previous_error=previous_error,
                         )
@@ -112,6 +118,7 @@ class GeminiQuestionWorkflow:
         client: Any,
         chunks: list[GroundingChunk],
         question_request: str,
+        difficulty_word: str | None,
         existing_skills: list[dict[str, str]],
         previous_error: str | None,
     ) -> dict:
@@ -129,6 +136,11 @@ class GeminiQuestionWorkflow:
         known_block = (
             f"<existing-skills>\n{known}\n</existing-skills>\n\n" if known else ""
         )
+        difficulty_block = (
+            f"<preferred-difficulty>{difficulty_word}</preferred-difficulty>\n\n"
+            if difficulty_word
+            else ""
+        )
         excerpts = "\n\n".join(
             f"<course-excerpt id=\"{chunk.chunk_id}\" page=\"{chunk.page}\">\n"
             f"{chunk.text}\n</course-excerpt>"
@@ -141,7 +153,8 @@ class GeminiQuestionWorkflow:
                     text=(
                         f"{prefix}<question-request-json>\n"
                         f"{json.dumps(question_request)}\n"
-                        f"</question-request-json>\n\n{known_block}{excerpts}"
+                        f"</question-request-json>\n\n"
+                        f"{difficulty_block}{known_block}{excerpts}"
                     )
                 )
             ],

@@ -195,14 +195,11 @@ describe("course material APIs", () => {
       generateCourseQuestion("course_demo", "stu_1", "doc_1", "  A conceptual question  "),
     ).resolves.toEqual({
       id: "problem_1",
-      courseId: "course_demo",
-      documentId: "doc_1",
+      course_id: "course_demo",
+      document_id: "doc_1",
       source: "generated",
       prompt: "Differentiate x squared.",
-      skill: {
-        skillId: "course_demo.power-rule",
-        skillName: "Power rule",
-      },
+      skill: { id: "course_demo.power-rule", name: "Power rule", difficulty_band: 0.4 },
     });
     expect(spy.mock.calls[0][1]).toMatchObject({
       method: "POST",

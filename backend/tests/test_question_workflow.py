@@ -107,6 +107,7 @@ def test_direct_request_sends_grounding_and_schema_configuration(monkeypatch):
         workflow.run(
             chunks=CHUNKS,
             question_request="Conceptual chain rule",
+            difficulty_word="moderate",
             existing_skills=[{"id": "calc1.a", "name": "A"}],
         )
     )
@@ -116,6 +117,11 @@ def test_direct_request_sends_grounding_and_schema_configuration(monkeypatch):
     assert "Conceptual chain rule" in prompt
     assert "chunk_1" in prompt
     assert "calc1.a" in prompt
+    # The engine's level sits in its own block, outside the quoted request,
+    # so the model can tell a preference from the instruction it must honour.
+    assert "<preferred-difficulty>moderate</preferred-difficulty>" in prompt
+    request_block = prompt.split("</question-request-json>")[0]
+    assert "moderate" not in request_block
     assert call["config"].response_schema == QUESTION_PLAN_RESPONSE_SCHEMA
     assert "Wrap inline mathematics" in call["config"].system_instruction
     assert "identify every skill it exercises" in call["config"].system_instruction

@@ -2,6 +2,40 @@
   "course_id": "course_demo",
   "skills": [
     {
+      "id": "course_demo.continuous-interest-differential-equations",
+      "name": "Continuous Rates and Investment Differential Equations",
+      "description": "Formulating and solving separable or first-order differential equations for continuous compounding and continuous deposits/withdrawals.",
+      "difficulty_band": 0.7,
+      "keywords": [
+        "differential equations",
+        "continuous compounding",
+        "separable differential equations",
+        "rate of change"
+      ],
+      "question_forms": [
+        "set up and solve a differential equation for continuous investments",
+        "determine the balance of an account with continuous interest and deposits"
+      ]
+    },
+    {
+      "id": "course_demo.integration-by-parts-cyclic",
+      "name": "Integration by Parts for Cyclic Integrals",
+      "description": "Evaluate integrals involving products of exponential and trigonometric functions by applying integration by parts repeatedly to set up and solve an algebraic equation for the unknown integral.",
+      "difficulty_band": 0.65,
+      "keywords": [
+        "integration by parts",
+        "cyclic integrals",
+        "exponential",
+        "sine",
+        "cosine",
+        "indefinite integral"
+      ],
+      "question_forms": [
+        "evaluate an indefinite cyclic integral",
+        "find the antiderivative of an exponential times a sine or cosine function"
+      ]
+    },
+    {
       "id": "course_demo.partial-fraction-coefficients",
       "name": "Partial Fraction Coefficients",
       "description": "Determine the unknown constant coefficients in a partial fraction decomposition of a rational function with linear and repeated linear factors.",

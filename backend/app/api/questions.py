@@ -86,7 +86,14 @@ def get_question_service(
 
 @dataclass(frozen=True)
 class _Ask:
+    #: What to write. The student's own words when they typed some, otherwise
+    #: an instruction the engine authored. Whoever wrote it has the final say.
     question_request: str
+    #: The level the engine believes suits this student, as one of the three
+    #: words in accuracy.difficulty_bucket. Travels separately from the
+    #: request so the model can tell a preference from an instruction: it
+    #: applies only where the request does not state a difficulty itself.
+    difficulty_word: str
     required_skill_id: str | None
     target_difficulty: float
 
@@ -94,19 +101,25 @@ class _Ask:
 def _build_ask(session: Session, course_id: str, request: GenerateQuestionRequest) -> _Ask:
     """Decide what to ask the generator for, and how hard it should be.
 
-    A typed question_request drives the topic; the engine only contributes a
-    difficulty level from the student's overall accuracy. An empty one hands
-    the topic choice to the engine too -- this is the whole of "practice next
-    topic": a property of generation, not a separate button or endpoint.
+    Precedence, and it runs one way: **the question request wins.** A typed
+    request is the student's own words, and the engine only offers a
+    difficulty level beside them -- it never overrides what they asked for.
+    An empty request means the student expressed no preference at all, so the
+    engine authors the request itself and is relied on for both topic and
+    difficulty. That second case is the whole of "practice next topic": a
+    property of generation, not a separate button or endpoint.
     """
     typed = request.question_request.strip()
     if typed:
         # Their words decide the topic, so there is no per-topic estimate to
-        # read; the course-wide one supplies a level instead.
+        # read; the course-wide one supplies a level instead. Passed beside
+        # the request rather than appended to it -- appending made the
+        # engine's preference read as part of the student's own sentence,
+        # which is exactly the thing it must never outrank.
         difficulty = get_profile(session, course_id, request.student_id).accuracy
         return _Ask(
-            question_request=f"{typed} (write at a {difficulty_bucket(difficulty)} "
-            "difficulty for this student)",
+            question_request=typed,
+            difficulty_word=difficulty_bucket(difficulty),
             required_skill_id=None,
             target_difficulty=difficulty,
         )
@@ -117,14 +130,12 @@ def _build_ask(session: Session, course_id: str, request: GenerateQuestionReques
         # document seeds the first ones, nothing to require attribution to.
         return _Ask(
             question_request="Write a question grounded in this material.",
+            difficulty_word=difficulty_bucket(PRIOR_ACCURACY),
             required_skill_id=None,
             target_difficulty=PRIOR_ACCURACY,
         )
 
-    parts = [
-        f"Write a {difficulty_bucket(topic.target_difficulty)} question on "
-        f"{topic.skill_name}: {topic.skill_description}"
-    ]
+    parts = [f"Write a question on {topic.skill_name}: {topic.skill_description}"]
     if topic.question_forms:
         parts.append(
             "Questions on this topic typically take these shapes: "
@@ -133,6 +144,7 @@ def _build_ask(session: Session, course_id: str, request: GenerateQuestionReques
         )
     return _Ask(
         question_request=" ".join(parts),
+        difficulty_word=difficulty_bucket(topic.target_difficulty),
         required_skill_id=topic.skill_id,
         target_difficulty=topic.target_difficulty,
     )
@@ -153,6 +165,7 @@ async def generate_question(
             course_id=course_id,
             document_id=request.document_id,
             question_request=ask.question_request,
+            difficulty_word=ask.difficulty_word,
             required_skill_id=ask.required_skill_id,
         )
     except DocumentNotFoundError as exc:

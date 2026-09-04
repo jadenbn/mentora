@@ -36,7 +36,7 @@ class _StubWorkflow:
         self._chunk_id = chunk_id
 
     async def run(
-        self, *, chunks, question_request: str, existing_skills=None
+        self, *, chunks, question_request: str, difficulty_word=None, existing_skills=None
     ) -> QuestionPlan:
         assert chunks  # generate handed us grounding context
         # The model names a skill the course doesn't have. This proves two
