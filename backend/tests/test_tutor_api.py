@@ -124,6 +124,12 @@ class TestRequestValidation:
         assert post(client, selection_bounds="not json").status_code == 422
         assert workflow.calls == []
 
+    def test_selection_bounds_reject_coerced_coordinate_strings(self, client, workflow):
+        selection = f.bounds()
+        selection["x"] = "0.1"
+        assert post(client, selection_bounds=json.dumps(selection)).status_code == 422
+        assert workflow.calls == []
+
     def test_selection_bounds_require_an_image(self, client, workflow):
         problem = {
             "id": "problem_1",

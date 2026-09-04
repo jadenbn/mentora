@@ -117,7 +117,7 @@ def _parse_selection_bounds(raw: str | None) -> NormalizedBounds | None:
     if raw is None or not raw.strip():
         return None
     try:
-        return _SELECTION_BOUNDS.validate_python(json.loads(raw))
+        return _SELECTION_BOUNDS.validate_python(json.loads(raw), strict=True)
     except (json.JSONDecodeError, ValidationError, TypeError) as exc:
         raise HTTPException(422, "selection_bounds must be normalized bounds") from exc
 
