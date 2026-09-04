@@ -46,6 +46,8 @@ export interface TutorAnalysisOptions {
   mode: TutorMode;
   courseId: string;
   problem?: ProblemContext;
+  /** What the student asked out loud, when they used the microphone. */
+  transcript?: string;
   signal?: AbortSignal;
   /** Whiteboard supplies the progressive renderer; tests and other callers may render immediately. */
   renderActions?: (
@@ -84,6 +86,7 @@ export async function runTutorAnalysis(
       courseId: options.courseId,
       priorAnnotations: collectPriorAnnotations(editor, bounds),
       problem: options.problem,
+      transcript: options.transcript,
       signal: options.signal,
     });
     const context = {
@@ -102,6 +105,7 @@ export async function runTutorAnalysis(
     canvasImage: capture.blob,
     priorAnnotations: collectPriorAnnotations(editor, capture.bounds),
     problem: options.problem,
+    transcript: options.transcript,
     signal: options.signal,
   });
 

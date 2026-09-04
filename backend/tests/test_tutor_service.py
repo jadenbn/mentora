@@ -67,6 +67,17 @@ class TestWorkflowHandoff:
         await analyze(svc)
         assert stub.last_call["prior_annotations"] == []
 
+    async def test_a_spoken_question_reaches_the_workflow(self):
+        svc, stub = service()
+        await analyze(svc, transcript="why can't I cancel the x?")
+        assert stub.last_call["transcript"] == "why can't I cancel the x?"
+
+    async def test_a_silent_request_carries_no_transcript(self):
+        # Voice is additive: the button-only path must be unchanged by it.
+        svc, stub = service()
+        await analyze(svc)
+        assert stub.last_call["transcript"] is None
+
 
 class TestResponseAssembly:
     async def test_every_interaction_gets_a_server_minted_id(self):

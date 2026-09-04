@@ -20,6 +20,11 @@ bun run test:watch   # watch mode
 | `analyze.test.ts` | `lib/tutor/analyze.ts` — capture → request → render, with only the network faked |
 | `persistence.test.ts` | `lib/canvas/persistence.ts` — key scoping, versioned envelope, guarded storage, debounced autosave |
 | `spaces.test.ts` | `lib/spaces/store.ts` — the space index |
+| `wav.test.ts` | `lib/voice/wav.ts` — the RIFF header the backend sniffs, and PCM conversion |
+| `microphone.test.ts` | `lib/voice/microphone.ts` — permission, stop, cancel, and track release |
+| `voiceCapture.test.ts` | `lib/voice/voiceCapture.ts` — the recording lifecycle and its teardown |
+| `voiceControl.test.ts` | `features/tutor/VoiceControl.tsx` — what each state says out loud |
+| `useVoiceCapture.test.ts` | `lib/voice/useVoiceCapture.ts` — the hook under `StrictMode` effect replay |
 
 ## The coordinate invariant
 
@@ -47,3 +52,23 @@ Two rules prevent that, and both are tested:
 
 A canvas holding only prior feedback therefore has nothing to analyze, and
 `analyze.test.ts` asserts it is refused without a network call.
+
+## The microphone invariant
+
+Voice is an input to the canvas tutor, so its failure modes are about hardware
+rather than tutoring. Two rules carry the weight, and both are tested:
+
+1. **No path leaves a track running.** Stop, cancel, a recorder that fails
+   mid-flight, a permission prompt answered after the student gave up, and
+   unmount all release the `MediaStream`. A live track is a recording indicator
+   the student cannot turn off.
+2. **An abandoned recording never reaches the tutor.** Every async step checks
+   the attempt it belongs to, so a transcript that arrives after a cancel or an
+   unmount is dropped rather than submitted.
+
+`useVoiceCapture.test.ts` is the only test that renders through React, because
+one bug only exists there: Strict Mode replays effects, so a teardown that
+retired the machine permanently left the microphone inert in development while
+every unit test still passed. It stubs the browser APIs rather than the
+module's dependencies, so it fails if the path from the button to
+`getUserMedia` breaks anywhere along it.

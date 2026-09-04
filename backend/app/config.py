@@ -76,3 +76,20 @@ class TutorSettings:
             gemini_thinking_level=thinking_level,
             request_timeout_seconds=float(os.getenv("TUTOR_REQUEST_TIMEOUT_SECONDS") or "45"),
         )
+
+
+@dataclass(frozen=True)
+class TranscriptionSettings:
+    """Voice reuses the tutor's credential; only the model and budget differ."""
+
+    gemini_api_key: str
+    gemini_model: str
+    request_timeout_seconds: float
+
+    @classmethod
+    def from_environment(cls) -> "TranscriptionSettings":
+        return cls(
+            gemini_api_key=os.getenv("GEMINI_API_KEY") or "",
+            gemini_model=os.getenv("GEMINI_TRANSCRIPTION_MODEL") or "gemini-3.5-transcribe",
+            request_timeout_seconds=float(os.getenv("VOICE_REQUEST_TIMEOUT_SECONDS") or "30"),
+        )

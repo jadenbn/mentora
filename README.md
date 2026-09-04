@@ -1,9 +1,10 @@
 # Mentora
 
 Mentora is a persistent AI whiteboard tutor. A student works by hand on a
-tldraw canvas, then asks for Mark, Hint, Explain, or I'm Stuck. The backend
-sends the canvas to a multimodal Gemini agent and returns validated spatial
-actions for the whiteboard renderer to draw.
+tldraw canvas, then asks for Mark, Hint, Explain, or I'm Stuck — or asks the
+question out loud. The backend sends the canvas, and any spoken question, to a
+multimodal Gemini agent and returns validated spatial actions for the
+whiteboard renderer to draw.
 
 ## Repository
 
@@ -49,8 +50,10 @@ cp .env.example .env.local        # already points at localhost:8000
 bun dev
 ```
 
-Then open `localhost:3000` → My courses → a course → New space → draw → tap a
-tutor button.
+Then open `localhost:3000` → My courses → a course → New space → draw → open
+the tutor control on the right edge and pick an action, or the microphone
+beside them. A spoken question is transcribed and shown to you first: edit
+anything it misheard, then tap Ask to send it to the tutor.
 
 ### From a phone or tablet on the same network
 
@@ -77,6 +80,21 @@ a public address, to the internet. There is no authentication and every
 request spends Gemini quota, so only do this on a trusted network and stop the
 server afterwards.
 
+#### Voice needs HTTPS there
+
+The whiteboard and the tutor buttons work over `http://YOUR-IP:3000`, but the
+microphone will not. `getUserMedia` is only available in a secure context, and
+a plain-HTTP LAN address is not one — browsers exempt `localhost` only. On the
+tablet the microphone button reports "Voice needs a secure (https) connection"
+rather than recording.
+
+To exercise voice on a real device, serve the frontend over HTTPS from a URL
+the tablet trusts: a tunnel that terminates TLS for you, a deployed staging
+build, or a locally-issued certificate whose CA is installed on the tablet.
+Point `NEXT_PUBLIC_API_BASE_URL` at an HTTPS backend as well — a secure page
+cannot call a plain-HTTP API. Do not disable the browser's secure-context
+requirement to get around this.
+
 ## The tutor endpoint
 
 `POST /api/tutor/analyze`, multipart form data:
@@ -86,15 +104,24 @@ course_id          retrieval scope (carried; retrieval is deferred)
 mode               mark | hint | explain | stuck
 canvas_image       PNG, JPEG, or WebP; maximum 10 MB
 prior_annotations  JSON array of normalized bounds; defaults to []
+problem_context    optional generated problem, as JSON
+transcript         optional spoken question; maximum 1000 characters
 ```
+
+Speech reaches it through `POST /api/voice/transcribe`, which takes one WAV
+recording (16 kHz mono, maximum 5 MiB) and returns the words. It uses a
+dedicated speech-to-text model, `GEMINI_TRANSCRIPTION_MODEL` (default
+`gemini-3.5-transcribe`), and the recording it uploads is deleted again within
+the request. The transcript goes to the student for confirmation, not straight
+to the tutor. See `docs/TUTOR_AGENT.md`.
 
 Full contract in `docs/TUTOR_AGENT.md`.
 
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest -q -m "not live"    # 101, no provider calls
-cd frontend && bun run test                                    # 166
+cd backend  && .venv/bin/python -m pytest -q -m "not live"    # 226, no provider calls
+cd frontend && bun run test                                    # 299
 ```
 
 The opt-in live check spends one real Gemini request:

@@ -217,8 +217,8 @@ export function useWhiteboardSession({
     }
   }, [feedbackHistory, renderStoredLayer, storeFeedbackHistory]);
 
-  const handleAnalyze = useCallback(
-    async (mode: TutorMode) => {
+  const runAnalysis = useCallback(
+    async (mode: TutorMode, transcript?: string) => {
       const current = editor.current;
       if (!current || busyMode !== null) {
         return;
@@ -234,16 +234,11 @@ export function useWhiteboardSession({
           mode,
           courseId,
           problem,
+          transcript,
           renderActions: renderTutorActions,
           onResponse: (response, context, snapshot) =>
             handleTutorResponse(mode, response, context, snapshot),
         });
-      } catch (caught) {
-        setError(
-          caught instanceof EmptyCanvasError || caught instanceof Error
-            ? caught.message
-            : "The tutor request failed.",
-        );
       } finally {
         animation.current = null;
         setIsThinking(false);
@@ -251,6 +246,19 @@ export function useWhiteboardSession({
       }
     },
     [busyMode, courseId, handleTutorResponse, problem, renderTutorActions],
+  );
+
+  const handleAnalyze = useCallback(
+    (mode: TutorMode) => {
+      void runAnalysis(mode).catch((caught) => {
+        setError(
+          caught instanceof EmptyCanvasError || caught instanceof Error
+            ? caught.message
+            : "The tutor request failed.",
+        );
+      });
+    },
+    [runAnalysis],
   );
 
   useEffect(() => {
@@ -335,5 +343,6 @@ export function useWhiteboardSession({
     hasStudentCanvasWork,
     isThinking,
     justSaved,
+    runAnalysis,
   };
 }
