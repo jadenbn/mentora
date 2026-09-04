@@ -33,9 +33,10 @@ class TutorWorkflow(Protocol):
         canvas_image: bytes | None,
         canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
+        selection_bounds: NormalizedBounds | None,
         problem: ProblemContext | None,
         course_context: list[GroundingChunk],
-        transcript: str | None,
+        student_question: str | None,
     ) -> TutorPlan: ...
 
 
@@ -63,8 +64,9 @@ class TutorService:
         canvas_image: bytes | None,
         canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
+        selection_bounds: NormalizedBounds | None = None,
         problem_context: ProblemContext | None = None,
-        transcript: str | None = None,
+        student_question: str | None = None,
     ) -> TutorResponse:
         problem = problem_context
         course_context: list[GroundingChunk] = []
@@ -86,11 +88,12 @@ class TutorService:
             canvas_image=canvas_image,
             canvas_mime_type=canvas_mime_type,
             prior_annotations=prior_annotations,
+            selection_bounds=selection_bounds,
             problem=problem,
             course_context=course_context,
-            transcript=transcript,
+            student_question=student_question,
         )
-        safe = apply_safety_policy(plan)
+        safe = apply_safety_policy(plan, allow_canvas_actions=canvas_image is not None)
         return TutorResponse(
             interaction_id=uuid4().hex,
             **safe.model_dump(exclude={"uncertainties"}),

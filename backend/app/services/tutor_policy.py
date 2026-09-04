@@ -4,9 +4,8 @@ Model output passes through here before it reaches a canvas. Pure by design:
 a plan in, a plan out, no request context and no I/O, so the rules are cheap
 to state and impossible to route around.
 
-Two rules, at the two ends of the confidence range. The tutor must not grade
-work it cannot read, and it must not manufacture corrections for work that is
-already finished.
+The tutor must not grade work it cannot read, manufacture corrections for work
+that is already finished, or draw against a request that had no image frame.
 """
 
 from __future__ import annotations
@@ -30,7 +29,9 @@ def _clarification_summary(uncertainties: list[Uncertainty]) -> str:
     return f"{uncertainties[0].description} Could you rewrite it?"[:240]
 
 
-def apply_safety_policy(plan: TutorPlan) -> TutorPlan:
+def apply_safety_policy(
+    plan: TutorPlan, *, allow_canvas_actions: bool = True
+) -> TutorPlan:
     """Return a plan that is safe to render."""
     actions = list(plan.canvas_actions)
     status = plan.status
@@ -52,6 +53,9 @@ def apply_safety_policy(plan: TutorPlan) -> TutorPlan:
         checks = [a for a in actions if a.type == "check"][:1]
         actions = checks
         summary = summary or _COMPLETE
+
+    if not allow_canvas_actions:
+        actions = []
 
     return plan.model_copy(
         update={

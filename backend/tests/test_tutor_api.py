@@ -83,7 +83,7 @@ class TestRequestValidation:
     def test_a_missing_image_is_rejected(self, client):
         assert post(client, image=None).status_code == 422
 
-    def test_a_problem_only_stuck_request_does_not_need_an_image(self, client, workflow):
+    def test_a_problem_only_request_does_not_need_an_image(self, client, workflow):
         problem = {
             "id": "problem_1",
             "course_id": "course_demo",
@@ -91,12 +91,13 @@ class TestRequestValidation:
             "source": "generated",
             "prompt": "Solve $x=1$.",
         }
-        response = post(client, image=None, mode="stuck", problem_context=problem)
+        response = post(client, image=None, mode="hint", problem_context=problem)
         assert response.status_code == 200
         assert workflow.last_call["canvas_image"] is None
         assert workflow.last_call["problem"].prompt == problem["prompt"]
 
-    def test_a_problem_only_non_stuck_request_still_needs_an_image(self, client):
+    @pytest.mark.parametrize("mode", ["mark", "hint", "explain", "stuck"])
+    def test_every_mode_accepts_problem_context_without_an_image(self, client, mode):
         problem = {
             "id": "problem_1",
             "course_id": "course_demo",
@@ -104,7 +105,7 @@ class TestRequestValidation:
             "source": "generated",
             "prompt": "Solve $x=1$.",
         }
-        assert post(client, image=None, mode="hint", problem_context=problem).status_code == 422
+        assert post(client, image=None, mode=mode, problem_context=problem).status_code == 200
 
     def test_malformed_prior_annotations_are_rejected(self, client):
         assert post(client, prior_annotations="not json").status_code == 422
@@ -113,21 +114,65 @@ class TestRequestValidation:
         off_canvas = json.dumps([{"x": 0.9, "y": 0.1, "width": 0.5, "height": 0.1}])
         assert post(client, prior_annotations=off_canvas).status_code == 422
 
+    def test_selection_bounds_are_parsed_and_forwarded(self, client, workflow):
+        selection = f.bounds(x=0.1, y=0.2, width=0.3, height=0.4)
+        response = post(client, selection_bounds=json.dumps(selection))
+        assert response.status_code == 200
+        assert workflow.last_call["selection_bounds"].model_dump() == selection
 
-class TestSpokenContext:
-    """Voice is an optional extra input, never a second request path."""
+    def test_malformed_selection_bounds_are_rejected(self, client, workflow):
+        assert post(client, selection_bounds="not json").status_code == 422
+        assert workflow.calls == []
+
+    def test_selection_bounds_require_an_image(self, client, workflow):
+        problem = {
+            "id": "problem_1",
+            "course_id": "course_demo",
+            "document_id": "document_1",
+            "source": "generated",
+            "prompt": "Solve $x=1$.",
+        }
+        response = post(
+            client,
+            image=None,
+            problem_context=problem,
+            selection_bounds=json.dumps(f.bounds()),
+        )
+        assert response.status_code == 422
+        assert workflow.calls == []
+
+    def test_image_less_requests_drop_prior_annotation_coordinates(self, client, workflow):
+        problem = {
+            "id": "problem_1",
+            "course_id": "course_demo",
+            "document_id": "document_1",
+            "source": "generated",
+            "prompt": "Solve $x=1$.",
+        }
+        response = post(
+            client,
+            image=None,
+            problem_context=problem,
+            prior_annotations=json.dumps([f.bounds()]),
+        )
+        assert response.status_code == 200
+        assert workflow.last_call["prior_annotations"] == []
+
+
+class TestStudentQuestionContext:
+    """Typed and transcribed questions share the existing request field."""
 
     def test_a_request_without_a_transcript_still_works(self, client, workflow):
         assert post(client).status_code == 200
-        assert workflow.last_call["transcript"] is None
+        assert workflow.last_call["student_question"] is None
 
     def test_a_spoken_question_reaches_the_workflow(self, client, workflow):
         post(client, transcript="why can't I cancel the x here?")
-        assert workflow.last_call["transcript"] == "why can't I cancel the x here?"
+        assert workflow.last_call["student_question"] == "why can't I cancel the x here?"
 
     def test_a_spoken_question_is_normalized_before_it_is_forwarded(self, client, workflow):
         post(client, transcript="  why   is\n this wrong? ")
-        assert workflow.last_call["transcript"] == "why is this wrong?"
+        assert workflow.last_call["student_question"] == "why is this wrong?"
 
     @pytest.mark.parametrize("blank", ["   ", "\n\t "])
     def test_a_transcript_with_no_words_in_it_is_rejected(self, client, workflow, blank):
@@ -142,7 +187,7 @@ class TestSpokenContext:
         # is the one blank the route cannot see. Degrading to a plain analysis
         # is the safe reading of it.
         assert post(client, transcript="").status_code == 200
-        assert workflow.last_call["transcript"] is None
+        assert workflow.last_call["student_question"] is None
 
     def test_an_oversized_transcript_is_rejected_before_it_reaches_a_provider(
         self, client, workflow
@@ -152,7 +197,7 @@ class TestSpokenContext:
 
     def test_a_transcript_at_the_cap_is_accepted(self, client, workflow):
         assert post(client, transcript="a" * MAX_TRANSCRIPT_CHARS).status_code == 200
-        assert len(workflow.last_call["transcript"]) == MAX_TRANSCRIPT_CHARS
+        assert len(workflow.last_call["student_question"]) == MAX_TRANSCRIPT_CHARS
 
 
 class TestImageHandling:

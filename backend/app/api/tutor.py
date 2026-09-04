@@ -33,6 +33,7 @@ _SIGNATURES: tuple[tuple[bytes, str], ...] = (
 )
 
 _PRIOR_ANNOTATIONS = TypeAdapter(list[NormalizedBounds])
+_SELECTION_BOUNDS = TypeAdapter(NormalizedBounds)
 _PROBLEM_CONTEXT = TypeAdapter(ProblemContext)
 
 
@@ -112,8 +113,17 @@ def _parse_problem_context(raw: str | None, course_id: str) -> ProblemContext | 
     return problem
 
 
-def _parse_transcript(raw: str | None) -> str | None:
-    """A spoken instruction, or None when voice was not used.
+def _parse_selection_bounds(raw: str | None) -> NormalizedBounds | None:
+    if raw is None or not raw.strip():
+        return None
+    try:
+        return _SELECTION_BOUNDS.validate_python(json.loads(raw))
+    except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+        raise HTTPException(422, "selection_bounds must be normalized bounds") from exc
+
+
+def _parse_student_question(raw: str | None) -> str | None:
+    """A typed or transcribed instruction, or None when Ask AI was not used.
 
     Absent is the ordinary case and stays silent — including an empty form
     value, which FastAPI cannot tell apart from an omitted one. A field
@@ -137,19 +147,26 @@ async def analyze(
     canvas_image: Annotated[UploadFile | None, File()] = None,
     prior_annotations: Annotated[str, Form()] = "[]",
     problem_context: Annotated[str | None, Form()] = None,
+    selection_bounds: Annotated[str | None, Form()] = None,
     transcript: Annotated[str | None, Form()] = None,
     service: TutorService = Depends(get_tutor_service),
 ) -> TutorResponse:
     problem = _parse_problem_context(problem_context, course_id)
-    spoken = _parse_transcript(transcript)
+    selection = _parse_selection_bounds(selection_bounds)
+    question = _parse_student_question(transcript)
+    prior = _parse_prior_annotations(prior_annotations)
     if canvas_image is None:
-        if mode != TutorMode.stuck or problem is None:
+        if problem is None:
             raise HTTPException(
                 422,
-                "canvas_image is required unless a stuck request includes problem_context",
+                "canvas_image or problem_context is required",
             )
+        if selection is not None:
+            raise HTTPException(422, "selection_bounds requires canvas_image")
         image = None
         mime_type = None
+        # Coordinates have no meaning without the image frame they describe.
+        prior = []
     else:
         image, mime_type = await _read_image(canvas_image)
     try:
@@ -158,9 +175,10 @@ async def analyze(
             mode=mode,
             canvas_image=image,
             canvas_mime_type=mime_type,
-            prior_annotations=_parse_prior_annotations(prior_annotations),
+            prior_annotations=prior,
+            selection_bounds=selection,
             problem_context=problem,
-            transcript=spoken,
+            student_question=question,
         )
     except TutorWorkflowTimeout as exc:
         raise HTTPException(504, "The tutor took too long to respond") from exc

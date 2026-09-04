@@ -60,6 +60,11 @@ class TestConfidentWork:
             result = apply_safety_policy(f.plan(status=status, actions=[f.check_action()]))
             assert f.action_types(result.canvas_actions) == ["check"], status
 
+    def test_image_less_feedback_has_no_spatial_actions(self):
+        plan = f.plan(actions=[f.circle_action(), f.highlight_action()])
+        result = apply_safety_policy(plan, allow_canvas_actions=False)
+        assert result.canvas_actions == []
+
 
 class TestNamedUncertainty:
     """A named symbol beats a shrug: the tutor asks about the step it could

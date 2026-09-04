@@ -67,16 +67,21 @@ class TestWorkflowHandoff:
         await analyze(svc)
         assert stub.last_call["prior_annotations"] == []
 
-    async def test_a_spoken_question_reaches_the_workflow(self):
+    async def test_a_student_question_reaches_the_workflow(self):
         svc, stub = service()
-        await analyze(svc, transcript="why can't I cancel the x?")
-        assert stub.last_call["transcript"] == "why can't I cancel the x?"
+        await analyze(svc, student_question="why can't I cancel the x?")
+        assert stub.last_call["student_question"] == "why can't I cancel the x?"
 
-    async def test_a_silent_request_carries_no_transcript(self):
-        # Voice is additive: the button-only path must be unchanged by it.
+    async def test_a_button_request_carries_no_student_question(self):
         svc, stub = service()
         await analyze(svc)
-        assert stub.last_call["transcript"] is None
+        assert stub.last_call["student_question"] is None
+
+    async def test_selection_bounds_reach_the_workflow(self):
+        svc, stub = service()
+        selection = f.normalized_bounds(x=0.1, y=0.2)
+        await analyze(svc, selection_bounds=selection)
+        assert stub.last_call["selection_bounds"] == selection
 
 
 class TestResponseAssembly:
@@ -101,6 +106,16 @@ class TestResponseAssembly:
         svc, _ = service(f.StubWorkflow(result=plan))
         response = await analyze(svc)
         assert "check" not in f.action_types(response.canvas_actions)
+
+    async def test_an_image_less_response_cannot_draw_canvas_actions(self):
+        plan = f.plan(actions=[f.circle_action(), f.highlight_action()])
+        svc, _ = service(f.StubWorkflow(result=plan))
+        response = await analyze(
+            svc,
+            canvas_image=None,
+            canvas_mime_type=None,
+        )
+        assert response.canvas_actions == []
 
 
 class TestFailurePropagation:

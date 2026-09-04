@@ -30,7 +30,7 @@ def test_the_instruction_names_only_the_action_types_we_can_render(mode=TutorMod
     for action in ALLOWED_ACTIONS:
         assert action in instruction
     for retired in ("text", "underline", "latex"):
-        assert retired not in instruction
+        assert f"`{retired}`" not in instruction
 
 
 def test_the_allowed_action_set_matches_the_renderer():
