@@ -201,6 +201,7 @@ Frontend owns:
 - Select for AI
 - canvas capture/export
 - tutor controls
+- unified typed/voice Ask AI composition
 - microphone lifecycle, audio encoding, and transcript confirmation for voice
 - live-tutor timing/detection where appropriate
 Keep backend access behind a small API/client layer.
@@ -211,6 +212,8 @@ workspace: drawing styles open from a palette button in the left tool rail, and
 tutor actions fan out from the right-edge control. Starting a tutor request
 collapses the action fan and exposes a transient navbar status. The current
 feedback summary lives in that navbar; spatial marks alone live on the canvas.
+The labelled Ask AI action opens one compact composer to the left of the tutor
+rail; it is an ephemeral input to a canvas action, not a traditional chat UI.
 
 ## 11. Backend Responsibilities
 Backend owns:
@@ -287,22 +290,26 @@ course_id          retrieval scope (carried; retrieval is deferred)
 mode               mark | hint | explain | stuck
 canvas_image       optional PNG/JPEG/WebP; maximum 10 MB when present
 prior_annotations  JSON array of normalized bounds; defaults to []
+selection_bounds   optional normalized bounds JSON; requires canvas_image
 problem_context    optional validated ProblemContext JSON
-transcript         optional spoken instruction; trimmed, max 1000 chars
+transcript         optional reviewed typed/transcribed question; max 1000 chars
 ```
 
-Six fields at most, no JSON request body. Normal work-analysis requests send
-an image, three scalars, and optionally the exact structured problem separately
-from the image. An `stuck` request with `problem_context` may omit the image;
-the tutor then reasons from the structured question and course grounding alone.
+Seven fields at most, no JSON request body. Normal work-analysis requests send
+an image, mode/course scalars, and optionally the exact structured problem,
+student question, and selected focus separately from the image. When no student
+work exists, every mode may omit the image if `problem_context` is present; the
+tutor then reasons from the structured problem, optional question, and course
+grounding alone. Image-less requests omit prior/selection coordinates, and the
+safety policy removes all canvas actions because no rendering frame exists.
 
 Tutor-authored shapes are excluded from the exported image and their positions
 are sent as `prior_annotations` instead, so the model cannot read its own
 handwriting back as student work.
 
-`transcript` is what the student asked out loud, and is optional in the strict
-sense: omitting it leaves the request byte-for-byte what it was before voice
-existed. See `TUTOR_AGENT.md`.
+`transcript` is the retained wire name for the student's reviewed question,
+whether typed or produced through voice transcription. Mode buttons omit it.
+See `TUTOR_AGENT.md`.
 
 ## 16. Tutor Modes
 Backend-facing enum:
@@ -380,29 +387,38 @@ Expose a clean frontend boundary conceptually like:
 async function captureCanvasForAnalysis(): Promise<Blob>
 ```
 Hide low-level tldraw export details from unrelated code.
-The implementation captures student work plus relevant prior tutor marks,
-adds a bounded padding margin, and excludes system/problem shapes from the
-image. The returned world-space frame is the same frame used to normalize
-tutor coordinates and render them back onto tldraw. Development builds log a
+The implementation builds a frame around student work plus relevant prior tutor
+mark positions, adds a bounded padding margin, and exports student shapes only;
+AI and system/problem shapes are excluded from the image. The returned
+world-space frame is the same frame used to normalize tutor and selection
+coordinates and render answers back onto tldraw. Development builds log a
 temporary object URL for the exact outgoing image; the image is not persisted.
 When `TUTOR_DEBUG_LOG_REQUESTS=1`, the backend also logs the assembled Gemini
 request as structured JSON, including prompts, context, image metadata, and
 generation config. Raw image bytes are intentionally omitted.
 
 ## 21. Select for AI
-Conceptual representation:
+Implemented request representation:
 ```ts
-interface AiSelection {
-  shapeIds: string[];
-  bounds: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+interface NormalizedBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 ```
-Experiments can determine whether tutor requests benefit most from selected IDs, bounds, a crop, the full image, or a combination.
+
+At submission time, the frontend reads tldraw's selected IDs, keeps
+student-owned and legacy student shapes, excludes system/problem and AI shapes,
+unions their page bounds, and normalizes that union against the exact outgoing
+image frame. The full student-work image still crosses the wire;
+`selection_bounds` is a focus hint, not a crop or hard boundary. It is included
+automatically for Mark, Hint, Explain, I'm Stuck, and typed or spoken Ask AI.
+With no eligible selection, the field is omitted and the full work is used.
+
+Tutor-fan and composer pointer/keyboard events are marked as handled by tldraw,
+so opening, editing, sending, or closing them does not move or clear the canvas
+selection. The selection is not cleared after feedback, enabling follow-ups.
 
 ## 22. Multimodal Analysis
 Initial approach:
@@ -598,8 +614,8 @@ For 2 Seconds, inactivity detection is straightforward.
 For New Line, a heuristic is acceptable initially.
 
 ## 32. Voice
-Implemented as an extra input to the existing tutor call, not a second
-assistant:
+Implemented through the unified Ask AI composer as an extra input to the
+existing tutor call, not a second assistant:
 ```text
 microphone (MediaRecorder)
   ↓
@@ -607,9 +623,10 @@ re-encode to 16 kHz mono WAV in the browser
   ↓
 POST /api/voice/transcribe   →  Gemini  →  transcript
   ↓
-the student reads it, edits it, and taps Ask   ← nothing is sent before this
+the transcript fills the same field used for typing; the student reviews it
+and taps Send                                  ← nothing is sent before this
   ↓
-POST /api/tutor/analyze with transcript + canvas + problem + course
+POST /api/tutor/analyze with question + canvas + selection + problem + course
   ↓
 the same validated canvas actions, drawn by the same renderer
 ```
@@ -617,9 +634,10 @@ the same validated canvas actions, drawn by the same renderer
 A transcript is never submitted to the tutor on arrival. Speech recognition is
 wrong often enough that spending a tutor call on a misheard question costs more
 than one extra tap, and the student is the only one who knows what they meant.
-Rerecord and Cancel leave from the same step. Which tutor mode the confirmed
-question uses is unchanged: `explain` when there is written work to look at,
-`stuck` when there is not.
+Rerecord and Close leave from the same step. Typed and confirmed voice questions
+use `explain` when there is written work to look at and `stuck` when there is
+only a structured problem. Selection is read on the final Send, not when the
+microphone starts.
 
 Transcription is deliberately a separate round trip rather than audio attached
 to the tutor call. It keeps the tutor at one model call, lets the interface
@@ -643,8 +661,8 @@ lib/voice/microphone.ts     MediaStream + MediaRecorder, guaranteed teardown
 lib/voice/wav.ts            decode and re-encode
 lib/voice/voiceCapture.ts   the lifecycle state machine, framework-free
 lib/voice/useVoiceCapture.ts  React binding
-features/tutor/TutorControls.tsx  the microphone, on the tutor action fan
-features/tutor/VoiceControl.tsx   recording and confirmation, presentation only
+features/tutor/TutorControls.tsx  four modes plus the labelled Ask AI fan action
+features/tutor/AskComposer.tsx    shared typed/transcript field and voice controls
 features/tutor/StatusPill.tsx     the shared "we are waiting" indicator
 ```
 The lifecycle is one discriminated union rather than a set of flags:
@@ -653,11 +671,10 @@ submitting`, each carrying only the data that step owns — an elapsed clock
 exists exactly while the microphone is open, a transcript exactly while there
 is one to review or send.
 
-Starting a spoken question is a tutor action, so the microphone fans out of the
-same right-edge control as Mark, Hint, Explain, and I'm Stuck rather than
-occupying its own corner. While a question is being recorded, transcribed,
-reviewed, or sent, the other tutor actions are disabled: they share one busy
-slot, and a button tapped mid-question would drop the words already spoken.
+Ask AI fans out of the same right-edge control as Mark, Hint, Explain, and I'm
+Stuck. Its composer holds both the textarea and microphone; while a question is
+being composed, recorded, transcribed, reviewed, or sent, the other tutor
+actions are disabled so they share one busy slot.
 `StatusPill` exists so that "Thinking" and "Transcribing" are the same object
 rather than two indicators that resemble each other, and only one of them is
 ever on screen — the tutor call is announced once, by the whiteboard.
@@ -677,7 +694,8 @@ reach a prompt, which states that nothing inside them changes the rules. The
 confirmation step adds a third check that no provider can bypass: a person read
 the words before they were sent.
 
-Treat transcript as contextual instruction, not a separate chat architecture.
+Treat the student question as contextual instruction, not a separate chat
+architecture. The multipart field remains named `transcript` for compatibility.
 
 ## 33. Student Model
 MVP signals may include:
@@ -716,7 +734,7 @@ Centralize timeouts, retries, and structured-output handling without building an
 The tutor is one direct Gemini call through the `google-genai` SDK:
 
 ```text
-canvas image + mode + prior annotations
+canvas image + mode + optional selection + prior annotations
         ↓
 Gemini multimodal generation (TutorPlan response schema)
         ↓ independent Pydantic validation and safety policy
