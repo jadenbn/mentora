@@ -21,7 +21,7 @@ import {
   positionVerticalPageCamera,
 } from "@/lib/canvas/verticalPage";
 import { ensureProblemShape } from "@/lib/problems/renderProblem";
-import { touchSpace } from "@/lib/spaces/store";
+import { updateSpace } from "@/lib/api/api";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import {
   appendFeedbackLayer,
@@ -40,6 +40,18 @@ interface WhiteboardSessionOptions {
   spaceId: string;
   courseId: string;
   problem?: ProblemContext;
+}
+
+/**
+ * Record that a space was just worked on, so it sorts to the front.
+ *
+ * Fire-and-forget and error-swallowing on purpose: this runs inside the
+ * debounced canvas-autosave callback, which must not be coupled to network
+ * latency, and a failed "touch" is not worth surfacing to the student — same
+ * "must not break the canvas" philosophy as lib/canvas/persistence.
+ */
+function touchSpace(courseId: string, spaceId: string): void {
+  void updateSpace(courseId, spaceId).catch(() => {});
 }
 
 export function useWhiteboardSession({
@@ -198,13 +210,13 @@ export function useWhiteboardSession({
       if (returningToLive) {
         disposeAutosave.current = startAutosave(currentEditor, spaceId, {
           onSave: () => {
-            touchSpace(spaceId);
+            touchSpace(courseId, spaceId);
             flashSaved();
           },
         });
       }
     },
-    [feedbackHistory, flashSaved, renderStoredLayer, spaceId, storeFeedbackHistory],
+    [courseId, feedbackHistory, flashSaved, renderStoredLayer, spaceId, storeFeedbackHistory],
   );
 
   const handleToggleFeedback = useCallback(() => {
@@ -322,13 +334,13 @@ export function useWhiteboardSession({
         disposeAutosave.current?.();
         disposeAutosave.current = startAutosave(mountedEditor, spaceId, {
           onSave: () => {
-            touchSpace(spaceId);
+            touchSpace(courseId, spaceId);
             flashSaved();
           },
         });
       }
     },
-    [flashSaved, problem, renderStoredLayer, spaceId],
+    [courseId, flashSaved, problem, renderStoredLayer, spaceId],
   );
 
   return {

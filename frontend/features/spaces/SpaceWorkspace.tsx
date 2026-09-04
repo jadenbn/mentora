@@ -1,30 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { Whiteboard } from "@/features/whiteboard/Whiteboard";
-import { getCourse } from "@/lib/spaces/courses";
-import {
-  getServerSpacesSnapshot,
-  getSpacesSnapshot,
-  renameSpace,
-  subscribeToSpaces,
-} from "@/lib/spaces/store";
-import { useIsClient } from "@/lib/useIsClient";
+import { getCourseById, getSpaceById, updateSpace } from "@/lib/api/api";
+import type { Course, Space } from "@/types/domain";
 
 export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
-  const hydrated = useIsClient();
   const [feedbackHost, setFeedbackHost] = useState<HTMLDivElement | null>(null);
   const [thinkingHost, setThinkingHost] = useState<HTMLDivElement | null>(null);
-  // Read the index directly so a rename elsewhere is reflected here.
-  const all = useSyncExternalStore(
-    subscribeToSpaces,
-    getSpacesSnapshot,
-    getServerSpacesSnapshot,
-  );
-  const space = all.find((candidate) => candidate.id === spaceId);
+  const [space, setSpace] = useState<Space | null | undefined>(undefined);
+  const [course, setCourse] = useState<Course | null>(null);
 
-  if (!hydrated) {
+  useEffect(() => {
+    let active = true;
+    void getSpaceById(spaceId)
+      .then((loaded) => {
+        if (active) setSpace(loaded);
+      })
+      .catch(() => {
+        if (active) setSpace(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [spaceId]);
+
+  useEffect(() => {
+    if (!space) return;
+    let active = true;
+    void getCourseById(space.course_id)
+      .then((loaded) => {
+        if (active) setCourse(loaded);
+      })
+      .catch(() => {
+        // The course name is a nice-to-have in the header; failing to load
+        // it should not block the workspace.
+      });
+    return () => {
+      active = false;
+    };
+  }, [space]);
+
+  // undefined: still loading. null: fetched and not found.
+  if (space === undefined) {
     return (
       <main className="grid h-dvh place-items-center text-sm text-slate-500">
         Opening space…
@@ -38,8 +57,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
         <div>
           <h1 className="text-2xl font-bold text-slate-950">Space not found</h1>
           <p className="mt-2 text-slate-600">
-            This space does not exist on this device. Spaces are stored locally
-            for now, so they do not follow you between browsers.
+            This space does not exist, or it may have been deleted.
           </p>
           <Link
             className="mt-6 inline-block rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white"
@@ -52,13 +70,15 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
     );
   }
 
-  const course = getCourse(space.courseId);
-
   function handleRename() {
     const next = prompt("Rename space", space!.title);
-    if (next && next.trim()) {
-      renameSpace(space!.id, next);
-    }
+    const trimmed = next?.trim();
+    if (!trimmed) return;
+    void updateSpace(space!.course_id, space!.id, { title: trimmed })
+      .then((updated) => setSpace(updated))
+      .catch(() => {
+        // A failed rename is surfaced by the title simply staying the same.
+      });
   }
 
   return (
@@ -67,7 +87,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
         <div className="mentora-workspace-info pointer-events-auto absolute bottom-4 left-3 min-w-0 sm:bottom-5 sm:left-5">
           <Link
             className="text-sm font-semibold text-blue-700"
-            href={`/courses/${space.courseId}`}
+            href={`/courses/${space.course_id}`}
           >
             ← {course?.name ?? "Course"}
           </Link>
@@ -87,7 +107,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
       </header>
       <section className="relative h-full min-h-0" aria-label="Whiteboard canvas">
         <Whiteboard
-          courseId={space.courseId}
+          courseId={space.course_id}
           feedbackHost={feedbackHost}
           thinkingHost={thinkingHost}
           problem={space.problem}
