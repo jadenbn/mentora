@@ -12,17 +12,14 @@ const MODE_ACTIONS: { mode: TutorMode; label: string }[] = [
   { mode: "stuck", label: "I’m Stuck" },
 ];
 
-/**
- * The arc, one entry per item that fans out of the chevron: the four tutor
- * modes, then the microphone. Asking out loud is another way to start a tutor
- * request, so it belongs on the same arc rather than in its own corner.
- */
+/** The original four-button arc, kept independent of the microphone control. */
 const FAN_POSITIONS = [
-  { x: -58, y: -90 },
-  { x: -106, y: -46 },
-  { x: -120, y: 0 },
-  { x: -106, y: 46 },
-  { x: -58, y: 90 },
+  { x: -76, y: -78 },
+  { x: -128, y: -28 },
+  { x: -128, y: 28 },
+  { x: -76, y: 78 },
+  // The microphone sits directly left of the chevron/X trigger.
+  { x: -58, y: 0 },
 ];
 
 const VOICE_INDEX = MODE_ACTIONS.length;

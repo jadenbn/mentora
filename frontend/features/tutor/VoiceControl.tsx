@@ -6,9 +6,8 @@ import { StatusPill } from "@/features/tutor/StatusPill";
 import type { VoicePhase } from "@/lib/voice/voiceCapture";
 import { MAX_TRANSCRIPT_CHARS } from "@/types/voice";
 
-/** Every waiting state says what it is in words, never in colour alone. */
+/** Every visible waiting state says what it is in words, never in colour alone. */
 const STATUS_LABEL: Partial<Record<VoicePhase["status"], string>> = {
-  requesting: "Waiting for microphone permission",
   recording: "Recording",
   stopping: "Finishing the recording",
   transcribing: "Transcribing",
@@ -84,7 +83,14 @@ export function VoiceControl({
       : null;
 
   return (
-    <div className="pointer-events-none absolute bottom-4 right-4 z-40 flex w-80 max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
+    <>
+      {phase.status === "transcribing" && label ? (
+        <div className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2">
+          <StatusPill animated label={label} />
+        </div>
+      ) : null}
+
+      <div className="pointer-events-none absolute bottom-4 left-1/2 z-40 flex w-80 max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-2 p-3">
       {error ? (
         <p
           className="rounded-2xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 shadow-sm"
@@ -94,11 +100,13 @@ export function VoiceControl({
         </p>
       ) : null}
 
-      {label ? (
+      {label && phase.status !== "transcribing" ? (
         <StatusPill
           animated={phase.status !== "recording"}
           label={
-            phase.status === "recording" ? `${label} ${formatElapsed(elapsed)}` : label
+            phase.status === "recording"
+              ? `${label} ${formatElapsed(elapsed)}`
+              : label
           }
           leading={
             phase.status === "recording" ? (
@@ -129,16 +137,15 @@ export function VoiceControl({
             rows={3}
             value={question}
           />
-          <p className="mt-1 text-[11px] text-slate-500">
-            Edit anything the tutor misheard, then ask.
-          </p>
         </div>
       ) : null}
 
       <div className="flex items-center gap-2">
         {cancellable ? (
           <button
-            aria-label={confirming ? "Discard this question" : "Cancel recording"}
+            aria-label={
+              confirming ? "Discard this question" : "Cancel recording"
+            }
             className="pointer-events-auto flex h-10 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-md hover:cursor-grab hover:bg-slate-50 hover:text-slate-900"
             onClick={onCancel}
             type="button"
@@ -156,7 +163,11 @@ export function VoiceControl({
               onClick={onRerecord}
               type="button"
             >
-              <RotateCcw aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
+              <RotateCcw
+                aria-hidden="true"
+                className="size-3.5"
+                strokeWidth={2.5}
+              />
               Rerecord
             </button>
             <button
@@ -183,6 +194,7 @@ export function VoiceControl({
           </button>
         ) : null}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

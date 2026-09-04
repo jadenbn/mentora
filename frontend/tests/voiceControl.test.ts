@@ -64,7 +64,12 @@ describe("recording", () => {
 
 describe("the states between recording and a transcript", () => {
   it("names what it is doing while transcribing", () => {
-    expect(render({ status: "transcribing" })).toContain("Transcribing");
+    const html = render({ status: "transcribing" });
+
+    expect(html).toContain("Transcribing");
+    expect(html).toContain(
+      'class="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2"',
+    );
   });
 
   it("stays cancellable while transcribing", () => {
@@ -75,8 +80,8 @@ describe("the states between recording and a transcript", () => {
     expect(render({ status: "stopping" })).toContain("Finishing the recording");
   });
 
-  it("explains the permission prompt instead of appearing stuck", () => {
-    expect(render({ status: "requesting" })).toContain(
+  it("does not flash a permission message while starting", () => {
+    expect(render({ status: "requesting" })).not.toContain(
       "Waiting for microphone permission",
     );
   });
@@ -100,6 +105,16 @@ describe("confirming", () => {
     expect(html()).toContain('aria-label="Ask the tutor this question"');
     expect(html()).toContain('aria-label="Record the question again"');
     expect(html()).toContain('aria-label="Discard this question"');
+  });
+
+  it("puts the confirmation controls in a padded bottom-center panel", () => {
+    const markup = html();
+
+    expect(markup).toContain("absolute bottom-4 left-1/2");
+    expect(markup).toContain("-translate-x-1/2");
+    expect(markup).toContain("p-3");
+    expect(markup).not.toContain("bg-white/95");
+    expect(markup).not.toContain("Edit anything the tutor misheard");
   });
 
   it("shows no waiting indicator, because nothing is being waited on", () => {
