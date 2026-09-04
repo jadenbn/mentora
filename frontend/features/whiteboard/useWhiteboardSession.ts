@@ -7,7 +7,10 @@ import {
   renderCanvasActions,
   type RenderContext,
 } from "@/lib/annotations/renderCanvasActions";
-import { hasStudentWork as getHasStudentCanvasWork } from "@/lib/canvas/capture";
+import {
+  hasSelectedStudentWork as getHasSelectedStudentCanvasWork,
+  hasStudentWork as getHasStudentCanvasWork,
+} from "@/lib/canvas/capture";
 import {
   loadCanvas,
   loadCanvasSnapshot,
@@ -59,6 +62,7 @@ export function useWhiteboardSession({
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasStudentCanvasWork, setHasStudentCanvasWork] = useState(false);
+  const [hasStudentSelection, setHasStudentSelection] = useState(false);
   const [feedbackHistory, setFeedbackHistory] = useState<FeedbackHistory>(() =>
     emptyFeedbackHistory(),
   );
@@ -218,7 +222,7 @@ export function useWhiteboardSession({
   }, [feedbackHistory, renderStoredLayer, storeFeedbackHistory]);
 
   const runAnalysis = useCallback(
-    async (mode: TutorMode, transcript?: string) => {
+    async (mode: TutorMode, studentQuestion?: string) => {
       const current = editor.current;
       if (!current || busyMode !== null) {
         return;
@@ -234,7 +238,7 @@ export function useWhiteboardSession({
           mode,
           courseId,
           problem,
-          transcript,
+          studentQuestion,
           renderActions: renderTutorActions,
           onResponse: (response, context, snapshot) =>
             handleTutorResponse(mode, response, context, snapshot),
@@ -294,6 +298,10 @@ export function useWhiteboardSession({
       const updateStudentWork = () => {
         const next = getHasStudentCanvasWork(mountedEditor);
         setHasStudentCanvasWork((current) => (current === next ? current : next));
+        const nextSelection = getHasSelectedStudentCanvasWork(mountedEditor);
+        setHasStudentSelection((current) =>
+          current === nextSelection ? current : nextSelection,
+        );
         growVerticalPage(mountedEditor);
         removeStudentShapesOutsidePage(mountedEditor);
       };
@@ -341,6 +349,7 @@ export function useWhiteboardSession({
     handleMoveFeedback,
     handleToggleFeedback,
     hasStudentCanvasWork,
+    hasStudentSelection,
     isThinking,
     justSaved,
     runAnalysis,

@@ -6,11 +6,12 @@
  * rather than on tldraw's internals.
  */
 
-import type { Box, Editor, TLShape, TLShapeId, TLShapePartial } from "tldraw";
+import { Box } from "tldraw";
+import type { Editor, TLShape, TLShapeId, TLShapePartial } from "tldraw";
 import { vi } from "vitest";
 
 export function box(x: number, y: number, w: number, h: number): Box {
-  return { x, y, w, h } as Box;
+  return new Box(x, y, w, h);
 }
 
 export interface FakeShape {
@@ -31,6 +32,7 @@ export interface FakeEditorOptions {
   viewport?: Box | null;
   zoom?: number;
   image?: { blob: Blob; width: number; height: number } | null;
+  selectedIds?: string[];
 }
 
 export interface FakeEditor {
@@ -48,6 +50,7 @@ export function makeEditor(options: FakeEditorOptions = {}): FakeEditor {
     viewport = box(-50, -25, 500, 400),
     zoom = 1.5,
     image = { blob: new Blob(["png"], { type: "image/png" }), width: 800, height: 640 },
+    selectedIds = [],
   } = options;
 
   const store = new Map(shapes.map((s) => [s.id, s]));
@@ -59,6 +62,7 @@ export function makeEditor(options: FakeEditorOptions = {}): FakeEditor {
   const editor = {
     getSnapshot: () => ({ document: { shapes: [...store.keys()] } }),
     getCurrentPageShapeIds: () => new Set(store.keys()) as Set<TLShapeId>,
+    getSelectedShapeIds: () => selectedIds as TLShapeId[],
     getCurrentPageBounds: () => pageBounds,
     getViewportPageBounds: () => viewport,
     getZoomLevel: () => zoom,

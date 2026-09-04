@@ -9,6 +9,8 @@ import {
   captureCanvasForAnalysis,
   collectPriorAnnotations,
   hasStudentWork,
+  selectedStudentShapeIds,
+  selectionBoundsForAnalysis,
 } from "@/lib/canvas/capture";
 import {
   renderCanvasActions,
@@ -46,8 +48,8 @@ export interface TutorAnalysisOptions {
   mode: TutorMode;
   courseId: string;
   problem?: ProblemContext;
-  /** What the student asked out loud, when they used the microphone. */
-  transcript?: string;
+  /** A reviewed typed or transcribed question. */
+  studentQuestion?: string;
   signal?: AbortSignal;
   /** Whiteboard supplies the progressive renderer; tests and other callers may render immediately. */
   renderActions?: (
@@ -69,26 +71,30 @@ export async function runTutorAnalysis(
   const { editor } = options;
   const renderActions = options.renderActions ?? renderCanvasActions;
   const snapshot = editor.getSnapshot().document;
+  // Snapshot focus synchronously at the actual submission. Exporting the image
+  // is asynchronous, and a later selection change belongs to a later request.
+  const selectedIds = selectedStudentShapeIds(editor);
 
   // A canvas holding only the tutor's own earlier feedback has nothing of the
   // student's left to analyze, even though the page is not empty.
   const capture = await captureCanvasForAnalysis(editor);
   if (!capture) {
-    if (options.mode !== "stuck" || !options.problem || hasStudentWork(editor)) {
+    if (!options.problem || hasStudentWork(editor)) {
       throw new EmptyCanvasError();
     }
 
-    // A problem-only stuck request has no student image by design. Send the
-    // structured problem without fabricating a provider image.
+    // A problem-only request has no rendering frame by design. Send neither
+    // fabricated pixels nor coordinate metadata, and defensively discard any
+    // spatial actions even if a nonconforming server returns them.
     const bounds = editor.getCurrentPageBounds() ?? editor.getViewportPageBounds();
-    const response = await analyzeCanvas({
+    const received = await analyzeCanvas({
       mode: options.mode,
       courseId: options.courseId,
-      priorAnnotations: collectPriorAnnotations(editor, bounds),
       problem: options.problem,
-      transcript: options.transcript,
+      studentQuestion: options.studentQuestion,
       signal: options.signal,
     });
+    const response = { ...received, canvas_actions: [] };
     const context = {
       bounds,
       interactionId: response.interaction_id,
@@ -104,8 +110,12 @@ export async function runTutorAnalysis(
     mode: options.mode,
     canvasImage: capture.blob,
     priorAnnotations: collectPriorAnnotations(editor, capture.bounds),
+    selectionBounds:
+      selectedIds.length > 0
+        ? (selectionBoundsForAnalysis(editor, capture.bounds, selectedIds) ?? undefined)
+        : undefined,
     problem: options.problem,
-    transcript: options.transcript,
+    studentQuestion: options.studentQuestion,
     signal: options.signal,
   });
 

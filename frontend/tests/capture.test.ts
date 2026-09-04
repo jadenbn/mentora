@@ -13,7 +13,11 @@ import { describe, expect, it } from "vitest";
 import {
   captureCanvasForAnalysis,
   collectPriorAnnotations,
+  hasSelectedStudentWork,
   hasStudentWork,
+  selectedStudentContentBounds,
+  selectedStudentShapeIds,
+  selectionBoundsForAnalysis,
   toNormalizedBounds,
 } from "@/lib/canvas/capture";
 import { box, makeEditor } from "./fakeEditor";
@@ -160,6 +164,65 @@ describe("hasStudentWork", () => {
     const { editor } = makeEditor({ shapes: [aiShape("ai1"), systemShape("problem")] });
     expect(hasStudentWork(editor)).toBe(false);
     expect(hasStudentWork(makeEditor({ shapes: [studentShape("s1")] }).editor)).toBe(true);
+  });
+});
+
+describe("student selection", () => {
+  it("keeps student-owned and legacy shapes while excluding tutor and system shapes", () => {
+    const legacy = { ...studentShape("legacy"), meta: {} };
+    const { editor } = makeEditor({
+      shapes: [studentShape("student"), legacy, aiShape("ai"), systemShape("system")],
+      selectedIds: ["student", "legacy", "ai", "system"],
+    });
+
+    expect(selectedStudentShapeIds(editor)).toEqual(["student", "legacy"]);
+    expect(hasSelectedStudentWork(editor)).toBe(true);
+  });
+
+  it("unions the bounds of every eligible selected shape", () => {
+    const { editor } = makeEditor({
+      shapes: [
+        studentShape("left", box(100, 200, 50, 80)),
+        studentShape("right", box(250, 320, 100, 40)),
+        aiShape("ai", box(0, 0, 900, 900)),
+      ],
+      selectedIds: ["left", "right", "ai"],
+    });
+
+    expect(selectedStudentContentBounds(editor)).toMatchObject({
+      x: 100,
+      y: 200,
+      w: 250,
+      h: 160,
+    });
+  });
+
+  it("normalizes the union against the outgoing image frame", () => {
+    const { editor } = makeEditor({
+      shapes: [
+        studentShape("one", box(200, 400, 100, 200)),
+        studentShape("two", box(350, 700, 50, 100)),
+      ],
+      selectedIds: ["one", "two"],
+    });
+
+    expect(selectionBoundsForAnalysis(editor, FRAME)).toEqual({
+      x: 0.25,
+      y: 0.25,
+      width: 0.5,
+      height: 0.5,
+    });
+  });
+
+  it("reports no eligible selection when only AI or system content is selected", () => {
+    const { editor } = makeEditor({
+      shapes: [aiShape("ai"), systemShape("system")],
+      selectedIds: ["ai", "system"],
+    });
+
+    expect(selectedStudentShapeIds(editor)).toEqual([]);
+    expect(selectedStudentContentBounds(editor)).toBeNull();
+    expect(hasSelectedStudentWork(editor)).toBe(false);
   });
 });
 

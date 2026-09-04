@@ -43,16 +43,35 @@ function isTutorShape(editor: Editor, id: TLShapeId): boolean {
   return editor.getShape(id)?.meta?.owner === AI_SHAPE_OWNER;
 }
 
+function isStudentShape(editor: Editor, id: TLShapeId): boolean {
+  const owner = editor.getShape(id)?.meta?.owner;
+  return owner !== AI_SHAPE_OWNER && owner !== SYSTEM_SHAPE_OWNER;
+}
+
 function studentShapeIds(editor: Editor): TLShapeId[] {
-  return [...editor.getCurrentPageShapeIds()].filter((id) => {
-    const owner = editor.getShape(id)?.meta?.owner;
-    return owner !== AI_SHAPE_OWNER && owner !== SYSTEM_SHAPE_OWNER;
-  });
+  return [...editor.getCurrentPageShapeIds()].filter((id) =>
+    isStudentShape(editor, id),
+  );
+}
+
+/** The current tldraw selection, limited to student and legacy student shapes. */
+export function selectedStudentShapeIds(editor: Editor): TLShapeId[] {
+  return [...editor.getSelectedShapeIds()].filter((id) =>
+    isStudentShape(editor, id),
+  );
 }
 
 /** Bounds of student work, ignoring the system problem and tutor marks. */
 export function studentContentBounds(editor: Editor): Box | null {
   return boundsForShapeIds(editor, studentShapeIds(editor));
+}
+
+/** Bounds of an explicit student selection before it is normalized for the API. */
+export function selectedStudentContentBounds(
+  editor: Editor,
+  selectedIds: TLShapeId[] = selectedStudentShapeIds(editor),
+): Box | null {
+  return boundsForShapeIds(editor, selectedIds);
 }
 
 /** Bounds used for analysis: student work plus prior tutor marks. */
@@ -95,6 +114,25 @@ function analysisFrame(content: Box): Box {
 
 export function hasStudentWork(editor: Editor): boolean {
   return studentShapeIds(editor).length > 0;
+}
+
+export function hasSelectedStudentWork(editor: Editor): boolean {
+  return selectedStudentShapeIds(editor).length > 0;
+}
+
+/**
+ * Normalize a request-time selection against the exact frame exported to Gemini.
+ *
+ * `selectedIds` lets the caller snapshot intent synchronously when the student
+ * submits, before image export yields to the browser.
+ */
+export function selectionBoundsForAnalysis(
+  editor: Editor,
+  frame: Box,
+  selectedIds: TLShapeId[] = selectedStudentShapeIds(editor),
+): NormalizedBounds | null {
+  const bounds = selectedStudentContentBounds(editor, selectedIds);
+  return bounds ? toNormalizedBounds(bounds, frame) : null;
 }
 
 export async function captureCanvasForAnalysis(

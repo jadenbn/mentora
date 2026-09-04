@@ -88,12 +88,28 @@ describe("request construction", () => {
     expect(JSON.parse(bodyOf(spy).get("prior_annotations") as string)).toEqual([]);
   });
 
-  it("can omit the image for a problem-only stuck request", async () => {
+  it("sends one normalized selection object when present", async () => {
+    const spy = mockFetch(ok());
+    const selectionBounds = { x: 0.1, y: 0.2, width: 0.3, height: 0.4 };
+    await call({ selectionBounds });
+    expect(JSON.parse(bodyOf(spy).get("selection_bounds") as string)).toEqual(
+      selectionBounds,
+    );
+  });
+
+  it("omits selection metadata for a full-board request", async () => {
+    const spy = mockFetch(ok());
+    await call();
+    expect(bodyOf(spy).has("selection_bounds")).toBe(false);
+  });
+
+  it("can omit the image and coordinates for any problem-only request", async () => {
     const spy = mockFetch(ok());
     await analyzeCanvas({
       courseId: "course_demo",
-      mode: "stuck",
-      priorAnnotations: [],
+      mode: "mark",
+      priorAnnotations: [{ x: 0.1, y: 0.1, width: 0.2, height: 0.2 }],
+      selectionBounds: { x: 0.2, y: 0.2, width: 0.3, height: 0.3 },
       problem: {
         id: "problem_1",
         course_id: "course_demo",
@@ -102,7 +118,10 @@ describe("request construction", () => {
         prompt: "Solve $x=1$.",
       },
     });
-    expect((spy.mock.calls[0][1].body as FormData).get("canvas_image")).toBeNull();
+    const body = spy.mock.calls[0][1].body as FormData;
+    expect(body.get("canvas_image")).toBeNull();
+    expect(body.has("prior_annotations")).toBe(false);
+    expect(body.has("selection_bounds")).toBe(false);
   });
 
   it("sends the exact structured problem context when present", async () => {
@@ -222,9 +241,9 @@ describe("voice", () => {
     await expect(transcribe()).rejects.toThrow(/temporarily unavailable/i);
   });
 
-  it("sends a spoken question alongside the canvas, not instead of it", async () => {
+  it("sends a reviewed typed or spoken question alongside the canvas", async () => {
     const spy = mockFetch(ok());
-    await call({ transcript: "why can't I cancel the x?" });
+    await call({ studentQuestion: "why can't I cancel the x?" });
     const body = bodyOf(spy);
 
     expect(body.get("transcript")).toBe("why can't I cancel the x?");

@@ -76,10 +76,11 @@ export async function analyzeCanvas(args: {
   courseId: string;
   mode: TutorMode;
   canvasImage?: Blob;
-  priorAnnotations: NormalizedBounds[];
+  priorAnnotations?: NormalizedBounds[];
+  selectionBounds?: NormalizedBounds;
   problem?: ProblemContext;
-  /** What the student asked out loud, when they used the microphone. */
-  transcript?: string;
+  /** A reviewed typed or transcribed question. The wire field remains `transcript`. */
+  studentQuestion?: string;
   signal?: AbortSignal;
 }): Promise<TutorResponse> {
   const form = new FormData();
@@ -87,13 +88,16 @@ export async function analyzeCanvas(args: {
   form.append("mode", args.mode);
   if (args.canvasImage) {
     form.append("canvas_image", args.canvasImage, "canvas.png");
+    form.append("prior_annotations", JSON.stringify(args.priorAnnotations ?? []));
+    if (args.selectionBounds) {
+      form.append("selection_bounds", JSON.stringify(args.selectionBounds));
+    }
   }
-  form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
   if (args.problem) {
     form.append("problem_context", JSON.stringify(args.problem));
   }
-  if (args.transcript) {
-    form.append("transcript", args.transcript);
+  if (args.studentQuestion) {
+    form.append("transcript", args.studentQuestion);
   }
 
   const response = await fetch(`${apiBaseUrl()}/api/tutor/analyze`, {
