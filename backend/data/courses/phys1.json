@@ -5,85 +5,233 @@
       "id": "phys1.kinematics.motion-graphs",
       "name": "Motion graphs",
       "description": "Reading position, velocity, and acceleration from position-time and velocity-time graphs.",
-      "difficulty_band": 0.2
+      "difficulty_band": 0.2,
+      "keywords": [
+        "position-time graph",
+        "velocity-time graph",
+        "slope",
+        "area under curve"
+      ],
+      "question_forms": [
+        "read the velocity or acceleration off a motion graph",
+        "determine displacement from the area under a velocity-time graph"
+      ]
     },
     {
       "id": "phys1.kinematics.equations",
       "name": "Kinematic equations",
       "description": "Applying the constant-acceleration equations to solve for position, velocity, or time.",
-      "difficulty_band": 0.25
+      "difficulty_band": 0.25,
+      "keywords": [
+        "constant acceleration",
+        "kinematic equations",
+        "initial velocity",
+        "displacement",
+        "free fall"
+      ],
+      "question_forms": [
+        "solve for an unknown kinematic quantity given constant acceleration",
+        "find the time or distance for a free-falling object"
+      ]
     },
     {
       "id": "phys1.vectors.components",
       "name": "Vector components",
       "description": "Resolving a vector into perpendicular components using sine and cosine.",
-      "difficulty_band": 0.2
+      "difficulty_band": 0.2,
+      "keywords": [
+        "vector components",
+        "sine and cosine",
+        "magnitude and direction",
+        "x and y components"
+      ],
+      "question_forms": [
+        "resolve a vector into its x and y components",
+        "find the magnitude and direction of a vector from its components"
+      ]
     },
     {
       "id": "phys1.vectors.addition",
       "name": "Vector addition",
       "description": "Combining vectors by adding components, including for displacement and velocity.",
-      "difficulty_band": 0.25
+      "difficulty_band": 0.25,
+      "keywords": [
+        "vector addition",
+        "resultant vector",
+        "component method",
+        "relative velocity"
+      ],
+      "question_forms": [
+        "find the resultant of two or more vectors by adding components",
+        "determine a relative velocity by vector addition"
+      ]
     },
     {
       "id": "phys1.dynamics.newtons-laws",
       "name": "Newton's laws",
       "description": "Applying F = ma to a free-body diagram to find net force or acceleration, often combined with kinematics to solve for motion.",
-      "difficulty_band": 0.3
+      "difficulty_band": 0.3,
+      "keywords": [
+        "Newton's second law",
+        "free-body diagram",
+        "net force",
+        "F = ma",
+        "tension"
+      ],
+      "question_forms": [
+        "draw a free-body diagram and find the net force or acceleration",
+        "solve for tension or acceleration in a system of connected objects"
+      ]
     },
     {
       "id": "phys1.dynamics.friction",
       "name": "Friction",
       "description": "Incorporating static and kinetic friction forces into a force analysis, including resolving the normal force into components on an incline.",
-      "difficulty_band": 0.4
+      "difficulty_band": 0.4,
+      "keywords": [
+        "static friction",
+        "kinetic friction",
+        "coefficient of friction",
+        "normal force",
+        "incline"
+      ],
+      "question_forms": [
+        "find the friction force or acceleration of an object on a surface",
+        "analyze the forces on an object on an inclined plane with friction"
+      ]
     },
     {
       "id": "phys1.dynamics.circular-motion",
       "name": "Circular motion",
       "description": "Applying centripetal force and acceleration to objects moving along a curved path.",
-      "difficulty_band": 0.5
+      "difficulty_band": 0.5,
+      "keywords": [
+        "centripetal force",
+        "centripetal acceleration",
+        "circular motion",
+        "radius",
+        "banked curve"
+      ],
+      "question_forms": [
+        "find the centripetal force or acceleration for an object in circular motion",
+        "solve for the speed or radius of an object on a banked or level curve"
+      ]
     },
     {
       "id": "phys1.energy.work",
       "name": "Work",
       "description": "Computing the work done by a force, including cases where force and displacement are not parallel.",
-      "difficulty_band": 0.35
+      "difficulty_band": 0.35,
+      "keywords": [
+        "work done by a force",
+        "dot product",
+        "angle between force and displacement",
+        "work-energy theorem"
+      ],
+      "question_forms": [
+        "compute the work done by a force acting at an angle to displacement",
+        "apply the work-energy theorem to find a speed or force"
+      ]
     },
     {
       "id": "phys1.energy.conservation",
       "name": "Conservation of energy",
       "description": "Tracking kinetic and potential energy through a system where mechanical energy is conserved.",
-      "difficulty_band": 0.5
+      "difficulty_band": 0.5,
+      "keywords": [
+        "conservation of energy",
+        "kinetic energy",
+        "potential energy",
+        "mechanical energy",
+        "energy transformation"
+      ],
+      "question_forms": [
+        "use conservation of mechanical energy to find a speed or height",
+        "track energy transformations through a system"
+      ]
     },
     {
       "id": "phys1.momentum.conservation",
       "name": "Conservation of momentum",
       "description": "Applying conservation of momentum, a vector quantity, to a system of interacting objects.",
-      "difficulty_band": 0.5
+      "difficulty_band": 0.5,
+      "keywords": [
+        "conservation of momentum",
+        "momentum",
+        "impulse",
+        "system of objects",
+        "vector quantity"
+      ],
+      "question_forms": [
+        "apply conservation of momentum to find an unknown velocity or mass",
+        "compute the impulse delivered to an object"
+      ]
     },
     {
       "id": "phys1.momentum.collisions",
       "name": "Collisions",
       "description": "Distinguishing elastic from inelastic collisions by checking whether kinetic energy is conserved, then solving for post-collision velocities.",
-      "difficulty_band": 0.6
+      "difficulty_band": 0.6,
+      "keywords": [
+        "elastic collision",
+        "inelastic collision",
+        "kinetic energy conservation",
+        "post-collision velocity"
+      ],
+      "question_forms": [
+        "determine whether a collision is elastic or inelastic and solve for velocities",
+        "find the final velocity in a perfectly inelastic collision"
+      ]
     },
     {
       "id": "phys1.rotation.torque",
       "name": "Torque",
       "description": "Computing torque about a pivot and applying rotational equilibrium.",
-      "difficulty_band": 0.55
+      "difficulty_band": 0.55,
+      "keywords": [
+        "torque",
+        "pivot point",
+        "lever arm",
+        "rotational equilibrium",
+        "net torque"
+      ],
+      "question_forms": [
+        "compute the torque produced by a force about a pivot",
+        "find an unknown force or distance using rotational equilibrium"
+      ]
     },
     {
       "id": "phys1.rotation.angular-momentum",
       "name": "Angular momentum",
       "description": "Applying conservation of angular momentum to a rotating system.",
-      "difficulty_band": 0.65
+      "difficulty_band": 0.65,
+      "keywords": [
+        "angular momentum",
+        "moment of inertia",
+        "conservation of angular momentum",
+        "rotational speed"
+      ],
+      "question_forms": [
+        "apply conservation of angular momentum to find a change in rotational speed",
+        "compute the angular momentum of a rotating object"
+      ]
     },
     {
       "id": "phys1.gravitation.orbital-motion",
       "name": "Orbital motion",
       "description": "Combining gravitation with circular motion, energy conservation, and Kepler's second law (conservation of angular momentum) to describe orbits.",
-      "difficulty_band": 0.7
+      "difficulty_band": 0.7,
+      "keywords": [
+        "gravitational force",
+        "orbital motion",
+        "Kepler's laws",
+        "orbital velocity",
+        "orbital period"
+      ],
+      "question_forms": [
+        "find the orbital speed or period of a satellite or planet",
+        "apply energy conservation or Kepler's second law to an orbiting body"
+      ]
     }
   ]
 }

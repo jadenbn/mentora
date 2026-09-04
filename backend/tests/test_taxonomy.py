@@ -1,5 +1,5 @@
 """Tests for the flat topic list: loading, normalization, validation,
-seeding from file, and appending new topics via the piggyback path."""
+bootstrap seeding, and adding new topics via the piggyback path."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from app.models.skill import Skill
 from app.services.taxonomy import (
     DATA_DIR,
     TaxonomyError,
-    append_skills,
+    add_skills,
     build_taxonomy,
     canonical_key,
     load_taxonomy,
@@ -189,113 +189,72 @@ class TestBuildTaxonomy:
 
 
 class TestSeedAllCourses:
-    def test_reseed_reflects_a_changed_file(self, session, tmp_path) -> None:
+    def test_seeds_a_course_with_no_skills(self, session, tmp_path) -> None:
         _write_course_json(tmp_path, "calc1", [
             {"id": "root", "name": "Root", "description": "v1", "difficulty_band": 0.2},
         ])
         seed_all_courses(session, data_dir=tmp_path)
         assert session.get(Skill, "calc1.root").description == "v1"
 
+    def test_already_seeded_course_is_untouched(self, session, tmp_path) -> None:
+        """The DB is the source of truth: once a course has topics, a later
+        startup must not re-read the file over them, and must not drop the
+        topics the model has added since."""
         _write_course_json(tmp_path, "calc1", [
-            {"id": "root", "name": "Root", "description": "v2", "difficulty_band": 0.2},
-            {"id": "extra", "name": "Extra", "description": "new", "difficulty_band": 0.3},
+            {"id": "root", "name": "Root", "description": "v1", "difficulty_band": 0.2},
         ])
         seed_all_courses(session, data_dir=tmp_path)
 
-        assert session.get(Skill, "calc1.root").description == "v2"
-        assert session.get(Skill, "calc1.extra") is not None
-
-    def test_unchanged_file_is_a_noop(self, session, tmp_path) -> None:
-        _write_course_json(tmp_path, "calc1", [
-            {"id": "root", "name": "Root", "description": "d", "difficulty_band": 0.2},
-        ])
-        seed_all_courses(session, data_dir=tmp_path)
-        # A row seed_all_courses didn't put there -- if the no-op guard fires
-        # correctly, the unrelated file hash match means this call never
-        # touches Skill rows for the course at all, and this survives.
-        session.add(Skill(id="calc1.untracked", course_id="calc1", name="Untracked",
+        session.add(Skill(id="calc1.generated", course_id="calc1", name="Generated",
                           description="d", difficulty_band=0.4, origin=SkillOrigin.GENERATED))
         session.commit()
 
-        seed_all_courses(session, data_dir=tmp_path)
-        assert session.get(Skill, "calc1.untracked") is not None
-        assert session.get(Skill, "calc1.root") is not None
-
-    def test_reseed_after_append_skills_keeps_the_appended_topic(self, session, tmp_path) -> None:
-        """append_skills writes into the same file seeding reads from, so a
-        topic it added is not lost even if something else forces a reseed."""
         _write_course_json(tmp_path, "calc1", [
-            {"id": "root", "name": "Root", "description": "d", "difficulty_band": 0.2},
+            {"id": "root", "name": "Root", "description": "v2", "difficulty_band": 0.2},
         ])
         seed_all_courses(session, data_dir=tmp_path)
 
-        produced = build_taxonomy(
-            "calc1",
-            [{"id": "piggyback", "name": "Piggyback", "description": "d", "difficulty_band": 0.4}],
-            SkillOrigin.GENERATED,
-        )
-        append_skills(session, "calc1", produced, data_dir=tmp_path)
-
-        # Something external changes the file -- forces a real reseed pass.
-        _write_course_json(tmp_path, "calc1", json.loads(
-            (tmp_path / "calc1.json").read_text(encoding="utf-8")
-        )["skills"] + [{"id": "another", "name": "Another", "description": "d", "difficulty_band": 0.6}])
-        seed_all_courses(session, data_dir=tmp_path)
-
-        assert session.get(Skill, "calc1.piggyback") is not None
-        assert session.get(Skill, "calc1.another") is not None
+        assert session.get(Skill, "calc1.generated") is not None
+        assert session.get(Skill, "calc1.root").description == "v1"
 
 
-class TestAppendSkills:
-    def test_adds_a_new_topic_to_the_file_and_the_db(self, session, tmp_path) -> None:
-        _write_course_json(tmp_path, "calc1", [
-            {"id": "root", "name": "Root", "description": "d", "difficulty_band": 0.2},
-        ])
+class TestAddSkills:
+    def test_adds_a_new_topic(self, session) -> None:
         produced = build_taxonomy(
             "calc1",
             [{"id": "new-topic", "name": "New topic", "description": "d", "difficulty_band": 0.3}],
             SkillOrigin.GENERATED,
         )
-        added = append_skills(session, "calc1", produced, data_dir=tmp_path)
-
-        assert added == ["calc1.new-topic"]
+        assert add_skills(session, "calc1", produced) == ["calc1.new-topic"]
         assert session.get(Skill, "calc1.new-topic") is not None
-        on_disk = json.loads((tmp_path / "calc1.json").read_text(encoding="utf-8"))
-        assert any(s["id"] == "calc1.new-topic" for s in on_disk["skills"])
 
-    def test_skips_an_id_that_already_exists(self, session, tmp_path) -> None:
-        _write_course_json(tmp_path, "calc1", [
-            {"id": "root", "name": "Root", "description": "d", "difficulty_band": 0.2},
-        ])
+    def test_skips_an_id_that_already_exists(self, session) -> None:
+        session.add(Skill(id="calc1.root", course_id="calc1", name="Root",
+                          description="d", difficulty_band=0.2))
+        session.commit()
+
         produced = build_taxonomy(
             "calc1",
             [{"id": "root", "name": "Overwrite attempt", "description": "x", "difficulty_band": 0.9}],
             SkillOrigin.GENERATED,
         )
-        added = append_skills(session, "calc1", produced, data_dir=tmp_path)
+        assert add_skills(session, "calc1", produced) == []
+        assert session.get(Skill, "calc1.root").name == "Root"
 
-        assert added == []
-        on_disk = json.loads((tmp_path / "calc1.json").read_text(encoding="utf-8"))
-        assert on_disk["skills"] == [
-            {"id": "calc1.root", "name": "Root", "description": "d", "difficulty_band": 0.2}
-        ] or on_disk["skills"][0]["name"] == "Root"  # untouched, not overwritten
-
-    def test_never_deletes_an_existing_topic(self, session, tmp_path) -> None:
-        _write_course_json(tmp_path, "calc1", [
-            {"id": "old", "name": "Old", "description": "d", "difficulty_band": 0.3},
-        ])
-        seed_all_courses(session, data_dir=tmp_path)
+    def test_never_deletes_an_existing_topic(self, session) -> None:
+        session.add(Skill(id="calc1.old", course_id="calc1", name="Old",
+                          description="d", difficulty_band=0.3))
+        session.commit()
 
         produced = build_taxonomy(
             "calc1",
             [{"id": "new", "name": "New", "description": "d", "difficulty_band": 0.4}],
             SkillOrigin.GENERATED,
         )
-        append_skills(session, "calc1", produced, data_dir=tmp_path)
+        add_skills(session, "calc1", produced)
 
         assert session.get(Skill, "calc1.old") is not None
         assert session.get(Skill, "calc1.new") is not None
 
-    def test_empty_batch_is_a_noop(self, session, tmp_path) -> None:
-        _write_course_json(tmp_path, "calc1", [])
-        assert append_skills(session, "calc1", [], data_dir=tmp_path) == []
+    def test_empty_batch_is_a_noop(self, session) -> None:
+        assert add_skills(session, "calc1", []) == []

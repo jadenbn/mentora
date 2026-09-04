@@ -35,7 +35,7 @@ no "next problem" route to test because there is no such route.
 
 | File | Covers | Needs |
 | --- | --- | --- |
-| `test_taxonomy.py` | normalization, validation, `canonical_key`, seeding, `append_skills` | — |
+| `test_taxonomy.py` | normalization, validation, `canonical_key`, seeding, `add_skills` | — |
 | `test_selection.py` | topic priority: coverage vs weakness, recency, difficulty | — |
 | `test_student_model_service.py` | the rolling accuracy window, idempotency, the overview query | — |
 | `test_skills_overview.py` | the dashboard view: every topic, origin, recency | — |
@@ -89,12 +89,10 @@ python -m pytest -q tests/test_taxonomy.py tests/test_selection.py \
 temporary SQLite database with a stubbed workflow, so the whole engine is
 exercisable with no `GEMINI_API_KEY` set.
 
-`conftest.py` points `MENTORA_DB_PATH` and `MENTORA_COURSE_DATA_DIR` at temp
-locations before the first `import app.*` and rebuilds the DB schemas and a
-fresh copy of `data/courses/*.json` around each test, so the suite never
-touches `backend/mentora.db` or the real, git-tracked skills files — that
-second guard matters here specifically because `append_skills` *writes* to
-the skills file, unlike anything on the tutor/question side used to. **The
+`conftest.py` points `MENTORA_DB_PATH` at a temp location before the first
+`import app.*` and rebuilds the DB schemas around each test, so the suite
+never touches `backend/mentora.db`. The course files under `data/courses`
+need no such guard: they are read-only bootstrap data. **The
 suite must pass twice in a row** — that is the check that catches a test
 leaking state, which is how two fixture skills once ended up permanently in
 the development database.
@@ -117,9 +115,9 @@ Each builds the smallest graph that isolates one rule and asserts on it:
 - **`test_attribution.py`** — what a problem is attributed to, and that an id
   outside the topic list is dropped with a warning rather than stored.
 - **`test_taxonomy.py`** — normalization is idempotent; `canonical_key`
-  collapses reworded names to the same key; `append_skills` writes the file
-  before the DB and never overwrites an existing id; re-seeding after
-  `append_skills` doesn't lose what it added.
+  collapses reworded names to the same key; `add_skills` never overwrites an
+  existing id; seeding skips a course that already has topics rather than
+  overwriting what the model added.
 - **`test_skills_overview.py`** — untouched topics appear with `accuracy:
   None` rather than being omitted; origin and recency are exposed for the
   dashboard.
@@ -167,7 +165,7 @@ synthetic correct/partial/incorrect attempts against a selected topic. It
 hits the same JSON APIs a real client would.
 
 To test a **specific topic list** without spending a model call, post a raw
-batch straight into a course's skills file:
+batch straight into a course:
 
 ```bash
 curl -X POST localhost:8000/dev/courses/scratch/skills/import \
@@ -178,8 +176,8 @@ curl -X POST localhost:8000/dev/courses/scratch/skills/import \
         "difficulty_band":0.6}]}'
 ```
 
-It runs the same `build_taxonomy → append_skills` path the piggyback uses, so
-a pasted batch is validated and appended exactly like a model-identified one.
+It runs the same `build_taxonomy → add_skills` path the piggyback uses, so
+a pasted batch is validated and inserted exactly like a model-identified one.
 An id that already exists is skipped, not overwritten.
 
 ## Writing a new learning-engine test
@@ -198,14 +196,6 @@ def session():
 In-memory, per-test, no shared state. Build the smallest graph that isolates
 the rule you're testing — `test_selection.py`'s `_skill()`/`_state()` helpers
 are the pattern.
-
-**If your test calls `append_skills` (directly, or via the piggyback in
-`question_service`), don't assume it's safe by default** — it writes to
-`app.services.taxonomy.DATA_DIR`, which `conftest.py` already points at an
-isolated temp copy for the whole suite. You don't need to do anything extra
-for isolation; you do need to know that a test asserting on-disk file content
-(`test_question_service.py`'s piggyback tests) is reading `DATA_DIR`, not the
-real `backend/data/courses/`.
 
 **Assert on behavior, not on constants.** `assert topic.skill_id ==
 "calc1.limits"` survives a weight tweak; `assert priority == 0.62` does not,

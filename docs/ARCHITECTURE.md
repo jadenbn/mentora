@@ -893,8 +893,8 @@ QuestionService.generate()      a grounded problem; the model also names the
                                   skill(s) it thinks the question exercises
         |
         +-- names an existing topic  -> attributed to it
-        +-- names something new      -> appended to the course's skills file
-        |                                and inserted (the piggyback)
+        +-- names something new      -> inserted as a new topic (the
+        |                                piggyback)
         v
 attribution.set_problem_skills() + repository.set_problem_difficulty()
         |
@@ -927,9 +927,10 @@ name-similarity match (`taxonomy.canonical_key` — same significant words,
 any order, case, or article, so "the chain rule" and "chain rule" collapse to
 one topic without an embedding call); or, if neither matches, a genuinely new
 topic. New topics go through `build_taxonomy` — the same normalizer and
-validator every topic source uses — and then `taxonomy.append_skills`, which
-writes the new entry into `data/courses/{course_id}.json` before inserting it,
-so the file stays the source of truth and the DB its mirror.
+validator every topic source uses — and then `taxonomy.add_skills`, which
+inserts it. The database is the source of truth;
+`data/courses/{course_id}.json` only bootstraps a course that has no topics
+yet, and nothing writes back to it.
 
 A malformed batch (e.g. two entries that collide after normalization) raises
 `TaxonomyError` inside `_attribute_skills`; it is caught and logged there, and

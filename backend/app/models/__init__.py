@@ -11,12 +11,10 @@ the engine depends on the taxonomy, not the other way round, and a back-edge
 from this package would make that circular.
 """
 
-from app.models.course_taxonomy_version import CourseTaxonomyVersion
 from app.models.problem_skill import ProblemSkill
 from app.models.skill import Skill
 
 __all__ = [
-    "CourseTaxonomyVersion",
     "ProblemSkill",
     "Skill",
 ]

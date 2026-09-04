@@ -1,40 +1,31 @@
-"""Load, normalize, and validate a course's flat topic list.
+"""Normalize and validate a course's flat topic list, and get it into the DB.
 
 A topic is a label for grouping attempts, not a node in a curriculum: there
 is no prerequisite graph and nothing here gates what a student can be served.
-The course's data/courses/{course_id}.json file is the source of truth.
-append_skills is the only way a topic is added after seeding, and it writes
-the file first -- the database is the file's mirror, not the other way round.
+
+Topics are model-generated. data/courses/{course_id}.json only bootstraps a
+course that has none yet; after that the database is the source of truth and
+add_skills is the only way the list grows.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import os
 import re
 from pathlib import Path
 
 from sqlmodel import Session, select
 
-from app.models.course_taxonomy_version import CourseTaxonomyVersion
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 
 logger = logging.getLogger(__name__)
 
 
-def _default_data_dir() -> Path:
-    """Where course skills files live. Overridable so tests that exercise
-    append_skills (which writes) never touch the real, git-tracked files."""
-    configured = os.getenv("MENTORA_COURSE_DATA_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    return Path(__file__).resolve().parent.parent.parent / "data" / "courses"
-
-
-DATA_DIR = _default_data_dir()
+# Read-only: nothing writes to these files. seed_all_courses takes a data_dir
+# override for tests that need their own bootstrap set.
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "courses"
 
 _SLUG_INVALID = re.compile(r"[^a-z0-9.]+")
 _SLUG_REPEAT = re.compile(r"-{2,}")
@@ -49,7 +40,7 @@ _MAX_SKILLS_PER_COURSE = 200
 
 
 class TaxonomyError(ValueError):
-    """A course's topic list failed validation on load."""
+    """A course's topic list failed validation."""
 
 
 def normalize_slug(course_id: str, raw: str) -> str:
@@ -132,9 +123,9 @@ def build_taxonomy(
 ) -> list[Skill]:
     """Turn a list of raw skill dicts into validated Skill objects.
 
-    The single builder for every topic source -- hand-authored course JSON
-    and model-identified topics alike take this same path. Raises
-    TaxonomyError on any structural problem; raises nothing on success.
+    The single builder for every topic source -- bootstrap course JSON and
+    model-identified topics alike take this same path. Raises TaxonomyError
+    on any structural problem; raises nothing on success.
     """
     skills = [
         Skill(
@@ -154,10 +145,10 @@ def build_taxonomy(
 
 
 def load_taxonomy(course_id: str, data_dir: Path | None = None) -> list[Skill]:
-    """Load a course's topic list from data/courses/{course_id}.json.
+    """Load a course's bootstrap topic list from data/courses/{course_id}.json.
 
-    Normalizes every id (including hand-authored ones) and validates the
-    result before returning. Raises TaxonomyError on any structural problem.
+    Normalizes every id and validates the result before returning. Raises
+    TaxonomyError on any structural problem.
     """
     directory = data_dir or DATA_DIR
     path = directory / f"{course_id}.json"
@@ -172,105 +163,50 @@ def load_taxonomy(course_id: str, data_dir: Path | None = None) -> list[Skill]:
     return build_taxonomy(course_id, raw["skills"], SkillOrigin.SEED)
 
 
-def _course_content_hash(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
-    """Load every data/courses/*.json into the DB, re-seeding on file change.
+    """Give every course in data/courses a starting topic list, once.
 
-    Called once on startup. Safe to call repeatedly: a course is re-seeded
-    only when its JSON file's content hash differs from what was last seeded
-    -- which includes changes append_skills already applied and recorded, so
-    this does not redo that work.
+    Called on startup. A course that already has skills is skipped entirely:
+    the database is the source of truth, and everything the model has added
+    since lives only there.
     """
     directory = data_dir or DATA_DIR
     for path in sorted(directory.glob("*.json")):
         course_id = path.stem
-        content_hash = _course_content_hash(path)
-
-        version = session.get(CourseTaxonomyVersion, course_id)
-        existing = session.exec(
-            select(Skill).where(Skill.course_id == course_id)
-        ).all()
-        if version is not None and version.content_hash == content_hash and existing:
+        already_seeded = session.exec(
+            select(Skill.id).where(Skill.course_id == course_id).limit(1)
+        ).first()
+        if already_seeded:
             continue
 
-        loaded = load_taxonomy(course_id, data_dir=directory)
-
-        for skill in existing:
-            session.delete(skill)
-        session.flush()
-        for skill in loaded:
+        for skill in load_taxonomy(course_id, data_dir=directory):
             session.add(skill)
-
-        if version is None:
-            session.add(
-                CourseTaxonomyVersion(course_id=course_id, content_hash=content_hash)
-            )
-        else:
-            version.content_hash = content_hash
-            session.add(version)
 
     session.commit()
 
 
-def append_skills(
-    session: Session, course_id: str, produced: list[Skill], data_dir: Path | None = None
-) -> list[str]:
-    """Add newly-identified topics to a course's skills file, then the DB.
+def add_skills(session: Session, course_id: str, produced: list[Skill]) -> list[str]:
+    """Insert newly-identified topics, skipping ids the course already has.
 
-    The file is written first and is what a later restart trusts; the DB
-    insert here just means the topic is usable without waiting for one.
-    Skips an id already present -- an existing topic's fields are never
-    rewritten by a later question's read of it. Returns the ids actually
-    added.
+    An existing topic's fields are never rewritten by a later question's read
+    of it. Returns the ids actually added.
     """
     if not produced:
         return []
 
-    directory = data_dir or DATA_DIR
-    path = directory / f"{course_id}.json"
-    raw = (
-        json.loads(path.read_text(encoding="utf-8"))
-        if path.exists()
-        else {"course_id": course_id, "skills": []}
+    existing_ids = set(
+        session.exec(select(Skill.id).where(Skill.course_id == course_id)).all()
     )
-    existing_ids = {normalize_slug(course_id, entry["id"]) for entry in raw["skills"]}
 
-    added: list[Skill] = []
+    added: list[str] = []
     for skill in produced:
         if skill.id in existing_ids:
             continue
-        raw["skills"].append(
-            {
-                "id": skill.id,
-                "name": skill.name,
-                "description": skill.description,
-                "difficulty_band": skill.difficulty_band,
-                "keywords": skill.keywords,
-                "question_forms": skill.question_forms,
-            }
-        )
-        existing_ids.add(skill.id)
-        added.append(skill)
-
-    if not added:
-        return []
-
-    raw["skills"].sort(key=lambda entry: entry["id"])
-    path.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
-
-    content_hash = _course_content_hash(path)
-    version = session.get(CourseTaxonomyVersion, course_id)
-    if version is None:
-        session.add(CourseTaxonomyVersion(course_id=course_id, content_hash=content_hash))
-    else:
-        version.content_hash = content_hash
-        session.add(version)
-
-    for skill in added:
         session.add(skill)
-    session.commit()
+        existing_ids.add(skill.id)
+        added.append(skill.id)
 
-    return [s.id for s in added]
+    if added:
+        session.commit()
+
+    return added

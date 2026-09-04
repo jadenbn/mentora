@@ -19,7 +19,7 @@ from app.schemas.taxonomy import RawSkillEntry
 from app.services import attribution
 from app.services.taxonomy import (
     TaxonomyError,
-    append_skills,
+    add_skills,
     build_taxonomy,
     canonical_key,
     normalize_slug,
@@ -193,9 +193,8 @@ class QuestionService:
         Each topic the model names either matches an existing one (by
         normalized id, or by a name-similarity key when the model described
         it in different words) or is genuinely new, in which case it is
-        appended to the course's skills file and inserted. This is the only
-        place a course's topic list grows outside seeding, and it may add at
-        most MAX_NEW_TOPICS_PER_QUESTION of them.
+        inserted. This is the only place a course's topic list grows outside
+        seeding, and it may add at most MAX_NEW_TOPICS_PER_QUESTION of them.
 
         Order matters downstream: the first id is the problem's primary
         skill, and the primary is the only one an attempt's outcome moves.
@@ -235,7 +234,7 @@ class QuestionService:
                         [s.name for s in produced[MAX_NEW_TOPICS_PER_QUESTION:]],
                     )
                     produced = produced[:MAX_NEW_TOPICS_PER_QUESTION]
-                added_ids = append_skills(self.session, course_id, produced)
+                added_ids = add_skills(self.session, course_id, produced)
                 skill_ids.extend(added_ids)
             except TaxonomyError:
                 # A malformed batch must never cost the student the problem

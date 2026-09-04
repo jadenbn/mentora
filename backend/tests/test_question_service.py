@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -18,7 +17,6 @@ from app.services.question_service import (
     QuestionService,
     serialized_context_chars,
 )
-from app.services.taxonomy import DATA_DIR
 
 VALID_SKILL = {
     "id": "chain-rule",
@@ -199,8 +197,7 @@ def test_generation_attributes_the_problem_to_an_existing_skill(tmp_path, sessio
 
 def test_generation_identifies_a_new_topic_via_the_piggyback(tmp_path, session):
     """The model naming a topic the course lacks creates it, through the same
-    build_taxonomy path every other topic source uses -- appended to the
-    course's skills file, not just written to the DB."""
+    build_taxonomy path every other topic source uses."""
     repo = seeded_repo(tmp_path)
     workflow = StubQuestionWorkflow(skills=[VALID_SKILL])
     generated = asyncio.run(
@@ -216,9 +213,6 @@ def test_generation_identifies_a_new_topic_via_the_piggyback(tmp_path, session):
     assert created is not None
     assert created.origin == SkillOrigin.GENERATED
     assert attribution.get_problem_skills(session, generated.id) == ["course_1.chain-rule"]
-
-    on_disk = json.loads((DATA_DIR / "course_1.json").read_text(encoding="utf-8"))
-    assert any(s["id"] == "course_1.chain-rule" for s in on_disk["skills"])
 
 
 def test_repeated_identification_of_the_same_topic_does_not_duplicate_it(tmp_path, session):

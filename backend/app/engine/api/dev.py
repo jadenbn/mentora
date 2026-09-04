@@ -24,7 +24,7 @@ from app.schemas.taxonomy import TaxonomyPlan
 from app.engine import simulation, student_model_service
 from app.engine.selection import mark_served, pick_topic
 from app.engine.student_model_service import UnknownSkillError
-from app.services.taxonomy import TaxonomyError, append_skills, build_taxonomy
+from app.services.taxonomy import TaxonomyError, add_skills, build_taxonomy
 
 router = APIRouter(prefix="/dev", tags=["dev"])
 
@@ -37,16 +37,16 @@ def import_skills(
     payload: TaxonomyPlan,
     session: Session = Depends(get_session),
 ) -> dict:
-    """Post a raw topic batch straight into a course, via the file.
+    """Post a raw topic batch straight into a course.
 
-    Runs the same build_taxonomy -> append_skills path the piggyback takes,
-    so a pasted list is exercised exactly like model-identified topics --
-    the fastest way to test a course's topic list without a model call.
+    Runs the same build_taxonomy -> add_skills path the piggyback takes, so a
+    pasted list is exercised exactly like model-identified topics -- the
+    fastest way to test a course's topic list without a model call.
     """
     raw = [entry.model_dump() for entry in payload.skills]
     try:
         produced = build_taxonomy(course_id, raw, SkillOrigin.GENERATED)
-        added = append_skills(session, course_id, produced)
+        added = add_skills(session, course_id, produced)
     except TaxonomyError as exc:
         raise HTTPException(400, str(exc)) from exc
     requested_ids = {s.id for s in produced}

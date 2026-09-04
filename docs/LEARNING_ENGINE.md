@@ -111,78 +111,39 @@ same rule, with the engine on both sides of it.
 
 ---
 
-## 2. Prototype status, and the road to a real database
+## 2. Where topics come from, and what's still missing
 
-**Read this before building on the taxonomy.** The engine's *student* data
-(attempts, per-topic windows, hint counts) is real, relational, and
-FK-enforced. The *taxonomy* is not: it is a prototype scaffold that will be
-replaced.
+Topics are **model-generated**. Nobody hand-authors a taxonomy: the
+piggyback in question generation mints a topic whenever the model names
+one the course lacks, and that is how a course's list grows.
 
-### How it works today
+The **database is the source of truth**. `add_skills()` inserts into `Skill`
+and does nothing else — no file I/O on a request path.
 
-Each course has a JSON file at `backend/data/courses/{course_id}.json`, and
-that file — not the database — is the source of truth. `seed_all_courses()`
-loads every one of them at startup, and `append_skills()` writes a
-model-minted topic into the file **before** inserting it into the database.
-`CourseTaxonomyVersion` stores a content hash so an unchanged file is a
-no-op and a changed one triggers a re-seed.
+`backend/data/courses/{course_id}.json` is **bootstrap data only**: a
+starting list so a fresh course isn't empty. `seed_all_courses()` runs at
+startup and skips any course that already has topics, so it never overwrites
+or deletes what the model has added. Nothing writes back to those files.
 
-This is fine for a single-developer dev build with fixed course ids. It is
-not shippable, for six specific reasons:
+### What still isn't shippable
 
-1. **The file is lossy.** It stores six of `Skill`'s eight fields. `origin`
-   and `created_at` are database-only, so every topic reloaded from JSON
-   comes back tagged `seed` with a fresh timestamp — the provenance of an
-   LLM-grown taxonomy is destroyed by its own persistence layer.
-2. **Re-seeding is destructive.** A hash change deletes and reinserts the
-   course's `Skill` rows, and `ProblemSkill.skill_id` is `ON DELETE CASCADE`,
-   so a re-seed silently drops every attribution the course had.
-3. **A user-supplied `course_id` becomes a filesystem path.**
-   `directory / f"{course_id}.json"`, with no validation anywhere in the
-   route chain. Harmless while course ids are fixtures; not harmless the
-   moment a user names their own course.
-4. **There is no owner.** `Skill` is keyed on `course_id` alone, and a skill
-   id is `{course_id}.{slug}`. Two users who both create a course about
-   physics collide on the primary key.
-5. **The write is neither locked nor atomic.** `append_skills` does
-   read → mutate → write on the request path, during question generation.
-   Two concurrent generations that both mint a topic clobber each other.
-6. **It does not survive real infrastructure.** Containers have ephemeral or
-   read-only filesystems, and two app instances behind a load balancer get
-   two divergent files.
-
-### Where it's going
-
-The product intent is that a user brings **any** subject — English, physics,
-whatever they upload material for — and their account holds the taxonomy
-that grows from it. That requires the database to be the source of truth:
-
-- **`Course` table** with a server-minted id (`course_<uuid>`, never the
-  user's typed subject name), an indexed `owner_id`, a display `name`, and
-  `created_at`. Keeping the display name separate from the identifier is
-  what stops two "Physics" courses being the same course, and stops a course
-  name reaching anything that resolves a path or a query.
+- **There is no owner.** `Skill` is keyed on `course_id` alone, and a skill
+  id is `{course_id}.{slug}`. Two users who both create a course about
+  physics collide on the primary key. This is the real blocker for
+  multi-user.
+- **No `Course` table.** A course id is a bare string with no row behind it.
+  It should be server-minted (`course_<uuid>`, never the user's typed
+  subject name), with an indexed `owner_id`, a display `name`, and
+  `created_at` — keeping the display name separate from the identifier is
+  what stops two "Physics" courses being the same course.
 - **`owner_id` scoping** on every taxonomy read, so a user only ever sees
   their own topics. Free text at first, exactly as `student_id` is today
   (§9), then wired to real accounts.
-- **`append_skills` writes the database only.** No file I/O on a request
-  path, which removes reasons 3, 5, and 6 above in one change.
-- **Seeding becomes opt-in and bootstrap-only** — behind an env flag, off in
-  any deployment, and skipping any course that already has topics rather
-  than delete-and-reinsert. That removes reasons 1 and 2.
-- **`CourseTaxonomyVersion` goes away** with the hash-reconciliation it
-  exists to support.
-- **An export endpoint** replaces the always-on file writing for the one
-  thing it was genuinely good for: snapshotting a taxonomy worth committing.
 - **`Skill.course_id` should become a real foreign key** to `course.id`.
-  This one cannot be done with the additive-column reconciler in §3 —
-  SQLite cannot `ALTER TABLE ADD CONSTRAINT`, so declaring it would enforce
-  the FK on freshly created databases and silently skip every existing one.
-  It needs a real migration tool.
-
-Until that lands, treat `data/courses/*.json` as a dev fixture that happens
-to be load-bearing, and **do not build anything new on the assumption that
-the file is authoritative.**
+  This cannot be done with the additive-column reconciler in §3 — SQLite
+  cannot `ALTER TABLE ADD CONSTRAINT`, so declaring it would enforce the FK
+  on freshly created databases and silently skip every existing one. It
+  needs a real migration tool.
 
 ---
 
@@ -197,7 +158,7 @@ attribution own the rest.
 course-prefixed and normalized (`calc1.derivatives.chain-rule`). No
 prerequisite field — topics are flat. Carries `keywords` (retrieval
 vocabulary), `question_forms` (§5), `difficulty_band`, and `origin` (`seed`
-hand-authored, or `generated` via the piggyback).
+from the course's bootstrap file, or `generated` via the piggyback).
 
 **`SkillState`** (`engine/models/skill_state.py`) — one student's rolling
 window for one topic, keyed `(student_id, skill_id)`. `recent_outcomes`: the
@@ -222,11 +183,6 @@ primary is the only one an outcome moves (§9).
 has taken on one problem, keyed `(student_id, problem_id)`. Counted
 server-side on the way past, because a hint is worth 0.4 of a score and
 whoever counts hints decides part of the grade.
-
-**`CourseTaxonomyVersion`** (`models/course_taxonomy_version.py`) — a content
-hash of the course's skills file, so re-seeding and `append_skills` are
-no-ops when nothing actually changed. **Prototype-only; removed by the
-migration in §2.**
 
 **Table registration.** `SQLModel.metadata` only knows about a table whose
 module has been imported, so `app/db.py` imports `app.engine.models` and
@@ -310,11 +266,9 @@ ways, in `QuestionService._attribute_skills`:
    model re-describing an existing topic in different words doesn't mint a
    duplicate.
 3. **Genuinely new** — goes through `build_taxonomy` (the same normalizer
-   and validator hand-authored course JSON uses) and then
-   `taxonomy.append_skills`, which writes the entry into
-   `data/courses/{course_id}.json` before inserting it. **The file is
-   currently the source of truth and the database its mirror; §2 is why that
-   is temporary.**
+   and validator the bootstrap course JSON uses) and then
+   `taxonomy.add_skills`, which inserts it. The database is the source of
+   truth; nothing is written back to a file.
 
 **Everything about a new topic is model-authored.** The generation prompt
 asks for an id, name, description, `difficulty_band`, 3–12 `keywords`, and
@@ -542,7 +496,7 @@ Dev-only, not in the OpenAPI schema:
 | `GET /dev/courses/{id}/next-topic` | What `pick_topic` would choose right now. Read-only — does not stamp `last_served`. |
 | `POST /dev/courses/{id}/simulate` | Replay the policy against synthetic students (§15). |
 | `POST /dev/courses/{id}/attempts` | Record an attempt from a stated outcome, and stamp `last_served` — on the real path a topic is always served before it is marked. |
-| `POST /dev/courses/{id}/skills/import` | Paste a topic batch straight into the skills file. |
+| `POST /dev/courses/{id}/skills/import` | Paste a topic batch straight into a course. |
 
 `POST /dev/courses/{id}/attempts` takes `correct` and `hints_used` from its
 caller, which is exactly why it is not on the product API.
@@ -795,9 +749,9 @@ stays visible, and retuning the weights for spaced practice is open work.
   `challenging` and records the float it meant; no signal comes back saying
   what the generator actually wrote. See the calibration caveat in §15.
 - **Topics can be minted but never merged, renamed, or retired.**
-  `append_skills` only inserts. `canonical_key` catches re-wordings and
+  `add_skills` only inserts. `canonical_key` catches re-wordings and
   `MAX_NEW_TOPICS_PER_QUESTION` caps the rate, but over months the taxonomy
-  can still fragment with no remedy. When a re-seed removes a skill,
+  can still fragment with no remedy. If a skill does go missing,
   `engine/api/learning.py` catches the resulting `UnknownSkillError` and the
   accuracy update is lost; orphaned `SkillState` rows are never cleaned up.
 - **`Attempt.difficulty` is recorded, not scored against.** A correct answer

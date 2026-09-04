@@ -5,85 +5,234 @@
       "id": "chem1.atomic-structure.electron-configuration",
       "name": "Electron configuration",
       "description": "Writing the ground-state electron configuration of an atom or ion using the aufbau principle.",
-      "difficulty_band": 0.25
+      "difficulty_band": 0.25,
+      "keywords": [
+        "electron configuration",
+        "aufbau principle",
+        "orbital",
+        "ground state",
+        "noble gas core"
+      ],
+      "question_forms": [
+        "write the ground-state electron configuration of an atom or ion",
+        "determine the number of valence electrons from an electron configuration"
+      ]
     },
     {
       "id": "chem1.atomic-structure.periodic-trends",
       "name": "Periodic trends",
       "description": "Predicting relative atomic radius, ionization energy, and electronegativity from position on the periodic table.",
-      "difficulty_band": 0.3
+      "difficulty_band": 0.3,
+      "keywords": [
+        "periodic trends",
+        "atomic radius",
+        "ionization energy",
+        "electronegativity",
+        "periodic table"
+      ],
+      "question_forms": [
+        "rank a set of elements by atomic radius, ionization energy, or electronegativity",
+        "explain a periodic trend using effective nuclear charge"
+      ]
     },
     {
       "id": "chem1.bonding.lewis-structures",
       "name": "Lewis structures",
       "description": "Drawing a valid Lewis structure, including formal charge and resonance where applicable.",
-      "difficulty_band": 0.3
+      "difficulty_band": 0.3,
+      "keywords": [
+        "Lewis structure",
+        "valence electrons",
+        "formal charge",
+        "resonance",
+        "octet rule"
+      ],
+      "question_forms": [
+        "draw the Lewis structure of a molecule or ion",
+        "assign formal charges or identify resonance structures"
+      ]
     },
     {
       "id": "chem1.bonding.molecular-geometry",
       "name": "Molecular geometry",
       "description": "Applying VSEPR theory to predict molecular shape from a Lewis structure.",
-      "difficulty_band": 0.4
+      "difficulty_band": 0.4,
+      "keywords": [
+        "VSEPR theory",
+        "molecular geometry",
+        "electron domains",
+        "lone pairs",
+        "bond angle"
+      ],
+      "question_forms": [
+        "predict the molecular geometry of a molecule from its Lewis structure",
+        "determine the bond angle given a molecule's electron-domain geometry"
+      ]
     },
     {
       "id": "chem1.bonding.polarity",
       "name": "Molecular polarity",
       "description": "Determining whether a molecule is polar from its bond dipoles (via electronegativity differences) and its overall geometry.",
-      "difficulty_band": 0.45
+      "difficulty_band": 0.45,
+      "keywords": [
+        "molecular polarity",
+        "bond dipole",
+        "electronegativity difference",
+        "symmetric geometry",
+        "net dipole moment"
+      ],
+      "question_forms": [
+        "determine whether a molecule is polar or nonpolar",
+        "explain why a molecule with polar bonds is nonpolar overall"
+      ]
     },
     {
       "id": "chem1.stoichiometry.mole-conversions",
       "name": "Mole conversions",
       "description": "Converting between mass, moles, and number of particles using molar mass and Avogadro's number.",
-      "difficulty_band": 0.25
+      "difficulty_band": 0.25,
+      "keywords": [
+        "mole conversions",
+        "molar mass",
+        "Avogadro's number",
+        "grams to moles"
+      ],
+      "question_forms": [
+        "convert between mass, moles, and number of particles",
+        "compute the molar mass of a compound"
+      ]
     },
     {
       "id": "chem1.stoichiometry.balancing-equations",
       "name": "Balancing equations",
       "description": "Balancing a chemical equation so atom counts match on both sides.",
-      "difficulty_band": 0.3
+      "difficulty_band": 0.3,
+      "keywords": [
+        "balancing equations",
+        "chemical equation",
+        "coefficients",
+        "conservation of mass"
+      ],
+      "question_forms": [
+        "balance a given chemical equation",
+        "determine the correct coefficients for a reaction"
+      ]
     },
     {
       "id": "chem1.stoichiometry.limiting-reagent",
       "name": "Limiting reagent",
       "description": "Identifying the limiting reagent in a reaction and computing theoretical yield from it.",
-      "difficulty_band": 0.5
+      "difficulty_band": 0.5,
+      "keywords": [
+        "limiting reagent",
+        "excess reagent",
+        "theoretical yield",
+        "stoichiometric ratio"
+      ],
+      "question_forms": [
+        "identify the limiting reagent given starting amounts of reactants",
+        "calculate the theoretical yield of a product"
+      ]
     },
     {
       "id": "chem1.gases.ideal-gas-law",
       "name": "Ideal gas law",
       "description": "Applying PV = nRT to relate pressure, volume, temperature, and moles of a gas, including finding moles of a gas produced by a balanced reaction.",
-      "difficulty_band": 0.4
+      "difficulty_band": 0.4,
+      "keywords": [
+        "ideal gas law",
+        "PV = nRT",
+        "pressure",
+        "volume",
+        "moles of gas"
+      ],
+      "question_forms": [
+        "solve for an unknown gas variable using PV = nRT",
+        "find the moles or volume of a gas produced by a reaction"
+      ]
     },
     {
       "id": "chem1.thermochemistry.enthalpy",
       "name": "Enthalpy of reaction",
       "description": "Computing the enthalpy change of a reaction from bond energies or formation enthalpies.",
-      "difficulty_band": 0.45
+      "difficulty_band": 0.45,
+      "keywords": [
+        "enthalpy of reaction",
+        "bond energy",
+        "enthalpy of formation",
+        "exothermic",
+        "endothermic"
+      ],
+      "question_forms": [
+        "calculate the enthalpy change of a reaction from bond energies",
+        "calculate the enthalpy change of a reaction from formation enthalpies"
+      ]
     },
     {
       "id": "chem1.thermochemistry.hess-law",
       "name": "Hess's law",
       "description": "Combining known reaction enthalpies to find the enthalpy of a target reaction.",
-      "difficulty_band": 0.55
+      "difficulty_band": 0.55,
+      "keywords": [
+        "Hess's law",
+        "reaction enthalpy",
+        "reversing a reaction",
+        "adding reactions"
+      ],
+      "question_forms": [
+        "use Hess's law to find the enthalpy of a target reaction from given reactions",
+        "manipulate and combine given reaction enthalpies"
+      ]
     },
     {
       "id": "chem1.equilibrium.reaction-quotient",
       "name": "Reaction quotient",
       "description": "Writing the equilibrium expression and using Q versus K to predict reaction direction.",
-      "difficulty_band": 0.55
+      "difficulty_band": 0.55,
+      "keywords": [
+        "reaction quotient",
+        "equilibrium constant",
+        "Q versus K",
+        "equilibrium expression"
+      ],
+      "question_forms": [
+        "write the equilibrium expression for a reaction",
+        "compare Q to K to predict which direction a reaction will proceed"
+      ]
     },
     {
       "id": "chem1.equilibrium.le-chateliers-principle",
       "name": "Le Chatelier's principle",
       "description": "Predicting how a stressed equilibrium shifts in response to a change in concentration, temperature, or (for gaseous equilibria) volume and pressure.",
-      "difficulty_band": 0.65
+      "difficulty_band": 0.65,
+      "keywords": [
+        "Le Chatelier's principle",
+        "equilibrium shift",
+        "stress on equilibrium",
+        "concentration change",
+        "pressure and volume"
+      ],
+      "question_forms": [
+        "predict how a stressed equilibrium shifts in response to a change",
+        "explain the effect of adding or removing a reactant or product at equilibrium"
+      ]
     },
     {
       "id": "chem1.acid-base.ph-calculations",
       "name": "pH calculations",
       "description": "Computing pH or pOH from concentration, including for weak acids and bases at equilibrium.",
-      "difficulty_band": 0.6
+      "difficulty_band": 0.6,
+      "keywords": [
+        "pH calculations",
+        "pOH",
+        "weak acid",
+        "weak base",
+        "Ka and Kb"
+      ],
+      "question_forms": [
+        "calculate the pH of a strong or weak acid or base solution",
+        "find the concentration of a species at equilibrium given Ka or Kb"
+      ]
     }
   ]
 }

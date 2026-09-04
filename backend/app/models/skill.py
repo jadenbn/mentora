@@ -24,7 +24,7 @@ class Skill(SQLModel, table=True):
     keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     question_forms: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     origin: SkillOrigin = Field(default=SkillOrigin.SEED)
-    # Never rewritten once set -- append_skills only inserts, it never
+    # Never rewritten once set -- add_skills only inserts, it never
     # updates an existing row -- so this stays the moment the skill first
     # appeared, which is what the dashboard uses to flag it as freshly
     # emerged rather than part of the original taxonomy.
