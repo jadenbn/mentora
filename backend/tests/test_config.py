@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.config import (
     REQUIRED_SETTINGS,
+    TranscriptionSettings,
     TutorSettings,
     cors_allow_origins,
     missing_settings,
@@ -54,6 +55,28 @@ def test_an_empty_override_falls_back_rather_than_sending_a_blank_model(monkeypa
 def test_the_model_is_overridable_without_a_code_change(monkeypatch):
     monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
     assert TutorSettings.from_environment().gemini_model == "gemini-3-flash-preview"
+
+
+def test_voice_defaults_to_the_dedicated_transcription_model(monkeypatch):
+    # A general multimodal model would need a prompt, a response schema, and a
+    # thinking budget back; the transcription model takes none of them.
+    monkeypatch.delenv("GEMINI_TRANSCRIPTION_MODEL", raising=False)
+    settings = TranscriptionSettings.from_environment()
+    assert settings.gemini_model == "gemini-3.5-transcribe"
+    assert settings.request_timeout_seconds > 0
+
+
+def test_the_transcription_model_is_overridable_without_a_code_change(monkeypatch):
+    monkeypatch.setenv("GEMINI_TRANSCRIPTION_MODEL", "gemini-3.5-transcribe-preview")
+    assert (
+        TranscriptionSettings.from_environment().gemini_model
+        == "gemini-3.5-transcribe-preview"
+    )
+
+
+def test_an_empty_transcription_override_falls_back(monkeypatch):
+    monkeypatch.setenv("GEMINI_TRANSCRIPTION_MODEL", "")
+    assert TranscriptionSettings.from_environment().gemini_model
 
 
 def test_cors_defaults_to_the_local_frontend(monkeypatch):

@@ -25,3 +25,14 @@ class QuestionWorkflowError(RuntimeError):
 
 class QuestionWorkflowTimeout(QuestionWorkflowError):
     """The provider did not generate a question in time."""
+
+
+class TranscriptionWorkflowError(RuntimeError):
+    """Speech could not be turned into a transcript.
+
+    Carries no provider text, for the same reason TutorWorkflowError does not.
+    """
+
+
+class TranscriptionWorkflowTimeout(TranscriptionWorkflowError):
+    """The provider did not transcribe in time."""
