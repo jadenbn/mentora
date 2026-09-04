@@ -5,7 +5,10 @@ import { createPortal } from "react-dom";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { TutorFeedbackBar } from "@/features/tutor/TutorFeedbackBar";
-import { ProblemShapeProvider, ProblemShapeUtil } from "@/lib/problems/ProblemShape";
+import {
+  ProblemShapeProvider,
+  ProblemShapeUtil,
+} from "@/lib/problems/ProblemShape";
 import type { ProblemContext } from "@/types/domain";
 import { ThinkingPill } from "@/features/whiteboard/WhiteboardStatus";
 import { WhiteboardToolbar } from "@/features/whiteboard/WhiteboardToolbar";
@@ -39,8 +42,9 @@ export function Whiteboard({
               busy={session.isThinking}
               error={session.error}
               layer={
-                session.feedbackHistory.layers[session.feedbackHistory.activeIndex] ??
-                null
+                session.feedbackHistory.layers[
+                  session.feedbackHistory.activeIndex
+                ] ?? null
               }
               activeIndex={session.feedbackHistory.activeIndex}
               layerCount={session.feedbackHistory.layers.length}
