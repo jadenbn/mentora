@@ -6,9 +6,12 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterable
+from uuid import uuid4
 
+from app.schemas.courses import Course
 from app.schemas.documents import ChunkMetadata, CourseDocument, DocumentType
 from app.schemas.problems import GeneratedProblem, GroundedProblem, GroundingChunk, ProblemContext
+from app.schemas.spaces import Space
 
 
 _QUERY_PARAM_LIMIT = 900
@@ -60,7 +63,31 @@ CREATE TABLE IF NOT EXISTS problem_grounding_chunks (
     PRIMARY KEY(problem_id, chunk_id),
     UNIQUE(problem_id, ordinal)
 );
+
+CREATE TABLE IF NOT EXISTS courses (
+    course_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS spaces (
+    space_id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    problem_id TEXT REFERENCES generated_problems(problem_id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_spaces_course_id ON spaces(course_id);
 """
+
+
+_SEED_COURSES = (
+    ("course_demo", "MATH 101", "Calculus I — limits, derivatives, the chain rule."),
+    ("course_linear", "MATH 221", "Linear algebra — vectors, matrices, eigenvalues."),
+)
 
 
 def _now() -> str:
@@ -82,6 +109,14 @@ class CourseRepository:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            now = _now()
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO courses (course_id, name, description, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [(course_id, name, description, now, now) for course_id, name, description in _SEED_COURSES],
+            )
 
     def replace_document(
         self,
@@ -287,6 +322,145 @@ class CourseRepository:
             chunks=[GroundingChunk.model_validate(dict(row)) for row in chunk_rows],
         )
 
+    def create_course(self, *, name: str, description: str) -> Course:
+        course_id = f"course_{uuid4().hex}"
+        now = _now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO courses (course_id, name, description, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (course_id, name, description, now, now),
+            )
+        course = self.get_course(course_id)
+        assert course is not None
+        return course
+
+    def list_courses(self) -> list[Course]:
+        with self.connect() as connection:
+            rows = connection.execute("SELECT * FROM courses ORDER BY name").fetchall()
+        return [self._course(row) for row in rows]
+
+    def get_course(self, course_id: str) -> Course | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM courses WHERE course_id = ?", (course_id,)
+            ).fetchone()
+        return self._course(row) if row else None
+
+    def update_course(
+        self, course_id: str, *, name: str | None = None, description: str | None = None
+    ) -> Course | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM courses WHERE course_id = ?", (course_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                """
+                UPDATE courses SET name = ?, description = ?, updated_at = ?
+                WHERE course_id = ?
+                """,
+                (
+                    name if name is not None else row["name"],
+                    description if description is not None else row["description"],
+                    _now(),
+                    course_id,
+                ),
+            )
+        return self.get_course(course_id)
+
+    def delete_course(self, course_id: str) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM courses WHERE course_id = ?", (course_id,)
+            )
+            if cursor.rowcount == 0:
+                return False
+            connection.execute(
+                "DELETE FROM generated_problems WHERE course_id = ?", (course_id,)
+            )
+            connection.execute(
+                "DELETE FROM course_documents WHERE course_id = ?", (course_id,)
+            )
+        return True
+
+    def create_space(
+        self, *, course_id: str, title: str | None, problem_id: str | None
+    ) -> Space:
+        now = _now()
+        space_id = f"space_{uuid4().hex}"
+        with self.connect() as connection:
+            if problem_id:
+                problem_row = connection.execute(
+                    "SELECT course_id FROM generated_problems WHERE problem_id = ?",
+                    (problem_id,),
+                ).fetchone()
+                if problem_row is None or problem_row["course_id"] != course_id:
+                    raise ValueError("problem must belong to this course")
+            resolved_title = title.strip() if title else ""
+            if not resolved_title:
+                count = connection.execute(
+                    "SELECT COUNT(*) FROM spaces WHERE course_id = ?", (course_id,)
+                ).fetchone()[0]
+                resolved_title = f"Space {count + 1}"
+            connection.execute(
+                """
+                INSERT INTO spaces (space_id, course_id, title, problem_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (space_id, course_id, resolved_title, problem_id, now, now),
+            )
+        space = self.get_space(space_id)
+        assert space is not None
+        return space
+
+    def list_spaces(self, course_id: str) -> list[Space]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM spaces WHERE course_id = ? ORDER BY updated_at DESC",
+                (course_id,),
+            ).fetchall()
+            return [self._space(connection, row) for row in rows]
+
+    def get_space(self, space_id: str) -> Space | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM spaces WHERE space_id = ?", (space_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            return self._space(connection, row)
+
+    def update_space(self, space_id: str, *, title: str | None = None) -> Space | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM spaces WHERE space_id = ?", (space_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                """
+                UPDATE spaces SET title = ?, updated_at = ?
+                WHERE space_id = ?
+                """,
+                (
+                    title if title is not None else row["title"],
+                    _now(),
+                    space_id,
+                ),
+            )
+        return self.get_space(space_id)
+
+    def delete_space(self, space_id: str) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM spaces WHERE space_id = ?", (space_id,)
+            )
+        return cursor.rowcount > 0
+
     @staticmethod
     def _document(row: sqlite3.Row) -> CourseDocument:
         return CourseDocument(
@@ -297,6 +471,44 @@ class CourseRepository:
             total_pages=row["total_pages"],
             total_chunks=row["total_chunks"],
             extracted_characters=row["extracted_characters"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _course(row: sqlite3.Row) -> Course:
+        return Course(
+            id=row["course_id"],
+            name=row["name"],
+            description=row["description"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _space(connection: sqlite3.Connection, row: sqlite3.Row) -> Space:
+        problem = None
+        if row["problem_id"]:
+            problem_row = connection.execute(
+                """
+                SELECT problem_id, course_id, document_id, prompt
+                FROM generated_problems WHERE problem_id = ?
+                """,
+                (row["problem_id"],),
+            ).fetchone()
+            if problem_row is not None:
+                problem = ProblemContext(
+                    id=problem_row["problem_id"],
+                    course_id=problem_row["course_id"],
+                    document_id=problem_row["document_id"],
+                    source="generated",
+                    prompt=problem_row["prompt"],
+                )
+        return Space(
+            id=row["space_id"],
+            course_id=row["course_id"],
+            title=row["title"],
+            problem=problem,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
