@@ -8,6 +8,7 @@ from app.api.courses import router as courses_router  # noqa: E402
 from app.api.documents import router as documents_router  # noqa: E402
 from app.api.questions import router as questions_router  # noqa: E402
 from app.api.spaces import router as spaces_router  # noqa: E402
+from app.api.spaces import space_lookup_router  # noqa: E402
 from app.api.tutor import router as tutor_router  # noqa: E402
 from app.api.voice import router as voice_router  # noqa: E402
 from app.config import (  # noqa: E402
@@ -29,6 +30,7 @@ app.include_router(courses_router)
 app.include_router(documents_router)
 app.include_router(questions_router)
 app.include_router(spaces_router)
+app.include_router(space_lookup_router)
 app.include_router(tutor_router)
 app.include_router(voice_router)
 

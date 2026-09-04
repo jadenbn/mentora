@@ -10,6 +10,23 @@ from app.schemas.spaces import Space, SpaceCreate, SpaceUpdate
 
 router = APIRouter(prefix="/api/courses/{course_id}/spaces", tags=["spaces"])
 
+# The whiteboard route (`/spaces/{space_id}`) only knows the space id, not
+# which course it belongs to, so it needs a lookup that isn't nested under a
+# course. The repository already supports this (`get_space` takes no course
+# id); this just exposes it.
+space_lookup_router = APIRouter(prefix="/api/spaces", tags=["spaces"])
+
+
+@space_lookup_router.get("/{space_id}", response_model=Space)
+async def get_space(
+    space_id: str,
+    repository: CourseRepository = Depends(get_course_repository),
+) -> Space:
+    space = repository.get_space(space_id)
+    if space is None:
+        raise HTTPException(404, "Space was not found")
+    return space
+
 
 @router.post("", response_model=Space)
 async def create_space(

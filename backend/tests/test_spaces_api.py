@@ -83,3 +83,13 @@ def test_delete_space(client, course_id):
 
 def test_delete_missing_space_is_404(client, course_id):
     assert client.delete(f"/api/courses/{course_id}/spaces/nope").status_code == 404
+
+
+def test_get_space_by_id_without_a_course_prefix(client, course_id):
+    created = client.post(f"/api/courses/{course_id}/spaces", json={"title": "Warmup"}).json()
+    fetched = client.get(f"/api/spaces/{created['id']}").json()
+    assert fetched == created
+
+
+def test_get_missing_space_by_id_is_404(client):
+    assert client.get("/api/spaces/nope").status_code == 404
