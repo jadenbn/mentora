@@ -11,7 +11,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StatusPill } from "@/features/tutor/StatusPill";
-import { VoiceControl } from "@/features/tutor/VoiceControl";
+import { AskComposer } from "@/features/tutor/AskComposer";
 
 const pill = (props: Parameters<typeof StatusPill>[0]) =>
   renderToStaticMarkup(createElement(StatusPill, props));
@@ -60,14 +60,20 @@ describe("StatusPill", () => {
 describe("sharing it with the tutor's thinking status", () => {
   it("transcribing renders the very same pill", () => {
     const html = renderToStaticMarkup(
-      createElement(VoiceControl, {
+      createElement(AskComposer, {
+        open: true,
+        hasSelection: false,
+        hasStudentWork: true,
         phase: { status: "transcribing" },
-        error: null,
-        onStop: () => undefined,
-        onCancel: () => undefined,
-        onEdit: () => undefined,
-        onAsk: () => undefined,
-        onRerecord: () => undefined,
+        voiceError: null,
+        onAsk: async () => undefined,
+        onClose: () => undefined,
+        onVoiceAsk: () => undefined,
+        onVoiceCancel: () => undefined,
+        onVoiceEdit: () => undefined,
+        onVoiceRerecord: () => undefined,
+        onVoiceStart: () => undefined,
+        onVoiceStop: () => undefined,
       }),
     );
 

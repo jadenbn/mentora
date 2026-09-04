@@ -13,26 +13,30 @@ function renderControls(
       hasProblem,
       hasStudentWork,
       onAnalyze: () => undefined,
-      onStartVoice: () => undefined,
+      onOpenAsk: () => undefined,
     }),
   );
 }
 
 describe("TutorControls", () => {
-  it("disables canvas-dependent actions before student work exists", () => {
+  it("enables every action when a structured problem exists", () => {
     const html = renderControls(false, true);
 
-    expect(html).toMatch(/disabled=""[^>]*>Mark<\/button>/);
-    expect(html).toMatch(/disabled=""[^>]*>Hint<\/button>/);
-    expect(html).toMatch(/disabled=""[^>]*>Explain<\/button>/);
+    expect(html).not.toMatch(/disabled=""[^>]*>Mark<\/button>/);
+    expect(html).not.toMatch(/disabled=""[^>]*>Hint<\/button>/);
+    expect(html).not.toMatch(/disabled=""[^>]*>Explain<\/button>/);
     expect(html).toMatch(/>I’m Stuck<\/button>/);
     expect(html).toMatch(/bg-blue-600[^>]*>I’m Stuck<\/button>/);
   });
 
-  it("also disables I’m Stuck when there is no problem context", () => {
+  it("disables every action when there is neither work nor a problem", () => {
     const html = renderControls(false, false);
 
+    expect(html).toMatch(/disabled=""[^>]*>Mark<\/button>/);
+    expect(html).toMatch(/disabled=""[^>]*>Hint<\/button>/);
+    expect(html).toMatch(/disabled=""[^>]*>Explain<\/button>/);
     expect(html).toMatch(/disabled=""[^>]*>I’m Stuck<\/button>/);
+    expect(askButton(html)).toContain('disabled=""');
   });
 
   it("enables all tutor actions once student work exists", () => {
@@ -44,27 +48,26 @@ describe("TutorControls", () => {
     expect(html).not.toMatch(/disabled=""[^>]*>I’m Stuck<\/button>/);
     expect(html).not.toContain("bg-blue-600");
   });
-  it("offers the microphone alongside the tutor actions", () => {
-    // Asking out loud is another way to start a tutor request, so it fans out
-    // of the same chevron rather than sitting in its own corner.
-    expect(micButton(renderControls(true, true))).not.toBe("");
+  it("offers one labelled Ask AI action alongside the four modes", () => {
+    expect(askButton(renderControls(true, true))).not.toBe("");
+    expect(renderControls(true, true)).toContain("Ask AI</button>");
   });
 
-  it("enables the microphone once there is work or a problem to talk about", () => {
-    expect(micButton(renderControls(true, false))).not.toContain('disabled=""');
-    expect(micButton(renderControls(false, true))).not.toContain('disabled=""');
+  it("enables Ask AI once there is work or a problem to talk about", () => {
+    expect(askButton(renderControls(true, false))).not.toContain('disabled=""');
+    expect(askButton(renderControls(false, true))).not.toContain('disabled=""');
   });
 
-  it("says why the microphone is unavailable rather than just greying out", () => {
-    const mic = micButton(renderControls(false, false));
+  it("says why Ask AI is unavailable rather than just greying out", () => {
+    const ask = askButton(renderControls(false, false));
 
-    expect(mic).toContain('disabled=""');
-    expect(mic).toContain("before asking out loud");
+    expect(ask).toContain('disabled=""');
+    expect(ask).toContain("before asking AI");
   });
 });
 
-/** The microphone's opening tag, so attribute order cannot fake an assertion. */
-function micButton(html: string): string {
-  const start = html.indexOf('<button aria-label="Ask the tutor out loud"');
+/** Ask AI's opening tag, so attribute order cannot fake an assertion. */
+function askButton(html: string): string {
+  const start = html.indexOf('<button aria-label="Ask AI"');
   return start === -1 ? "" : html.slice(start, html.indexOf(">", start) + 1);
 }

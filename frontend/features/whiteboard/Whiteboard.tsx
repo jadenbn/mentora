@@ -1,12 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { AskComposer } from "@/features/tutor/AskComposer";
 import { StatusPill } from "@/features/tutor/StatusPill";
 import { TutorControls } from "@/features/tutor/TutorControls";
 import { TutorFeedbackBar } from "@/features/tutor/TutorFeedbackBar";
-import { VoiceControl } from "@/features/tutor/VoiceControl";
 import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
 import { WHITEBOARD_COMPONENTS } from "@/features/whiteboard/WhiteboardBackground";
 import { WhiteboardToolbar } from "@/features/whiteboard/WhiteboardToolbar";
@@ -34,10 +34,18 @@ export function Whiteboard({
 }) {
   const session = useWhiteboardSession({ spaceId, courseId, problem });
   const { hasStudentCanvasWork, runAnalysis } = session;
-  const handleSpokenQuestion = useCallback(
-    (transcript: string) =>
-      runAnalysis(hasStudentCanvasWork ? "explain" : "stuck", transcript),
+  const [askOpen, setAskOpen] = useState(false);
+  const submitQuestion = useCallback(
+    (question: string) =>
+      runAnalysis(hasStudentCanvasWork ? "explain" : "stuck", question),
     [hasStudentCanvasWork, runAnalysis],
+  );
+  const handleSpokenQuestion = useCallback(
+    async (transcript: string) => {
+      await submitQuestion(transcript);
+      setAskOpen(false);
+    },
+    [submitQuestion],
   );
   const voice = useVoiceCapture({ submit: handleSpokenQuestion });
   const cancelVoice = voice.cancel;
@@ -49,7 +57,13 @@ export function Whiteboard({
   const viewingHistory =
     session.feedbackHistory.activeIndex >= 0 &&
     session.feedbackHistory.activeIndex < session.feedbackHistory.layers.length - 1;
-  const controlsDisabled = viewingHistory || voice.phase.status !== "idle";
+  const controlsDisabled =
+    viewingHistory || voice.phase.status !== "idle" || askOpen;
+
+  const closeAsk = useCallback(() => {
+    cancelVoice();
+    setAskOpen(false);
+  }, [cancelVoice]);
 
   return (
     <div className="relative h-full">
@@ -87,22 +101,31 @@ export function Whiteboard({
         >
           <WhiteboardToolbar />
           <SaveIndicator visible={session.justSaved} />
-          <VoiceControl
-            error={voice.error}
-            onAsk={voice.ask}
-            onCancel={voice.cancel}
-            onEdit={voice.edit}
-            onRerecord={voice.rerecord}
-            onStop={voice.stop}
-            phase={voice.phase}
-          />
+          {askOpen ? (
+            <AskComposer
+              hasSelection={session.hasStudentSelection}
+              hasStudentWork={session.hasStudentCanvasWork}
+              onAsk={submitQuestion}
+              onClose={closeAsk}
+              onVoiceAsk={voice.ask}
+              onVoiceCancel={voice.cancel}
+              onVoiceEdit={voice.edit}
+              onVoiceRerecord={voice.rerecord}
+              onVoiceStart={voice.start}
+              onVoiceStop={voice.stop}
+              open
+              phase={voice.phase}
+              voiceError={voice.error}
+            />
+          ) : null}
           <TutorControls
             busyMode={session.busyMode}
             disabled={controlsDisabled}
             hasProblem={problem !== undefined}
+            hasSelection={session.hasStudentSelection}
             hasStudentWork={session.hasStudentCanvasWork}
             onAnalyze={session.handleAnalyze}
-            onStartVoice={voice.start}
+            onOpenAsk={() => setAskOpen(true)}
           />
         </Tldraw>
       </ProblemShapeProvider>

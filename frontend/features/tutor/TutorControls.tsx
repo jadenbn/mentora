@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronLeft, Mic, X } from "lucide-react";
-import { MAX_RECORDING_MS } from "@/lib/voice/voiceCapture";
+import { useState, type SyntheticEvent } from "react";
+import { ChevronLeft, Sparkles, X } from "lucide-react";
+import { useMaybeEditor } from "tldraw";
 import type { TutorMode } from "@/types/tutor";
 
 const MODE_ACTIONS: { mode: TutorMode; label: string }[] = [
@@ -12,17 +12,15 @@ const MODE_ACTIONS: { mode: TutorMode; label: string }[] = [
   { mode: "stuck", label: "I’m Stuck" },
 ];
 
-/** The original four-button arc, kept independent of the microphone control. */
 const FAN_POSITIONS = [
-  { x: -76, y: -78 },
-  { x: -128, y: -28 },
-  { x: -128, y: 28 },
-  { x: -76, y: 78 },
-  // The microphone sits directly left of the chevron/X trigger.
-  { x: -58, y: 0 },
+  { x: -80, y: -105 },
+  { x: -145, y: -58 },
+  { x: -145, y: 58 },
+  { x: -80, y: 105 },
+  { x: -110, y: 0 },
 ];
 
-const VOICE_INDEX = MODE_ACTIONS.length;
+const ASK_INDEX = MODE_ACTIONS.length;
 
 /** Shared by every fanned item so they arrive and leave as one movement. */
 function fanStyle(index: number, open: boolean) {
@@ -40,23 +38,29 @@ function fanStyle(index: number, open: boolean) {
 
 export function TutorControls({
   onAnalyze,
-  onStartVoice,
+  onOpenAsk,
   busyMode,
   disabled = false,
+  hasSelection = false,
   hasStudentWork = false,
   hasProblem = false,
 }: {
   onAnalyze: (mode: TutorMode) => void;
-  /** Begins a spoken question. The recording itself belongs to VoiceControl. */
-  onStartVoice: () => void;
+  onOpenAsk: () => void;
   busyMode: TutorMode | null;
   disabled?: boolean;
+  hasSelection?: boolean;
   hasStudentWork?: boolean;
   hasProblem?: boolean;
 }) {
   const busy = busyMode !== null;
   const blankCanvas = !hasStudentWork;
   const [open, setOpen] = useState(false);
+  const editor = useMaybeEditor();
+
+  const markAsHandled = (event: SyntheticEvent) => {
+    editor?.markEventAsHandled(event);
+  };
 
   const handleAnalyze = (mode: TutorMode) => {
     setOpen(false);
@@ -68,7 +72,11 @@ export function TutorControls({
   const nothingToTalkAbout = !hasStudentWork && !hasProblem;
 
   return (
-    <div className="pointer-events-none absolute right-6 top-1/2 z-40 h-0 w-0">
+    <div
+      className="pointer-events-none absolute right-6 top-1/2 z-40 h-0 w-0"
+      onPointerDown={markAsHandled}
+      onPointerUp={markAsHandled}
+    >
       {open ? (
         <button
           aria-label="Close tutor actions"
@@ -79,10 +87,7 @@ export function TutorControls({
       ) : null}
 
       {MODE_ACTIONS.map(({ mode, label }, index) => {
-        const disabledMode =
-          disabled ||
-          busy ||
-          (!hasStudentWork && (mode !== "stuck" || !hasProblem));
+        const disabledMode = disabled || busy || nothingToTalkAbout;
         const isPrimary = blankCanvas && mode === "stuck";
 
         return (
@@ -94,8 +99,8 @@ export function TutorControls({
             onClick={() => handleAnalyze(mode)}
             style={fanStyle(index, open)}
             title={
-              !hasStudentWork && (mode !== "stuck" || !hasProblem)
-                ? "Draw on the board before using this action."
+              nothingToTalkAbout
+                ? "Draw on the board or add a problem before using this action."
                 : undefined
             }
             type="button"
@@ -105,23 +110,32 @@ export function TutorControls({
         );
       })}
 
+      {open && hasSelection ? (
+        <span className="pointer-events-none absolute left-0 top-0 z-20 -translate-x-[130px] -translate-y-[148px] whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 shadow-sm">
+          Using selection
+        </span>
+      ) : null}
+
       <button
-        aria-label="Ask the tutor out loud"
-        className={`pointer-events-auto absolute left-0 top-0 z-10 flex size-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-950 shadow-md transition-[opacity,transform,background-color,border-color] duration-300 ease-out hover:cursor-grab hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        aria-label="Ask AI"
+        className={`pointer-events-auto absolute left-0 top-0 z-10 flex h-11 min-w-24 items-center justify-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-800 shadow-md transition-[opacity,transform,background-color,border-color] duration-300 ease-out hover:cursor-grab hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
         disabled={disabled || busy || nothingToTalkAbout}
         onClick={() => {
           setOpen(false);
-          onStartVoice();
+          onOpenAsk();
         }}
-        style={fanStyle(VOICE_INDEX, open)}
+        style={fanStyle(ASK_INDEX, open)}
         title={
           nothingToTalkAbout
-            ? "Draw on the board or add a problem before asking out loud."
-            : `Hold a question and press Stop. Recordings end after ${MAX_RECORDING_MS / 1_000} seconds.`
+            ? "Draw on the board or add a problem before asking AI."
+            : hasSelection
+              ? "Ask a typed or spoken question about the selected work."
+              : "Ask a typed or spoken question about the current work."
         }
         type="button"
       >
-        <Mic aria-hidden="true" className="size-4" strokeWidth={2} />
+        <Sparkles aria-hidden="true" className="size-3.5" strokeWidth={2} />
+        Ask AI
       </button>
       <button
         aria-expanded={open}
