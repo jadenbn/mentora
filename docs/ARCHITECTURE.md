@@ -47,7 +47,7 @@ Frontend packages are managed with Bun (`frontend/bun.lock`).
 │ React / Next.js / tldraw              │
 │ Course UI                             │
 │ Session grid                          │
-│ Infinite whiteboard                   │
+│ Vertical whiteboard                   │
 │ Problem rendering                     │
 │ Tutor controls                        │
 │ Select for AI                         │
@@ -160,6 +160,15 @@ Preserve student strokes, system/problem shapes, AI shapes, positions, styles, a
 Camera/viewport state may also be stored.
 Avoid inventing a parallel graphics document model unless necessary.
 
+The current student-facing surface is a page-like vertical document implemented
+with one locked, system-owned transparent boundary shape in the tldraw document.
+The frontend renders the white dotted page against a neutral workspace and
+keeps the tldraw camera freely pannable and zoomable around it. The writing
+surface starts at a readable minimum height and grows downward in chunks when
+student content approaches its bottom safety margin. This is intentionally not
+multi-page navigation yet; the persisted tldraw document remains the source of
+truth.
+
 ## 9. Shape Ownership
 At minimum:
 ```text
@@ -172,10 +181,13 @@ Potential metadata:
 type ShapeOwner = "system" | "student" | "ai";
 ```
 Shapes the tutor draws carry `owner: "ai"` and the `interaction_id` that
-produced them, which is how re-rendering one interaction replaces its own
-shapes without disturbing earlier feedback. Ownership no longer crosses the
-wire as a shape list: the capture excludes tutor-authored shapes from the
-image and sends their bounds as `prior_annotations`.
+produced them. Each response is also stored as a per-Space tutor checkpoint in
+browser storage, including a document-only tldraw snapshot captured when the
+request began; the selected checkpoint restores that canvas state without
+moving the current viewport and renders its feedback.
+History viewing is read-only and does not overwrite the live session. Ownership
+no longer crosses the wire as a shape list: capture excludes tutor-authored
+shapes from the image and sends their bounds as `prior_annotations`.
 The critical invariant is that the system can distinguish what the problem said, what the student wrote, and what the AI wrote.
 
 ## 10. Frontend Responsibilities
@@ -197,8 +209,8 @@ Do not call private AI-provider APIs directly from browser code.
 Whiteboard controls remain canvas-adjacent rather than becoming a second
 workspace: drawing styles open from a palette button in the left tool rail, and
 tutor actions fan out from the right-edge control. Starting a tutor request
-collapses the action fan and exposes only a transient top-of-canvas status;
-feedback itself remains on the canvas.
+collapses the action fan and exposes a transient navbar status. The current
+feedback summary lives in that navbar; spatial marks alone live on the canvas.
 
 ## 11. Backend Responsibilities
 Backend owns:
@@ -311,16 +323,25 @@ canvas_actions   at most 12
 summary          short plain-language explanation
 ```
 
-`canvas_actions` is a discriminated union of two shapes: `text` says something
-at a normalized point, and `circle` / `check` / `cross` point at a normalized
-box. There is no third shape, and no action carries a label — text is the one
-way to put words on a canvas.
+`canvas_actions` contains target actions: `highlight`, `circle`, `check`, or
+`cross`, each pointing at a normalized box. Prose is never a canvas action; the
+required, concise `summary` is shown in the navbar instead and rendered as a
+single KaTeX document, including its prose. Highlights are optional and the
+array may contain multiple independent highlight targets.
 
 Gemini output is schema-constrained, then validated independently with
 Pydantic, then passed through a deterministic safety policy. The renderer never
 receives arbitrary tldraw operations.
 
 The invariant remains: **validated structured output before tldraw rendering**.
+
+The frontend stores the last 10 validated responses per Space as tutor
+checkpoints in local storage. Each checkpoint includes the document snapshot at
+request time, while AI shapes remain renderable separately and user highlights
+remain part of the document. The navbar exposes
+immediate previous/next navigation and a visibility toggle; historical
+navigation restores the checkpoint read-only, and the newest response always
+selects the live canvas.
 
 ## 18. Coordinates
 Prefer normalized image-space coordinates at the AI/API boundary:
@@ -344,12 +365,12 @@ Annotation Renderer
       ↓
 tldraw operations
 ```
-The renderer creates controlled text, circles, checks, and crosses — the four
-implemented actions. `TutorAnnotation` was an earlier name for this and no
-longer exists.
-The whiteboard uses a progressive renderer for tutor feedback: text is revealed
-as a typewriter sequence, while circles, checks, and crosses are emitted as
-freehand draw-shape points at a capped rate. Animation is presentation-only,
+The renderer creates controlled highlights, circles, checks, and crosses — the
+four implemented actions. `TutorAnnotation` was an earlier name for this and
+no longer exists. The whiteboard uses a progressive renderer for tutor
+feedback: circles, checks, and crosses are emitted as freehand draw-shape
+points at a capped rate, while highlights appear immediately. Animation is
+presentation-only,
 ignores the undo history, can be cancelled on teardown, and does not change the
 validated tutor contract or ownership metadata.
 
@@ -359,7 +380,14 @@ Expose a clean frontend boundary conceptually like:
 async function captureCanvasForAnalysis(): Promise<Blob>
 ```
 Hide low-level tldraw export details from unrelated code.
-Where useful, send image plus structured metadata.
+The implementation captures student work plus relevant prior tutor marks,
+adds a bounded padding margin, and excludes system/problem shapes from the
+image. The returned world-space frame is the same frame used to normalize
+tutor coordinates and render them back onto tldraw. Development builds log a
+temporary object URL for the exact outgoing image; the image is not persisted.
+When `TUTOR_DEBUG_LOG_REQUESTS=1`, the backend also logs the assembled Gemini
+request as structured JSON, including prompts, context, image metadata, and
+generation config. Raw image bytes are intentionally omitted.
 
 ## 21. Select for AI
 Conceptual representation:
@@ -685,12 +713,12 @@ AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
 
-The tutor is one Gemini call through a single ADK agent:
+The tutor is one direct Gemini call through the `google-genai` SDK:
 
 ```text
 canvas image + mode + prior annotations
         ↓
-LlmAgent (Gemini multimodal, TutorPlan response schema)
+Gemini multimodal generation (TutorPlan response schema)
         ↓ independent Pydantic validation and safety policy
 TutorResponse
 ```
@@ -699,9 +727,12 @@ Reading the canvas and deciding what to draw are the same judgement, so
 splitting them only bought a second round trip on the path where
 responsiveness is the product.
 
-ADK performs up to three bounded transient HTTP attempts. The application makes
-one additional attempt only when structured output is malformed. The model
-defaults to `gemini-3.5-flash-lite` and is replaceable through `GEMINI_MODEL`.
+The SDK performs up to three bounded transient HTTP attempts for 408 and
+5xx responses. The application makes one additional request only when
+structured output is malformed. The model defaults to
+`gemini-3.5-flash-lite` and is replaceable through `GEMINI_MODEL`; thinking
+defaults to `low` and is replaceable through `GEMINI_THINKING_LEVEL`. These
+settings are shared by tutoring and grounded question generation.
 
 ## 36. Prompt Organization
 Possible layout:

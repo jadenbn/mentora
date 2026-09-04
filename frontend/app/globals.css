@@ -15,6 +15,17 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Only the feedback summary needs prose wrapping. Keep KaTeX's native
+   unbreakable math runs everywhere else, especially on the problem shape. */
+.feedback-katex > .katex,
+.feedback-katex > .katex > .katex-html {
+  white-space: normal;
+}
+
+.feedback-katex > .katex {
+  display: block;
+}
+
 button:disabled { cursor: not-allowed; }
 
 .sidebar-style-panel .tlui-style-panel {
@@ -44,4 +55,39 @@ button:disabled { cursor: not-allowed; }
 
 .tlui-toolbar .tlui-button:hover {
   cursor: grab;
+}
+
+/* The page stays finite while the surrounding camera remains freely pannable. */
+.mentora-canvas-background {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #606267;
+}
+
+.mentora-drawing-toolbar {
+  border: 1px solid rgb(15 23 42 / 12%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 24%);
+  padding: 4px;
+  backdrop-filter: blur(12px);
+}
+
+.mentora-workspace-info {
+  max-width: min(280px, calc(100vw - 24px));
+  border: 1px solid rgb(15 23 42 / 12%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 24%);
+  padding: 10px 12px;
+  backdrop-filter: blur(12px);
+}
+
+.mentora-document-page {
+  position: absolute;
+  background-color: #fff;
+  background-image: radial-gradient(circle, #aeb7c4 1px, transparent 1.2px);
+  background-position: 0 0;
+  box-shadow: 0 3px 18px rgb(15 23 42 / 18%);
 }

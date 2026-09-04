@@ -1,361 +1,92 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Palette as PaletteIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ArrowToolbarItem,
-  DefaultStylePanel,
-  DrawToolbarItem,
-  Editor,
-  EraserToolbarItem,
-  HandToolbarItem,
-  HighlightToolbarItem,
-  RectangleToolbarItem,
-  SelectToolbarItem,
-  StylePanelColorPicker,
-  StylePanelDashPicker,
-  StylePanelFillPicker,
-  StylePanelOpacityPicker,
-  StylePanelSection,
-  StylePanelSizePicker,
-  TextToolbarItem,
-  TldrawUiMenuContextProvider,
-  TldrawUiToolbar,
-  TldrawUiToolbarButton,
-  useEditor,
-  useValue,
-} from "tldraw";
-import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
+import { useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { StatusPill } from "@/features/tutor/StatusPill";
 import { TutorControls } from "@/features/tutor/TutorControls";
+import { TutorFeedbackBar } from "@/features/tutor/TutorFeedbackBar";
 import { VoiceControl } from "@/features/tutor/VoiceControl";
-import { animateCanvasActions } from "@/lib/annotations/animateActions";
-import type { AnimationHandle } from "@/lib/annotations/animate";
-import {
-  clearAiShapes,
-  hasAiShapes as getHasAiCanvasFeedback,
-} from "@/lib/annotations/renderCanvasActions";
-import { hasStudentWork as getHasStudentCanvasWork } from "@/lib/canvas/capture";
-import { loadCanvas, startAutosave } from "@/lib/canvas/persistence";
-import { saveCanvas } from "@/lib/canvas/persistence";
+import { SaveIndicator } from "@/features/whiteboard/SaveIndicator";
+import { WHITEBOARD_COMPONENTS } from "@/features/whiteboard/WhiteboardBackground";
+import { WhiteboardToolbar } from "@/features/whiteboard/WhiteboardToolbar";
+import { useWhiteboardSession } from "@/features/whiteboard/useWhiteboardSession";
 import { ProblemShapeProvider, ProblemShapeUtil } from "@/lib/problems/ProblemShape";
-import { ensureProblemShape } from "@/lib/problems/renderProblem";
-import { touchSpace } from "@/lib/spaces/store";
-import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import { useVoiceCapture } from "@/lib/voice/useVoiceCapture";
 import type { ProblemContext } from "@/types/domain";
-import type {
-  CanvasAction,
-  TutorMode,
-} from "@/types/tutor";
-import type { RenderContext } from "@/lib/annotations/renderCanvasActions";
 
 const Tldraw = dynamic(() => import("tldraw").then((module) => module.Tldraw), {
   ssr: false,
 });
 
-function PaletteOptions() {
-  const editor = useEditor();
-  const [hasSelection, setHasSelection] = useState(
-    () => editor.getSelectedShapeIds().length > 0,
-  );
-
-  useEffect(() => {
-    const updateSelection = () => {
-      const next = editor.getSelectedShapeIds().length > 0;
-      setHasSelection((current) => (current === next ? current : next));
-    };
-    updateSelection();
-    return editor.store.listen(updateSelection);
-  }, [editor]);
-
-  return (
-    <div className="sidebar-style-panel w-52 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-      <DefaultStylePanel isMobile>
-        <StylePanelSection>
-          <StylePanelColorPicker />
-          <StylePanelOpacityPicker />
-        </StylePanelSection>
-        {hasSelection ? (
-          <StylePanelSection>
-            <StylePanelFillPicker />
-            <StylePanelDashPicker />
-          </StylePanelSection>
-        ) : null}
-        <StylePanelSection>
-          <StylePanelSizePicker />
-        </StylePanelSection>
-      </DefaultStylePanel>
-    </div>
-  );
-}
-
-function CanvasToolbar() {
-  const editor = useEditor();
-  const currentTool = useValue(
-    "canvas-toolbar-tool",
-    () => editor.getCurrentToolId(),
-    [editor],
-  );
-  const paletteAvailable = currentTool !== "eraser";
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const showPalette = paletteOpen && paletteAvailable;
-
-  return (
-    <>
-      <TldrawUiToolbar
-        className="absolute! left-4! top-1/2! z-40! -translate-y-1/2!"
-        label="Drawing tools"
-        orientation="vertical"
-        tooltipSide="right"
-      >
-        <TldrawUiMenuContextProvider sourceId="toolbar" type="toolbar">
-          <SelectToolbarItem />
-          <HandToolbarItem />
-          <DrawToolbarItem />
-          <HighlightToolbarItem />
-          <TextToolbarItem />
-          <ArrowToolbarItem />
-          <RectangleToolbarItem />
-          <EraserToolbarItem />
-          <TldrawUiToolbarButton
-            className="hover:cursor-grab"
-            disabled={!paletteAvailable}
-            isActive={showPalette}
-            onClick={() => setPaletteOpen((current) => !current)}
-            title={showPalette ? "Close palette" : "Open palette"}
-            type="tool"
-            tooltip={showPalette ? "Close palette" : "Open palette"}
-          >
-            <PaletteIcon aria-hidden="true" className="size-4" />
-          </TldrawUiToolbarButton>
-        </TldrawUiMenuContextProvider>
-      </TldrawUiToolbar>
-      {showPalette ? (
-        <button
-          aria-label="Close palette"
-          className="fixed inset-0 z-30 cursor-default"
-          onClick={() => setPaletteOpen(false)}
-          type="button"
-        />
-      ) : null}
-      {showPalette ? (
-        <div className="absolute left-16 top-1/2 z-50 -translate-y-1/2">
-          <PaletteOptions />
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function ThinkingIndicator({ busy, error }: { busy: boolean; error: string | null }) {
-  if (busy) {
-    return (
-      <div className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2">
-        <StatusPill label="Thinking" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div
-        aria-live="assertive"
-        className="pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 shadow-sm"
-        role="alert"
-      >
-        {error}
-      </div>
-    );
-  }
-
-  return null;
-}
-
 export function Whiteboard({
   spaceId,
   courseId,
   problem,
+  feedbackHost,
+  thinkingHost,
 }: {
   spaceId: string;
   courseId: string;
   problem?: ProblemContext;
+  feedbackHost?: HTMLElement | null;
+  thinkingHost?: HTMLElement | null;
 }) {
-  const editor = useRef<Editor | null>(null);
-  const disposeAutosave = useRef<(() => void) | null>(null);
-  const disposeWorkListener = useRef<(() => void) | null>(null);
-  const animation = useRef<AnimationHandle | null>(null);
-  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [justSaved, setJustSaved] = useState(false);
-  const [busyMode, setBusyMode] = useState<TutorMode | null>(null);
-  const [isThinking, setIsThinking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hasStudentCanvasWork, setHasStudentCanvasWork] = useState(false);
-  const [hasAiCanvasFeedback, setHasAiCanvasFeedback] = useState(false);
-
-  const renderTutorActions = useCallback(
-    (
-      currentEditor: Editor,
-      actions: CanvasAction[],
-      context: RenderContext,
-    ): Promise<void> => {
-      animation.current?.cancel();
-      setIsThinking(false);
-      const next = animateCanvasActions(currentEditor, actions, context);
-      animation.current = next;
-      return next.done.then(() => {
-        if (animation.current === next) {
-          animation.current = null;
-        }
-      });
-    },
-    [],
-  );
-
-  /** One tutor request. Throws, so each caller can surface failure its own way. */
-  const runAnalysis = useCallback(
-    async (mode: TutorMode, transcript?: string) => {
-      const current = editor.current;
-      if (!current || busyMode !== null) {
-        return;
-      }
-
-      setBusyMode(mode);
-      setIsThinking(true);
-      setError(null);
-
-      try {
-        await runTutorAnalysis({
-          editor: current,
-          mode,
-          courseId,
-          problem,
-          transcript,
-          renderActions: renderTutorActions,
-        });
-      } finally {
-        animation.current = null;
-        setIsThinking(false);
-        setBusyMode(null);
-      }
-    },
-    [busyMode, courseId, problem, renderTutorActions],
-  );
-
-  const handleAnalyze = useCallback(
-    (mode: TutorMode) => {
-      void runAnalysis(mode).catch((caught) => {
-        setError(
-          caught instanceof EmptyCanvasError || caught instanceof Error
-            ? caught.message
-            : "The tutor request failed.",
-        );
-      });
-    },
-    [runAnalysis],
-  );
-
-  /**
-   * A spoken question is context for the existing tutor, not a mode of its own.
-   * Asking about written work is an explanation; asking before writing anything
-   * can only be about the problem, which is what stuck already handles.
-   */
+  const session = useWhiteboardSession({ spaceId, courseId, problem });
+  const { hasStudentCanvasWork, runAnalysis } = session;
   const handleSpokenQuestion = useCallback(
     (transcript: string) =>
       runAnalysis(hasStudentCanvasWork ? "explain" : "stuck", transcript),
     [hasStudentCanvasWork, runAnalysis],
   );
-
   const voice = useVoiceCapture({ submit: handleSpokenQuestion });
   const cancelVoice = voice.cancel;
 
-  const handleClear = useCallback(() => {
-    animation.current?.cancel();
-    animation.current = null;
-    if (editor.current) {
-      clearAiShapes(editor.current);
-    }
-    setHasAiCanvasFeedback(false);
-    setIsThinking(false);
-    setError(null);
-  }, []);
-
-  // Autosave outlives any single render, so tear it down when the space closes.
   useEffect(() => {
-    return () => {
-      disposeAutosave.current?.();
-      disposeAutosave.current = null;
-      disposeWorkListener.current?.();
-      disposeWorkListener.current = null;
-      animation.current?.cancel();
-      animation.current = null;
-      // Leaving a space must never leave a microphone running behind it.
-      cancelVoice();
-      setIsThinking(false);
-      if (savedTimer.current !== null) {
-        clearTimeout(savedTimer.current);
-        savedTimer.current = null;
-      }
-    };
+    return () => cancelVoice();
   }, [cancelVoice, spaceId]);
 
-  /** Flash the indicator, restarting the countdown if saves come back to back. */
-  const flashSaved = useCallback(() => {
-    setJustSaved(true);
-    if (savedTimer.current !== null) {
-      clearTimeout(savedTimer.current);
-    }
-    savedTimer.current = setTimeout(() => {
-      savedTimer.current = null;
-      setJustSaved(false);
-    }, 1_600);
-  }, []);
-
-  const handleMount = useCallback(
-    (mountedEditor: Editor) => {
-      editor.current = mountedEditor;
-      mountedEditor.updateInstanceState({ isGridMode: true });
-      // Restore before the student can draw, so their work is never briefly
-      // absent and then overwritten by an autosave of an empty canvas.
-      loadCanvas(mountedEditor, spaceId);
-      const updateStudentWork = () => {
-        const next = getHasStudentCanvasWork(mountedEditor);
-        setHasStudentCanvasWork((current) => (current === next ? current : next));
-        const hasAiFeedback = getHasAiCanvasFeedback(mountedEditor);
-        setHasAiCanvasFeedback((current) =>
-          current === hasAiFeedback ? current : hasAiFeedback,
-        );
-      };
-      updateStudentWork();
-      disposeWorkListener.current?.();
-      disposeWorkListener.current = mountedEditor.store.listen(updateStudentWork);
-      if (problem && ensureProblemShape(mountedEditor, problem)) {
-        saveCanvas(mountedEditor, spaceId);
-      }
-      disposeAutosave.current?.();
-      disposeAutosave.current = startAutosave(mountedEditor, spaceId, {
-        onSave: () => {
-          touchSpace(spaceId);
-          flashSaved();
-        },
-      });
-    },
-    [flashSaved, problem, spaceId],
-  );
+  const viewingHistory =
+    session.feedbackHistory.activeIndex >= 0 &&
+    session.feedbackHistory.activeIndex < session.feedbackHistory.layers.length - 1;
+  const controlsDisabled = viewingHistory || voice.phase.status !== "idle";
 
   return (
     <div className="relative h-full">
+      {feedbackHost
+        ? createPortal(
+            <TutorFeedbackBar
+              busy={session.isThinking}
+              error={session.error}
+              layer={
+                session.feedbackHistory.layers[
+                  session.feedbackHistory.activeIndex
+                ] ?? null
+              }
+              activeIndex={session.feedbackHistory.activeIndex}
+              layerCount={session.feedbackHistory.layers.length}
+              visible={session.feedbackHistory.visible}
+              warning={session.feedbackWarning}
+              onPrevious={() => session.handleMoveFeedback(-1)}
+              onNext={() => session.handleMoveFeedback(1)}
+              onToggle={session.handleToggleFeedback}
+            />,
+            feedbackHost,
+          )
+        : null}
+      {thinkingHost && session.isThinking
+        ? createPortal(<StatusPill label="Thinking" />, thinkingHost)
+        : null}
       <ProblemShapeProvider problem={problem}>
         <Tldraw
+          components={WHITEBOARD_COMPONENTS}
           hideUi
-          onMount={handleMount}
+          onMount={session.handleMount}
           options={{ maxPages: 1 }}
           shapeUtils={[ProblemShapeUtil]}
         >
-          <CanvasToolbar />
-          <SaveIndicator visible={justSaved} />
-          <ThinkingIndicator busy={isThinking} error={error} />
+          <WhiteboardToolbar />
+          <SaveIndicator visible={session.justSaved} />
           <VoiceControl
             error={voice.error}
             onAsk={voice.ask}
@@ -366,16 +97,11 @@ export function Whiteboard({
             phase={voice.phase}
           />
           <TutorControls
-            busyMode={busyMode}
-            // One tutor request at a time: a button tapped while a question is
-            // being recorded, transcribed, or reviewed would take the busy slot
-            // and drop the question already spoken.
-            disabled={voice.phase.status !== "idle"}
-            hasFeedback={hasAiCanvasFeedback}
+            busyMode={session.busyMode}
+            disabled={controlsDisabled}
             hasProblem={problem !== undefined}
-            hasStudentWork={hasStudentCanvasWork}
-            onAnalyze={handleAnalyze}
-            onClear={handleClear}
+            hasStudentWork={session.hasStudentCanvasWork}
+            onAnalyze={session.handleAnalyze}
             onStartVoice={voice.start}
           />
         </Tldraw>

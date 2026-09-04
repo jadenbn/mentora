@@ -11,13 +11,10 @@ already finished.
 
 from __future__ import annotations
 
-from app.schemas.tutor import TextAction, TutorPlan, Uncertainty, WorkStatus
+from app.schemas.tutor import TutorPlan, Uncertainty, WorkStatus
 
 #: A whiteboard buried in annotations is worse feedback than none.
 MAX_ACTIONS = 12
-
-#: Where feedback goes when nothing better is known.
-_CANVAS_CENTRE = {"x": 0.5, "y": 0.5}
 
 _CLARIFICATION = "I can't read this clearly — could you rewrite the step?"
 _COMPLETE = "This looks complete."
@@ -26,16 +23,11 @@ _COMPLETE = "This looks complete."
 _GRADING_ACTIONS = {"check", "cross"}
 
 
-def _clarification_action(uncertainties: list[Uncertainty]) -> TextAction:
+def _clarification_summary(uncertainties: list[Uncertainty]) -> str:
     """Ask about the specific symbol when one is named, not the whole canvas."""
     if not uncertainties:
-        return TextAction(type="text", position=_CANVAS_CENTRE, text=_CLARIFICATION)
-    first = uncertainties[0]
-    return TextAction(
-        type="text",
-        position={"x": first.target.x, "y": first.target.y},
-        text=f"{first.description} Could you rewrite it?"[:240],
-    )
+        return _CLARIFICATION
+    return f"{uncertainties[0].description} Could you rewrite it?"[:240]
 
 
 def apply_safety_policy(plan: TutorPlan) -> TutorPlan:
@@ -51,18 +43,15 @@ def apply_safety_policy(plan: TutorPlan) -> TutorPlan:
 
     if status is WorkStatus.uncertain:
         actions = [a for a in actions if a.type not in _GRADING_ACTIONS]
-        if not actions:
-            actions = [_clarification_action(plan.uncertainties)]
+        summary = _clarification_summary(plan.uncertainties)
 
     elif status is WorkStatus.correct:
         # Finished work must not be argued with. Keep one check, drop every
-        # corrective mark, and confirm in words rather than inventing a step.
+        # corrective mark, and confirm in the navbar rather than inventing a
+        # step on the canvas.
         checks = [a for a in actions if a.type == "check"][:1]
-        spoken = next((a for a in actions if a.type == "text"), None)
-        position = spoken.position.model_dump() if spoken else _CANVAS_CENTRE
-        actions = checks + [
-            TextAction(type="text", position=position, text=summary or _COMPLETE)
-        ]
+        actions = checks
+        summary = summary or _COMPLETE
 
     return plan.model_copy(
         update={

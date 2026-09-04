@@ -17,6 +17,7 @@ pytest.importorskip("google.genai", reason="provider adapter requires google-gen
 from app.agents.tutor_workflow import (  # noqa: E402
     TUTOR_PLAN_RESPONSE_SCHEMA,
     GeminiTutorWorkflow,
+    _canvas_state,
     drop_nulls,
     normalize_provider_output,
 )
@@ -41,15 +42,17 @@ class TestProviderSchemaDialect:
         assert keyword not in _walk_keys(TUTOR_PLAN_RESPONSE_SCHEMA)
 
     def test_generation_is_tuned_for_an_interactive_path(self):
-        config = GeminiTutorWorkflow(model="m")._generation_config(TutorMode.hint)
-        assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
+        config = GeminiTutorWorkflow(
+            model="m", thinking_level="high"
+        )._generation_config(TutorMode.hint)
+        assert config.thinking_config.thinking_level == types.ThinkingLevel.HIGH
         assert config.max_output_tokens == 1_024
         # Vision tokens dominate; medium keeps handwriting legible for less.
         assert config.media_resolution == types.MediaResolution.MEDIA_RESOLUTION_MEDIUM
 
     def test_the_provider_schema_offers_only_renderable_actions(self):
         action_types = _find_enum(TUTOR_PLAN_RESPONSE_SCHEMA, "type")
-        assert set(action_types) == {"text", "circle", "check", "cross"}
+        assert set(action_types) == {"highlight", "circle", "check", "cross"}
 
 
 class TestNullPlaceholders:
@@ -57,10 +60,7 @@ class TestNullPlaceholders:
     null. Strict unions reject nulls, so they are stripped first."""
 
     def test_null_fields_are_removed(self):
-        assert drop_nulls({"type": "text", "text": "hi", "target": None}) == {
-            "type": "text",
-            "text": "hi",
-        }
+        assert drop_nulls({"type": "circle", "target": None}) == {"type": "circle"}
 
     def test_nested_objects_are_cleaned(self):
         assert drop_nulls({"a": {"b": None, "c": 1}}) == {"a": {"c": 1}}
@@ -73,6 +73,16 @@ class TestNullPlaceholders:
         assert drop_nulls({"x": 0, "y": "", "z": False}) == {"x": 0, "y": "", "z": False}
 
 
+class TestCanvasState:
+    def test_a_problem_only_request_is_explicitly_not_an_unreadable_image(self):
+        state = _canvas_state(None)
+        assert "has not drawn anything yet" in state
+        assert "Do not say that the handwriting is unreadable" in state
+
+    def test_an_image_request_tells_the_model_to_use_the_canvas(self):
+        assert "student-work image is supplied above" in _canvas_state(f.PNG)
+
+
 class TestFirstAttemptValidation:
     """Every avoidable repair attempt is a second round trip on an
     interactive path, so provider output is normalised before validating."""
@@ -80,10 +90,10 @@ class TestFirstAttemptValidation:
     def test_a_field_from_another_action_is_dropped(self):
         plan = normalize_provider_output(
             {"status": "partial", "canvas_actions": [
-                {"type": "text", "position": {"x": 0.1, "y": 0.1},
-                 "text": "hi", "target": {"x": 0, "y": 0, "width": 1, "height": 1}}]}
+                {"type": "circle", "target": {"x": 0, "y": 0, "width": 1, "height": 1},
+                 "text": "hi", "position": {"x": 0.1, "y": 0.1}}]}
         )
-        assert set(plan["canvas_actions"][0]) == {"type", "position", "text"}
+        assert set(plan["canvas_actions"][0]) == {"type", "target"}
 
     def test_a_marking_action_keeps_only_its_target(self):
         plan = normalize_provider_output(
@@ -96,10 +106,9 @@ class TestFirstAttemptValidation:
     def test_nulls_are_still_stripped(self):
         plan = normalize_provider_output(
             {"status": "partial", "canvas_actions": [
-                {"type": "text", "position": {"x": 0.1, "y": 0.1}, "text": "hi", "target": None}],
-             "summary": None}
+                {"type": "circle", "target": None}], "summary": None}
         )
-        assert "summary" not in plan
+        assert "summary" not in plan and plan["canvas_actions"][0] == {"type": "circle"}
 
     def test_an_unknown_action_is_left_for_validation_to_reject(self):
         plan = normalize_provider_output(

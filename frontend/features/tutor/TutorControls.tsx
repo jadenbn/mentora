@@ -40,23 +40,19 @@ function fanStyle(index: number, open: boolean) {
 
 export function TutorControls({
   onAnalyze,
-  onClear,
   onStartVoice,
   busyMode,
   disabled = false,
   hasStudentWork = false,
   hasProblem = false,
-  hasFeedback = false,
 }: {
   onAnalyze: (mode: TutorMode) => void;
-  onClear: () => void;
   /** Begins a spoken question. The recording itself belongs to VoiceControl. */
   onStartVoice: () => void;
   busyMode: TutorMode | null;
   disabled?: boolean;
   hasStudentWork?: boolean;
   hasProblem?: boolean;
-  hasFeedback?: boolean;
 }) {
   const busy = busyMode !== null;
   const blankCanvas = !hasStudentWork;
@@ -127,30 +123,6 @@ export function TutorControls({
       >
         <Mic aria-hidden="true" className="size-4" strokeWidth={2} />
       </button>
-
-      {hasFeedback ? (
-        <button
-          aria-label="Clear tutor feedback"
-          className={`pointer-events-auto absolute left-0 z-20 flex h-8 min-w-8 items-center justify-center rounded-full border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-500 shadow-md transition-[opacity,transform,top] duration-300 ease-out hover:cursor-grab hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
-          disabled={disabled || busy}
-          onClick={() => {
-            setOpen(false);
-            onClear();
-          }}
-          style={{
-            top: 126,
-            transitionDelay: open ? `${FAN_POSITIONS.length * 45}ms` : "0ms",
-            transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)",
-            transform: open
-              ? "translate(-50%, -50%) scale(1)"
-              : "translate(-50%, -50%) scale(0.72)",
-          }}
-          type="button"
-        >
-          Clear
-        </button>
-      ) : null}
-
       <button
         aria-expanded={open}
         aria-label={open ? "Close tutor actions" : "Open tutor actions"}

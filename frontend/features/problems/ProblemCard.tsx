@@ -45,7 +45,17 @@ function escapeLatexText(value: string): string {
         return `\\${character}`;
     }
   });
-  return escaped.split("\n").join("} \\\\ \\text{");
+  return escaped
+    .split("\n")
+    .map((line) =>
+      line
+        .split(/([ \t]+)/)
+        .map((part) =>
+          /^[ \t]+$/.test(part) ? `}\\allowbreak\\text{${part}` : part,
+        )
+        .join(""),
+    )
+    .join("} \\\\ \\text{");
 }
 
 function parseDelimitedPrompt(prompt: string): ProblemSegment[] {
@@ -89,12 +99,11 @@ function parseRawMathPrompt(prompt: string): ProblemSegment[] | null {
   // In a sentence such as "... function f(x) = e^{3x} \\cos(x^2).", keep
   // the prose in the browser font but render the complete mathematical clause.
   const equals = prompt.lastIndexOf("=", match.index);
+  if (equals < 0) return null;
   const leftHandSide =
-    equals >= 0
-      ? /([A-Za-z][A-Za-z0-9]*(?:\s*\([^()\n]*\))?\s*=\s*)$/.exec(
-          prompt.slice(0, equals + 1),
-        )
-      : null;
+    /([A-Za-z][A-Za-z0-9]*(?:\s*\([^()\n]*\))?\s*=\s*)$/.exec(
+      prompt.slice(0, equals + 1),
+    );
   const start = leftHandSide?.index ?? (equals >= 0 ? equals + 1 : match.index);
   let end = prompt.length;
   for (const punctuation of [".", "?", "!"]) {
@@ -115,10 +124,28 @@ function parseRawMathPrompt(prompt: string): ProblemSegment[] | null {
   ];
 }
 
+/** Accept the compact exponent notation models sometimes use in prose. */
+function parseInlineRawMath(prompt: string): ProblemSegment[] | null {
+  const match = /\b[A-Za-z]+\s*\^\s*(?:\([^()\n]+\)|\{[^}\n]+\}|[A-Za-z0-9]+)/.exec(prompt);
+  if (!match || match.index === undefined) return null;
+
+  const source = match[0];
+  const value = source.replace(/\^\(([^()]+)\)/g, "^{$1}");
+  return [
+    ...(match.index > 0
+      ? [{ kind: "text", value: readableText(prompt.slice(0, match.index)) } as const]
+      : []),
+    { kind: "math", value, display: false, source },
+    ...(match.index + source.length < prompt.length
+      ? [{ kind: "text", value: readableText(prompt.slice(match.index + source.length)) } as const]
+      : []),
+  ];
+}
+
 export function parseProblemPrompt(prompt: string): ProblemSegment[] {
   const delimited = parseDelimitedPrompt(prompt);
   if (delimited.some((segment) => segment.kind === "math")) return delimited;
-  return parseRawMathPrompt(prompt) ?? delimited;
+  return parseRawMathPrompt(prompt) ?? parseInlineRawMath(prompt) ?? delimited;
 }
 
 function promptAsLatex(segments: ProblemSegment[]): string {
@@ -165,7 +192,7 @@ function MathSegment({ segment }: { segment: Extract<ProblemSegment, { kind: "ma
   );
 }
 
-export function ProblemBody({ prompt }: { prompt: string }) {
+export function ProblemBody({ prompt, className }: { prompt: string; className?: string }) {
   const segments = parseProblemPrompt(prompt);
   let markup: string | null = null;
   try {
@@ -182,14 +209,22 @@ export function ProblemBody({ prompt }: { prompt: string }) {
   if (markup !== null) {
     return (
       <div
-        className="problem-katex whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]"
+        className={
+          className ??
+          "problem-katex whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]"
+        }
         dangerouslySetInnerHTML={{ __html: markup }}
       />
     );
   }
 
   return (
-    <div className="whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]">
+    <div
+      className={
+        className ??
+        "whitespace-pre-wrap text-[clamp(1.05rem,1.8vw,1.45rem)] leading-relaxed text-[#202620]"
+      }
+    >
       {segments.map((segment, index) =>
         segment.kind === "math" ? (
           <MathSegment key={`${index}-${segment.source}`} segment={segment} />

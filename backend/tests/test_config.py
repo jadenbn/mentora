@@ -6,6 +6,8 @@ runs on a laptop with a single credential.
 
 from __future__ import annotations
 
+import pytest
+
 from app.config import (
     REQUIRED_SETTINGS,
     TranscriptionSettings,
@@ -36,9 +38,11 @@ def test_missing_settings_reports_names_never_values(monkeypatch):
 
 def test_settings_come_from_the_environment_with_usable_defaults(monkeypatch):
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_THINKING_LEVEL", raising=False)
     monkeypatch.delenv("TUTOR_REQUEST_TIMEOUT_SECONDS", raising=False)
     settings = TutorSettings.from_environment()
     assert settings.gemini_model
+    assert settings.gemini_thinking_level == "low"
     assert settings.request_timeout_seconds > 0
 
 
@@ -46,15 +50,28 @@ def test_an_empty_override_falls_back_rather_than_sending_a_blank_model(monkeypa
     # `KEY=` in a .env file sets the variable to "", which defeats getenv's
     # default and would send an empty model id to the provider.
     monkeypatch.setenv("GEMINI_MODEL", "")
+    monkeypatch.setenv("GEMINI_THINKING_LEVEL", "")
     monkeypatch.setenv("TUTOR_REQUEST_TIMEOUT_SECONDS", "")
     settings = TutorSettings.from_environment()
     assert settings.gemini_model
+    assert settings.gemini_thinking_level == "low"
     assert settings.request_timeout_seconds > 0
 
 
 def test_the_model_is_overridable_without_a_code_change(monkeypatch):
     monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
     assert TutorSettings.from_environment().gemini_model == "gemini-3-flash-preview"
+
+
+def test_the_thinking_level_is_overridable_without_a_code_change(monkeypatch):
+    monkeypatch.setenv("GEMINI_THINKING_LEVEL", "HIGH")
+    assert TutorSettings.from_environment().gemini_thinking_level == "high"
+
+
+def test_an_unknown_thinking_level_is_rejected_early(monkeypatch):
+    monkeypatch.setenv("GEMINI_THINKING_LEVEL", "maximum")
+    with pytest.raises(ValueError, match="GEMINI_THINKING_LEVEL"):
+        TutorSettings.from_environment()
 
 
 def test_voice_defaults_to_the_dedicated_transcription_model(monkeypatch):

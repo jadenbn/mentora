@@ -16,7 +16,7 @@ student draws  ->  taps a mode button, or asks out loud
         |                                     |
         |                    student reads them, edits them, taps Ask
         |                                     |
-capture: student's shapes only, exported as one PNG
+capture: student's shapes only, content-cropped and exported as one PNG
         |
 POST /api/tutor/analyze   (multipart)
         |
@@ -39,14 +39,17 @@ GEMINI_API_KEY
 ```
 
 Optional: `GEMINI_MODEL` (default `gemini-3.5-flash-lite`),
+`GEMINI_THINKING_LEVEL` (default `low`; accepts `minimal`, `low`, `medium`, or
+`high`),
 `TUTOR_REQUEST_TIMEOUT_SECONDS` (default 45).
 
 The model choice dominates latency: a lite model answers a canvas request in
 about 1.5s where `gemini-3.7-flash` takes about 10s, and the tutor's job is
 small enough that the trade reads as free. Measure with
-`scripts/bench_tutor.py` before changing it. Note that `ThinkingLevel.MINIMAL`
-is rejected by some models, so the code uses `LOW`, which is universally
-supported and measurably no slower here.
+`scripts/bench_tutor.py` before changing it. Note that `minimal` is rejected by
+some models; `low` is the compatible default and was measurably no slower in
+the current benchmark. The configured model and thinking level apply to both
+tutoring and grounded question generation.
 
 `GET /health` is always available and reports missing variable *names*, never
 values.
@@ -122,7 +125,7 @@ keep the model from grading its own handwriting:
   "interaction_id": "33c9fd11c4504fb588fa50490766cf88",
   "status": "partial",
   "canvas_actions": [
-    {"type": "text", "position": {"x": 0.43, "y": 0.35}, "text": "What about the 2?"},
+    {"type": "highlight", "target": {"x": 0.43, "y": 0.35, "width": 0.12, "height": 0.08}},
     {"type": "circle", "target": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1}}
   ],
   "summary": "The setup is right; the coefficient was dropped."
@@ -131,13 +134,17 @@ keep the model from grading its own handwriting:
 
 `status` is `correct`, `incorrect`, `partial`, or `uncertain`.
 
+The summary is rendered as one KaTeX document in the transparent tutor navbar;
+use `$...$` delimiters for inline mathematical fragments.
+
 ### Actions
 
-Two shapes, because there are two things the tutor can do to a canvas.
+The tutor can target a region in one of four visual ways. Prose stays in the
+navbar `summary`, never on the student's work area.
 
 | Type | Carries | Draws |
 | --- | --- | --- |
-| `text` | `position` | words beside the work |
+| `highlight` | `target` | translucent attention region |
 | `circle` | `target` | an outline around a region |
 | `check` | `target` | a ✓ past the region's top-right |
 | `cross` | `target` | a ✗ past the region's top-right |
@@ -146,8 +153,18 @@ All coordinates are normalized to the submitted image, `[0, 1]` from its
 top-left. `frontend/lib/annotations/renderCanvasActions.ts` is the only place
 that converts them to tldraw world space.
 
-`interaction_id` is server-minted. Re-rendering the same interaction replaces
-its shapes; a different interaction leaves earlier feedback in place.
+In development, the frontend logs a temporary object URL for the exact image
+blob sent as `canvas_image`; the URL is revoked after five minutes and the image
+is never written to disk. Set `TUTOR_DEBUG_LOG_REQUESTS=1` for a structured
+backend-console log of the exact Gemini system instruction, user text parts,
+problem/course/prior-annotation context, image metadata, and generation config.
+Raw image bytes are not printed; use the frontend object URL to inspect them.
+
+`interaction_id` is server-minted. The whiteboard stores each response as a
+tutor checkpoint with the document-only tldraw snapshot captured when the
+request began. Selecting a historical checkpoint restores that canvas state
+read-only without moving the viewport and renders its feedback; returning to
+the newest checkpoint restores the live canvas.
 
 ## Speech to text
 

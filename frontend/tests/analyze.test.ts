@@ -8,7 +8,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
+import type { RenderContext } from "@/lib/annotations/renderCanvasActions";
 import type { ProblemContext } from "@/types/domain";
+import type { TutorResponse } from "@/types/tutor";
 import { box, makeEditor } from "./fakeEditor";
 
 const RESPONSE = {
@@ -16,7 +18,7 @@ const RESPONSE = {
   status: "partial",
   summary: "You dropped the coefficient.",
   canvas_actions: [
-    { type: "text", position: { x: 0.5, y: 0.5 }, text: "What about the 2?" },
+    { type: "highlight", target: { x: 0.5, y: 0.5, width: 0.1, height: 0.1 } },
     { type: "circle", target: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
   ],
 };
@@ -38,7 +40,7 @@ const student = (id: string, bounds = box(150, 300, 100, 200)) => ({
 
 const priorMark = (id: string) => ({
   id,
-  type: "text",
+  type: "geo",
   meta: { owner: AI_SHAPE_OWNER, interactionId: "interaction_1" },
   pageBounds: box(200, 400, 100, 100),
 });
@@ -78,6 +80,23 @@ describe("the happy path", () => {
     mockFetch();
     await run(fake.editor);
     expect(fake.created[0].meta).toMatchObject({ interactionId: "interaction_7" });
+  });
+
+  it("captures the canvas before tutor marks are rendered", async () => {
+    const fake = makeEditor({
+      shapes: [
+        student("s1"),
+        { ...student("highlight"), type: "draw" },
+      ],
+    });
+    mockFetch();
+    let snapshot: unknown;
+    await run(fake.editor, {
+      onResponse: (_response: TutorResponse, _context: RenderContext, captured: unknown) => {
+        snapshot = captured;
+      },
+    });
+    expect(snapshot).toEqual({ shapes: ["s1", "highlight"] });
   });
 });
 

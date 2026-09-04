@@ -82,9 +82,9 @@ describe("captureCanvasForAnalysis", () => {
     expect(await captureCanvasForAnalysis(editor)).toBeNull();
   });
 
-  it("returns nothing when the page has no measurable bounds", async () => {
+  it("uses student bounds even when the page has no measurable bounds", async () => {
     const { editor } = makeEditor({ shapes: [studentShape("a")], pageBounds: null });
-    expect(await captureCanvasForAnalysis(editor)).toBeNull();
+    expect(await captureCanvasForAnalysis(editor)).not.toBeNull();
   });
 
   it("exports the student's work", async () => {
@@ -121,15 +121,19 @@ describe("captureCanvasForAnalysis", () => {
     expect(await captureCanvasForAnalysis(editor)).toBeNull();
   });
 
-  it("reports the world rectangle the image covers", async () => {
+  it("reports a padded rectangle around the analyzed content", async () => {
     const { editor } = makeEditor({ shapes: [studentShape("s1")], pageBounds: FRAME });
     const capture = await captureCanvasForAnalysis(editor);
-    expect(capture!.bounds).toEqual(FRAME);
+    expect(capture!.studentBounds).toMatchObject({ x: 150, y: 300, w: 100, h: 200 });
+    expect(capture!.bounds.x).toBeLessThan(150);
+    expect(capture!.bounds.y).toBeLessThan(300);
+    expect(capture!.bounds.x + capture!.bounds.w).toBeGreaterThan(250);
+    expect(capture!.bounds.y + capture!.bounds.h).toBeGreaterThan(500);
   });
 
   it("scales a large canvas down to keep the upload small", async () => {
     const { editor, toImageCalls } = makeEditor({
-      shapes: [studentShape("s1")],
+      shapes: [studentShape("s1", box(0, 0, 8_000, 4_000))],
       pageBounds: box(0, 0, 8000, 4000),
     });
     await captureCanvasForAnalysis(editor);

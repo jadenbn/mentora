@@ -93,8 +93,13 @@ export function loadCanvas(editor: Editor, sessionId: string): boolean {
     return false;
   }
 
+  return loadCanvasSnapshot(editor, envelope.snapshot);
+}
+
+/** Restore an in-memory tldraw snapshot without changing session storage. */
+export function loadCanvasSnapshot(editor: Editor, snapshot: unknown): boolean {
   try {
-    loadSnapshot(editor.store, envelope.snapshot as never);
+    loadSnapshot(editor.store, snapshot as never);
     return true;
   } catch {
     return false;

@@ -10,7 +10,7 @@ from typing import Any
 from google.genai import types
 from pydantic import ValidationError
 
-from app.agents.gemini import create_client, response_object
+from app.agents.gemini import as_thinking_level, create_client, response_object
 from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
 from app.prompts.question_generation import QUESTION_INSTRUCTION
 from app.schemas.problems import GroundingChunk, QuestionPlan
@@ -36,11 +36,25 @@ class GeminiQuestionWorkflow:
         *,
         api_key: str,
         model: str,
+        thinking_level: str = "low",
         timeout_seconds: float = 45,
     ) -> None:
         self.api_key = api_key
         self.model = model
+        self.thinking_level = thinking_level
         self.timeout_seconds = timeout_seconds
+
+    def _generation_config(self) -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(
+            system_instruction=QUESTION_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=QUESTION_PLAN_RESPONSE_SCHEMA,
+            max_output_tokens=2_048,
+            temperature=0.7,
+            thinking_config=types.ThinkingConfig(
+                thinking_level=as_thinking_level(self.thinking_level)
+            ),
+        )
 
     async def run(
         self, *, chunks: list[GroundingChunk], question_request: str
@@ -114,16 +128,7 @@ class GeminiQuestionWorkflow:
             response = await client.models.generate_content(
                 model=self.model,
                 contents=message,
-                config=types.GenerateContentConfig(
-                    system_instruction=QUESTION_INSTRUCTION,
-                    response_mime_type="application/json",
-                    response_schema=QUESTION_PLAN_RESPONSE_SCHEMA,
-                    max_output_tokens=2_048,
-                    temperature=0.7,
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level=types.ThinkingLevel.LOW
-                    ),
-                ),
+                config=self._generation_config(),
             )
 
         return response_object(response)

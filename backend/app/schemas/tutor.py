@@ -1,9 +1,7 @@
 """The tutor wire contract.
 
-Two kinds of action exist, because there are two things the tutor can do to a
-canvas: say something at a point, or point at a region. Everything the model is
-allowed to express is in this file, and nothing here can describe a tldraw
-operation.
+Tutor prose belongs in ``summary``. Canvas actions only point at regions, so
+the board stays clear while the navbar carries the chronological guidance.
 
 Every coordinate is normalized to the submitted canvas image: x/y in [0, 1]
 from the top-left. Conversion back to world space happens in exactly one place,
@@ -41,12 +39,9 @@ class WorkStatus(str, Enum):
     uncertain = "uncertain"
 
 
-class NormalizedPoint(StrictModel):
+class NormalizedBounds(StrictModel):
     x: float = Field(ge=0, le=1)
     y: float = Field(ge=0, le=1)
-
-
-class NormalizedBounds(NormalizedPoint):
     width: float = Field(gt=0, le=1)
     height: float = Field(gt=0, le=1)
 
@@ -57,27 +52,17 @@ class NormalizedBounds(NormalizedPoint):
         return self
 
 
-class TextAction(StrictModel):
-    """Say something at a point."""
-
-    type: Literal["text"]
-    position: NormalizedPoint
-    text: str = Field(min_length=1, max_length=240)
-
-
 class TargetAction(StrictModel):
-    """Point at a region.
+    """Point at or highlight a region.
 
-    One class rather than three: circling, checking, and crossing differ only
-    in what they draw, never in what they carry. A mark that also wanted to
-    speak would be a text action next to it.
+    Visual actions never carry prose; guidance lives in the summary.
     """
 
-    type: Literal["circle", "check", "cross"]
+    type: Literal["highlight", "circle", "check", "cross"]
     target: NormalizedBounds
 
 
-CanvasAction = Annotated[TextAction | TargetAction, Field(discriminator="type")]
+CanvasAction = TargetAction
 
 
 class Uncertainty(StrictModel):
@@ -96,7 +81,7 @@ class _Feedback(StrictModel):
 
     status: WorkStatus
     canvas_actions: list[CanvasAction] = Field(default_factory=list)
-    summary: str | None = Field(default=None, max_length=1_000)
+    summary: str = Field(min_length=1, max_length=240)
 
 
 class TutorPlan(_Feedback):
@@ -109,7 +94,7 @@ class TutorResponse(_Feedback):
     """What the server returns: a policy-checked plan under a server-minted id.
 
     Uncertainties do not appear here. The policy has already turned them into
-    a question placed on the canvas, which is the only form the student needs.
+    concise navbar guidance and safe visual actions.
     """
 
     interaction_id: str

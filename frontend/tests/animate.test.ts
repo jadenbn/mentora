@@ -6,10 +6,8 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { Editor } from "tldraw";
 import {
-  DEFAULT_CHAR_MS,
   DEFAULT_FPS,
   animateStrokes,
-  animateText,
   sequence,
 } from "@/lib/annotations/animate";
 import {
@@ -162,64 +160,14 @@ describe("animateStrokes", () => {
   });
 });
 
-describe("animateText", () => {
-  it("creates the text shape with no text in it", () => {
-    // The words arrive on later frames; the shape must not pop in complete.
-    const { editor, log } = makeAnimEditor();
-    animateText(editor, { x: 10, y: 20 }, "hello", {});
-    vi.advanceTimersByTime(1);
-    expect(log.created).toHaveLength(1);
-    expect(JSON.stringify(log.created[0].props)).not.toContain("hello");
-  });
-
-  it("reveals one character per frame", () => {
-    const { editor, log } = makeAnimEditor();
-    animateText(editor, { x: 0, y: 0 }, "abcde", {});
-    vi.advanceTimersByTime(10_000);
-    expect(log.updated).toHaveLength(5);
-  });
-
-  it("places the shape at the requested point", () => {
-    const { editor, log } = makeAnimEditor();
-    animateText(editor, { x: 42, y: 99 }, "hi", {});
-    vi.advanceTimersByTime(10_000);
-    expect(log.created[0]).toMatchObject({ x: 42, y: 99 });
-  });
-
-  it("keeps typing out of the undo stack", () => {
-    const { editor, log } = makeAnimEditor();
-    animateText(editor, { x: 0, y: 0 }, "hi", {});
-    vi.advanceTimersByTime(10_000);
-    expect(log.historyModes.every((mode) => mode === "ignore")).toBe(true);
-  });
-
-  it("stops typing when cancelled", () => {
-    const { editor, log } = makeAnimEditor();
-    const handle = animateText(editor, { x: 0, y: 0 }, "a very long hint", {});
-    vi.advanceTimersByTime(DEFAULT_CHAR_MS * 3);
-    handle.cancel();
-    const after = log.updated.length;
-    vi.advanceTimersByTime(10_000);
-    expect(log.updated.length).toBe(after);
-    expect(after).toBeLessThan("a very long hint".length);
-  });
-
-  it("handles empty text without creating update frames", () => {
-    const { editor, log } = makeAnimEditor();
-    animateText(editor, { x: 0, y: 0 }, "", {});
-    vi.advanceTimersByTime(10_000);
-    expect(log.updated).toHaveLength(0);
-  });
-});
-
 describe("sequence", () => {
   it("runs steps one after another, not concurrently", async () => {
     const { editor, log } = makeAnimEditor();
     sequence([
-      () => animateText(editor, { x: 0, y: 0 }, "ab", {}),
-      () => animateText(editor, { x: 0, y: 0 }, "cd", {}),
+      () => animateStrokes(editor, [[{ x: 0, y: 0 }, { x: 20, y: 0 }]], {}),
+      () => animateStrokes(editor, [[{ x: 0, y: 0 }, { x: 200, y: 0 }]], {}),
     ]);
-    await vi.advanceTimersByTimeAsync(DEFAULT_CHAR_MS * 3);
+    await vi.advanceTimersByTimeAsync(50);
     expect(log.created).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(log.created).toHaveLength(2);
@@ -228,10 +176,10 @@ describe("sequence", () => {
   it("cancelling stops the remaining steps", async () => {
     const { editor, log } = makeAnimEditor();
     const handle = sequence([
-      () => animateText(editor, { x: 0, y: 0 }, "ab", {}),
-      () => animateText(editor, { x: 0, y: 0 }, "cd", {}),
+      () => animateStrokes(editor, [[{ x: 0, y: 0 }, { x: 20, y: 0 }]], {}),
+      () => animateStrokes(editor, [[{ x: 0, y: 0 }, { x: 200, y: 0 }]], {}),
     ]);
-    await vi.advanceTimersByTimeAsync(DEFAULT_CHAR_MS);
+    await vi.advanceTimersByTimeAsync(50);
     handle.cancel();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(log.created).toHaveLength(1);

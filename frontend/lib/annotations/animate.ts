@@ -15,12 +15,13 @@
 // compressLegacySegments is not re-exported by the tldraw barrel, so tlschema
 // is a declared dependency pinned to the same version.
 import { compressLegacySegments } from "@tldraw/tlschema";
-import { createShapeId, toRichText } from "tldraw";
+import { createShapeId } from "tldraw";
 import type {
   Editor,
   JsonObject,
   TLDefaultColorStyle,
   TLDefaultSizeStyle,
+  TLShapePartial,
   TLShapeId,
 } from "tldraw";
 import { strokeLength, type Stroke } from "@/lib/annotations/geometry";
@@ -28,10 +29,9 @@ import { strokeLength, type Stroke } from "@/lib/annotations/geometry";
 export const DEFAULT_FPS = 30;
 /** Pen speed in world units per second. */
 export const DEFAULT_PEN_SPEED = 900;
-/** Milliseconds per character for the typewriter reveal. */
-export const DEFAULT_CHAR_MS = 28;
 /** Pause between one stroke finishing and the next starting. */
 export const PEN_LIFT_MS = 90;
+export const MARK_FADE_MS = 240;
 
 export interface AnimationHandle {
   /** Stop immediately, leaving whatever has been drawn so far in place. */
@@ -189,68 +189,36 @@ export function animateStrokes(
   return schedule(frames, intervalMs);
 }
 
-export interface TextAnimationOptions {
-  meta?: Partial<JsonObject>;
-  color?: TLDefaultColorStyle;
-  size?: TLDefaultSizeStyle;
-  charMs?: number;
-  onShape?: (id: TLShapeId) => void;
-}
-
-/**
- * Typewriter reveal.
- *
- * Real stroke-level handwriting would need a single-stroke font and glyph
- * layout; revealing character by character costs nothing and still reads as
- * the tutor writing.
- */
-export function animateText(
+/** Fade in a settled text mark while keeping its final glyph unchanged. */
+export function animateTextShape(
   editor: Editor,
-  at: { x: number; y: number },
-  text: string,
-  options: TextAnimationOptions = {},
+  shape: TLShapePartial & { type: "text" },
+  durationMs = MARK_FADE_MS,
 ): AnimationHandle {
-  const {
-    meta = {},
-    color = "red",
-    size = "m",
-    charMs = DEFAULT_CHAR_MS,
-    onShape,
-  } = options;
-
-  const id = createShapeId();
+  const frameCount = Math.max(2, Math.round(durationMs / (1000 / DEFAULT_FPS)));
   const frames: Frame[] = [
     {
       run: () =>
         write(editor, () => {
-          editor.createShape({
-            id,
-            type: "text",
-            x: at.x,
-            y: at.y,
-            meta,
-            props: { richText: toRichText(""), color, size },
-          });
-          onShape?.(id);
+          editor.createShape({ ...shape, opacity: 0 });
         }),
     },
   ];
 
-  for (let i = 1; i <= text.length; i++) {
-    const slice = text.slice(0, i);
+  for (let frame = 1; frame <= frameCount; frame++) {
     frames.push({
       run: () =>
         write(editor, () => {
           editor.updateShape({
-            id,
+            id: shape.id,
             type: "text",
-            props: { richText: toRichText(slice) },
+            opacity: frame / frameCount,
           });
         }),
     });
   }
 
-  return schedule(frames, charMs);
+  return schedule(frames, 1000 / DEFAULT_FPS);
 }
 
 /** A cancellable pause, so a script can breathe between beats. */

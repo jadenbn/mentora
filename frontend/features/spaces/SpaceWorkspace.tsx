@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Whiteboard } from "@/features/whiteboard/Whiteboard";
 import { getCourse } from "@/lib/spaces/courses";
 import {
@@ -14,6 +14,8 @@ import { useIsClient } from "@/lib/useIsClient";
 
 export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
   const hydrated = useIsClient();
+  const [feedbackHost, setFeedbackHost] = useState<HTMLDivElement | null>(null);
+  const [thinkingHost, setThinkingHost] = useState<HTMLDivElement | null>(null);
   // Read the index directly so a rename elsewhere is reflected here.
   const all = useSyncExternalStore(
     subscribeToSpaces,
@@ -60,9 +62,9 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
   }
 
   return (
-    <main className="flex h-dvh flex-col bg-white">
-      <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 sm:px-5">
-        <div className="min-w-0">
+    <main className="relative h-dvh bg-white">
+      <header className="pointer-events-none absolute inset-0 z-50 bg-transparent px-3 py-2 sm:px-5">
+        <div className="mentora-workspace-info pointer-events-auto absolute bottom-4 left-3 min-w-0 sm:bottom-5 sm:left-5">
           <Link
             className="text-sm font-semibold text-blue-700"
             href={`/courses/${space.courseId}`}
@@ -70,17 +72,27 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
             ← {course?.name ?? "Course"}
           </Link>
           <p className="truncate text-sm text-slate-600">{space.title}</p>
+          <button
+            className="mt-1 inline-flex rounded-md border border-slate-200 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-700 backdrop-blur-sm hover:cursor-grab hover:bg-white/90"
+            onClick={handleRename}
+            type="button"
+          >
+            Rename
+          </button>
         </div>
-        <button
-          className="shrink-0 rounded-md border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          onClick={handleRename}
-          type="button"
-        >
-          Rename
-        </button>
+        <div className="pointer-events-none absolute inset-x-0 top-14 px-3 sm:top-2 sm:px-52">
+          <div ref={setFeedbackHost} />
+          <div className="mt-1 flex justify-center" ref={setThinkingHost} />
+        </div>
       </header>
-      <section className="min-h-0 flex-1" aria-label="Whiteboard canvas">
-        <Whiteboard courseId={space.courseId} problem={space.problem} spaceId={space.id} />
+      <section className="relative h-full min-h-0" aria-label="Whiteboard canvas">
+        <Whiteboard
+          courseId={space.courseId}
+          feedbackHost={feedbackHost}
+          thinkingHost={thinkingHost}
+          problem={space.problem}
+          spaceId={space.id}
+        />
       </section>
     </main>
   );
