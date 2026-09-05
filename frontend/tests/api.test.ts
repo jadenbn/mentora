@@ -6,7 +6,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { analyzeCanvas, apiBaseUrl, transcribeSpeech, TutorApiError } from "@/lib/api/api";
+import {
+  analyzeCanvas,
+  apiBaseUrl,
+  createCourse,
+  deleteCourseById,
+  deleteSpaceById,
+  getCourseById,
+  transcribeSpeech,
+  TutorApiError,
+} from "@/lib/api/api";
 import type { ProblemContext } from "@/types/domain";
 
 const IMAGE = new Blob(["png"], { type: "image/png" });
@@ -236,5 +245,36 @@ describe("voice", () => {
     await call();
 
     expect(bodyOf(spy).has("transcript")).toBe(false);
+  });
+});
+
+describe("courses and spaces", () => {
+  it("returns the parsed course on create", async () => {
+    const course = {
+      id: "course_1",
+      name: "MATH 301",
+      description: "Analysis",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    mockFetch(ok(course));
+    await expect(createCourse({ name: "MATH 301", description: "Analysis" })).resolves.toEqual(
+      course,
+    );
+  });
+
+  it("returns null rather than throwing when a course is missing", async () => {
+    mockFetch(failure(404));
+    await expect(getCourseById("nope")).resolves.toBeNull();
+  });
+
+  it("does not try to parse a body on a 204 delete", async () => {
+    mockFetch({ ok: true, status: 204, json: async () => { throw new Error("no body"); } });
+    await expect(deleteCourseById("course_1")).resolves.toBeUndefined();
+  });
+
+  it("maps a failed delete onto a readable error, same as other endpoints", async () => {
+    mockFetch(failure(404, "Space was not found"));
+    await expect(deleteSpaceById("course_1", "space_1")).rejects.toThrow(/space was not found/i);
   });
 });

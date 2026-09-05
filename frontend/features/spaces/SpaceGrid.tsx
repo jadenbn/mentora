@@ -2,15 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useSyncExternalStore } from "react";
-import { useIsClient } from "@/lib/useIsClient";
-import {
-  createSpace,
-  deleteSpace,
-  getServerSpacesSnapshot,
-  getSpacesSnapshot,
-  subscribeToSpaces,
-} from "@/lib/spaces/store";
+import { useEffect, useState } from "react";
+import { clearCanvas } from "@/lib/canvas/persistence";
+import { clearFeedbackHistory } from "@/lib/tutor/feedbackHistory";
+import { createSpace, deleteSpaceById, listSpaces } from "@/lib/api/api";
+import { migrateLegacySpaces } from "@/lib/spaces/migration";
 import type { Space } from "@/types/domain";
 
 function formatUpdated(iso: string): string {
@@ -28,38 +24,61 @@ function formatUpdated(iso: string): string {
 
 export function SpaceGrid({ courseId }: { courseId: string }) {
   const router = useRouter();
-  const hydrated = useIsClient();
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // localStorage is an external store, so it is read through
-  // useSyncExternalStore rather than mirrored into state by an effect.
-  const all = useSyncExternalStore(
-    subscribeToSpaces,
-    getSpacesSnapshot,
-    getServerSpacesSnapshot,
-  );
 
-  const spaces = useMemo(
-    () =>
-      all
-        .filter((space) => space.courseId === courseId)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [all, courseId],
-  );
+  useEffect(() => {
+    let active = true;
+    void listSpaces(courseId)
+      .then(async (loaded) => {
+        const migrated = await migrateLegacySpaces(courseId, loaded);
+        if (active) {
+          setSpaces(migrated.spaces);
+          if (migrated.failed > 0) {
+            setError(`${migrated.failed} older Space(s) could not be migrated yet.`);
+          }
+        }
+      })
+      .catch((caught) => {
+        if (active) {
+          setError(caught instanceof Error ? caught.message : "Could not load spaces.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [courseId]);
 
-  function handleCreate() {
+  async function handleCreate() {
+    if (creating) return;
+    setCreating(true);
     try {
-      const space = createSpace(courseId);
+      const space = await createSpace(courseId);
       router.push(`/spaces/${space.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create a Space.");
+    } finally {
+      setCreating(false);
     }
   }
 
-  function handleDelete(space: Space) {
+  async function handleDelete(space: Space) {
     if (!confirm(`Delete "${space.title}" and its canvas? This cannot be undone.`)) {
       return;
     }
-    deleteSpace(space.id);
+    try {
+      await deleteSpaceById(courseId, space.id);
+      clearCanvas(space.id);
+      clearFeedbackHistory(space.id);
+      setSpaces((current) => current.filter((item) => item.id !== space.id));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete this Space.");
+    }
   }
 
   return (
@@ -70,10 +89,11 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
         </h2>
         <button
           className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800"
-          onClick={handleCreate}
+          disabled={creating}
+          onClick={() => void handleCreate()}
           type="button"
         >
-          New space
+          {creating ? "Creating…" : "New space"}
         </button>
       </div>
 
@@ -83,7 +103,7 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
         </p>
       ) : null}
 
-      {!hydrated ? (
+      {loading ? (
         <p className="mt-4 text-sm text-slate-500">Loading spaces…</p>
       ) : spaces.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">
@@ -99,12 +119,12 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
               <Link className="block" href={`/spaces/${space.id}`}>
                 <p className="font-semibold text-slate-950">{space.title}</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Last worked on {formatUpdated(space.updatedAt)}
+                  Last worked on {formatUpdated(space.updated_at)}
                 </p>
               </Link>
               <button
                 className="mt-3 text-xs font-semibold text-slate-500 hover:text-red-700"
-                onClick={() => handleDelete(space)}
+                onClick={() => void handleDelete(space)}
                 type="button"
               >
                 Delete
