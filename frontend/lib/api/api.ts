@@ -316,7 +316,7 @@ export async function listSpaces(courseId: string): Promise<Space[]> {
 
 export async function createSpace(
   courseId: string,
-  args: { title?: string; problem_id?: string } = {},
+  args: { space_id?: string; title?: string; problem_id?: string } = {},
 ): Promise<Space> {
   const response = await fetch(`${apiBaseUrl()}/api/courses/${courseId}/spaces`, {
     method: "POST",

@@ -44,6 +44,16 @@ def test_upload_persists_and_lists_a_text_document(client):
     assert [item["document_id"] for item in listed] == [body["document_id"]]
 
 
+def test_missing_course_is_rejected(client):
+    response = client.post(
+        "/api/courses/nope/documents",
+        data={"document_type": "lecture"},
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert response.status_code == 404
+    assert client.get("/api/courses/nope/documents").status_code == 404
+
+
 def test_reupload_is_reported_as_a_replacement(client):
     upload(client)
     assert upload(client).json()["replaced_existing"] is True

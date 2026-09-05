@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Whiteboard } from "@/features/whiteboard/Whiteboard";
 import { getCourseById, getSpaceById, updateSpace } from "@/lib/api/api";
+import { migrateLegacySpace } from "@/lib/spaces/migration";
 import type { Course, Space } from "@/types/domain";
 
 export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
@@ -15,6 +16,10 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
   useEffect(() => {
     let active = true;
     void getSpaceById(spaceId)
+      .then((loaded) => {
+        if (loaded) return loaded;
+        return migrateLegacySpace(spaceId);
+      })
       .then((loaded) => {
         if (active) setSpace(loaded);
       })

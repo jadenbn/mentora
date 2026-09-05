@@ -2,7 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { deleteCourseById } from "@/lib/api/api";
+import { clearCanvas } from "@/lib/canvas/persistence";
+import { clearFeedbackHistory } from "@/lib/tutor/feedbackHistory";
+import { deleteCourseById, listSpaces } from "@/lib/api/api";
+import { clearLegacySpaces, legacySpaceIds } from "@/lib/spaces/migration";
 
 export function DeleteCourseButton({
   courseId,
@@ -19,7 +22,18 @@ export function DeleteCourseButton({
       return;
     }
     try {
+      const spaces = await listSpaces(courseId);
+      const oldSpaceIds = legacySpaceIds(courseId);
       await deleteCourseById(courseId);
+      for (const space of spaces) {
+        clearCanvas(space.id);
+        clearFeedbackHistory(space.id);
+      }
+      clearLegacySpaces(courseId);
+      for (const spaceId of oldSpaceIds) {
+        clearCanvas(spaceId);
+        clearFeedbackHistory(spaceId);
+      }
       router.push("/courses");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete the course.");

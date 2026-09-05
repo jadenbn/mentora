@@ -38,7 +38,10 @@ async def create_space(
         raise HTTPException(404, "Course was not found")
     try:
         return repository.create_space(
-            course_id=course_id, title=request.title, problem_id=request.problem_id
+            course_id=course_id,
+            space_id=request.space_id,
+            title=request.title,
+            problem_id=request.problem_id,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -49,6 +52,8 @@ async def list_spaces(
     course_id: str,
     repository: CourseRepository = Depends(get_course_repository),
 ) -> list[Space]:
+    if repository.get_course(course_id) is None:
+        raise HTTPException(404, "Course was not found")
     return repository.list_spaces(course_id)
 
 

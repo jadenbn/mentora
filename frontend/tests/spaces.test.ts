@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getSpaceById: vi.fn(),
   getCourseById: vi.fn(),
   updateSpace: vi.fn(),
+  clearFeedbackHistory: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
@@ -23,6 +24,9 @@ vi.mock("@/lib/api/api", () => ({
   updateSpace: mocks.updateSpace,
 }));
 vi.mock("@/lib/canvas/persistence", () => ({ clearCanvas: mocks.clearCanvas }));
+vi.mock("@/lib/tutor/feedbackHistory", () => ({
+  clearFeedbackHistory: mocks.clearFeedbackHistory,
+}));
 vi.mock("@/features/whiteboard/Whiteboard", () => ({
   Whiteboard: () => null,
 }));
@@ -59,6 +63,7 @@ async function unmount(container: HTMLDivElement, root: Root) {
 describe("SpaceGrid", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   it("shows an empty state when the course has no spaces", async () => {
@@ -90,6 +95,23 @@ describe("SpaceGrid", () => {
     await unmount(container, root);
   });
 
+  it("disables creation while the request is pending", async () => {
+    let resolve: (space: typeof spaceRecord) => void = () => {};
+    mocks.listSpaces.mockResolvedValue([]);
+    mocks.createSpace.mockReturnValue(new Promise((done) => { resolve = done; }));
+    const { container, root } = await mount(createElement(SpaceGrid, { courseId: "course_1" }));
+    const createButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "New space",
+    ) as HTMLButtonElement;
+
+    await act(async () => createButton.click());
+    expect(createButton.disabled).toBe(true);
+    expect(mocks.createSpace).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolve({ ...spaceRecord, id: "space_new" }));
+    await unmount(container, root);
+  });
+
   it("deletes a space and clears its canvas after confirmation", async () => {
     mocks.listSpaces.mockResolvedValue([spaceRecord]);
     mocks.deleteSpaceById.mockResolvedValue(undefined);
@@ -103,6 +125,7 @@ describe("SpaceGrid", () => {
 
     expect(mocks.deleteSpaceById).toHaveBeenCalledWith("course_1", "space_1");
     expect(mocks.clearCanvas).toHaveBeenCalledWith("space_1");
+    expect(mocks.clearFeedbackHistory).toHaveBeenCalledWith("space_1");
     expect(container.textContent).toMatch(/no spaces yet/i);
     await unmount(container, root);
   });

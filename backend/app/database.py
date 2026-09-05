@@ -388,11 +388,26 @@ class CourseRepository:
         return True
 
     def create_space(
-        self, *, course_id: str, title: str | None, problem_id: str | None
+        self,
+        *,
+        course_id: str,
+        title: str | None,
+        problem_id: str | None,
+        space_id: str | None = None,
     ) -> Space:
         now = _now()
-        space_id = f"space_{uuid4().hex}"
+        resolved_id = space_id or f"space_{uuid4().hex}"
         with self.connect() as connection:
+            if space_id:
+                existing = connection.execute(
+                    "SELECT course_id FROM spaces WHERE space_id = ?", (space_id,)
+                ).fetchone()
+                if existing is not None:
+                    if existing["course_id"] == course_id:
+                        space = self.get_space(space_id)
+                        assert space is not None
+                        return space
+                    raise ValueError("space id already belongs to another course")
             if problem_id:
                 problem_row = connection.execute(
                     "SELECT course_id FROM generated_problems WHERE problem_id = ?",
@@ -411,9 +426,9 @@ class CourseRepository:
                 INSERT INTO spaces (space_id, course_id, title, problem_id, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (space_id, course_id, resolved_title, problem_id, now, now),
+                (resolved_id, course_id, resolved_title, problem_id, now, now),
             )
-        space = self.get_space(space_id)
+        space = self.get_space(resolved_id)
         assert space is not None
         return space
 

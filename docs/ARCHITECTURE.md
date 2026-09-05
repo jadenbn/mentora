@@ -136,9 +136,8 @@ Conceptual representation:
 
 ## 7. Whiteboard Session
 A session is a persistent working document. Called a **space** in the UI and in
-the frontend code, and currently stored in browser localStorage rather than on
-the server. The current Space record stores the problem association alongside
-its canvas.
+the frontend code. Its metadata and problem association are stored on the server;
+the canvas and tutor checkpoints remain in browser localStorage for now.
 Conceptual representation:
 ```json
 {
@@ -253,9 +252,16 @@ POST /api/voice/transcribe                    implemented
 POST /api/courses/{course_id}/documents       implemented
 POST /api/courses/{course_id}/questions/generate implemented
 GET  /api/courses/{course_id}/search          implemented
-GET  /api/courses
-POST /api/courses
-GET  /api/courses/{course_id}
+GET  /api/courses                                implemented
+POST /api/courses                                implemented
+GET  /api/courses/{course_id}                   implemented
+PATCH /api/courses/{course_id}                  implemented
+DELETE /api/courses/{course_id}                 implemented
+GET  /api/courses/{course_id}/spaces            implemented
+POST /api/courses/{course_id}/spaces            implemented
+PATCH /api/courses/{course_id}/spaces/{space_id} implemented
+DELETE /api/courses/{course_id}/spaces/{space_id} implemented
+GET  /api/spaces/{space_id}                     implemented
 GET  /api/courses/{course_id}/sessions
 POST /api/courses/{course_id}/sessions
 GET  /api/sessions/{session_id}
@@ -264,9 +270,10 @@ POST /api/problems/import
 GET  /api/courses/{course_id}/student-model
 ```
 
-The implemented course routes support document upload/listing and grounded
-question generation. Sessions ("spaces" in the UI) live in
-browser localStorage, not on the server, so there is no session endpoint.
+The implemented course routes support course CRUD, document upload/listing,
+grounded question generation, and Space CRUD. Space metadata lives on the
+server; the canvas document and tutor checkpoints remain in browser
+localStorage for now.
 Prefer domain operations over one endpoint per prompt.
 
 ## 14. Shared Schemas
@@ -552,9 +559,9 @@ student-model updates
 preview image
 camera/viewport state
 ```
-Spaces use browser localStorage for now; course documents, chunks, generated
-problems, and grounding use SQLite. Pinecone is an index, never the canonical
-text store.
+Space canvas documents and tutor checkpoints use browser localStorage for now;
+course metadata, Space metadata, course documents, chunks, generated problems,
+and grounding use SQLite. Pinecone is an index, never the canonical text store.
 
 ## 29. Autosave
 Desired UX is automatic persistence.

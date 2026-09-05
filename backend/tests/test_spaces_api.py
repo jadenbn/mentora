@@ -25,6 +25,10 @@ def test_creating_a_space_in_a_missing_course_is_404(client):
     assert client.post("/api/courses/nope/spaces", json={}).status_code == 404
 
 
+def test_listing_spaces_in_a_missing_course_is_404(client):
+    assert client.get("/api/courses/nope/spaces").status_code == 404
+
+
 def test_create_and_list_spaces(client, course_id):
     created = client.post(f"/api/courses/{course_id}/spaces", json={"title": "Warmup"}).json()
     assert created["title"] == "Warmup"
@@ -32,6 +36,14 @@ def test_create_and_list_spaces(client, course_id):
     assert created["problem"] is None
     listed = client.get(f"/api/courses/{course_id}/spaces").json()
     assert [space["id"] for space in listed] == [created["id"]]
+
+
+def test_create_space_can_preserve_a_legacy_id(client, course_id):
+    created = client.post(
+        f"/api/courses/{course_id}/spaces",
+        json={"space_id": "space_legacy", "title": "Old"},
+    ).json()
+    assert created["id"] == "space_legacy"
 
 
 def test_default_title_numbering(client, course_id):

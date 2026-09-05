@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { clearCanvas } from "@/lib/canvas/persistence";
+import { clearFeedbackHistory } from "@/lib/tutor/feedbackHistory";
 import { createSpace, deleteSpaceById, listSpaces } from "@/lib/api/api";
+import { migrateLegacySpaces } from "@/lib/spaces/migration";
 import type { Space } from "@/types/domain";
 
 function formatUpdated(iso: string): string {
@@ -24,13 +26,20 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
   const router = useRouter();
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     void listSpaces(courseId)
-      .then((loaded) => {
-        if (active) setSpaces(loaded);
+      .then(async (loaded) => {
+        const migrated = await migrateLegacySpaces(courseId, loaded);
+        if (active) {
+          setSpaces(migrated.spaces);
+          if (migrated.failed > 0) {
+            setError(`${migrated.failed} older Space(s) could not be migrated yet.`);
+          }
+        }
       })
       .catch((caught) => {
         if (active) {
@@ -46,11 +55,15 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
   }, [courseId]);
 
   async function handleCreate() {
+    if (creating) return;
+    setCreating(true);
     try {
       const space = await createSpace(courseId);
       router.push(`/spaces/${space.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create a Space.");
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -61,6 +74,7 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
     try {
       await deleteSpaceById(courseId, space.id);
       clearCanvas(space.id);
+      clearFeedbackHistory(space.id);
       setSpaces((current) => current.filter((item) => item.id !== space.id));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not delete this Space.");
@@ -75,10 +89,11 @@ export function SpaceGrid({ courseId }: { courseId: string }) {
         </h2>
         <button
           className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800"
+          disabled={creating}
           onClick={() => void handleCreate()}
           type="button"
         >
-          New space
+          {creating ? "Creating…" : "New space"}
         </button>
       </div>
 
