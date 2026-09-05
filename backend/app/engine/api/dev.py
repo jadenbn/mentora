@@ -104,6 +104,7 @@ def preview_next_topic(
 @router.post("/courses/{course_id}/simulate", include_in_schema=False)
 def simulate_course(
     course_id: str,
+    profile: str = Query(default="mixed"),
     students: int = Query(default=12, ge=1, le=60),
     questions_each: int = Query(default=24, ge=1, le=200),
     seed: int = 0,
@@ -115,13 +116,24 @@ def simulate_course(
     rise, how much of the course do they reach, does difficulty track. Runs
     against a throwaway in-memory database -- no synthetic student is ever
     written to mentora.db, so this is safe to run against a live course.
+
+    `profile` picks the cohort's ability range and learning rate (see
+    simulation.STUDENT_PROFILES) -- `students` alone only adds more of the
+    same cohort, which narrows noise but tests nothing new.
     """
     skills = session.exec(select(Skill).where(Skill.course_id == course_id)).all()
     if not skills:
         raise HTTPException(404, f"course '{course_id}' has no topics to simulate")
-    report = simulation.simulate(
-        list(skills), students=students, questions_each=questions_each, seed=seed
-    )
+    try:
+        report = simulation.simulate(
+            list(skills),
+            profile=profile,
+            students=students,
+            questions_each=questions_each,
+            seed=seed,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return report.as_dict()
 
 

@@ -81,16 +81,44 @@
 <header>
   <div>
     <h1>Learning Engine · Dev Dashboard</h1>
-    <div class="sub">the tutor's brain has no student-facing UI. This is the only view of it</div>
   </div>
   <div class="controls">
-    <label class="sub">course <input id="course" value="calc1" size="8"></label>
+    <label class="sub">course <input id="course" value="course_demo" size="12"></label>
     <label class="sub">student <input id="student" value="dev-student" size="12"></label>
     <button id="reload" class="ghost">Reload</button>
   </div>
 </header>
 <main>
-  <div class="bar" id="stats"></div>
+  <div class="panel" style="margin-top:0">
+    <h2>How to read every number on this page</h2>
+    <p class="sub" style="margin:6px 0 0">
+      One scale runs through the whole engine. A <b>score</b> rates one
+      answered question from 0 to 1. Correct unassisted <code>1.0</code>,
+      correct with a hint <code>0.6</code>, partial <code>0.3</code>, wrong
+      <code>0.0</code>. That is <code>score_attempt</code> in
+      <code>engine/accuracy.py</code>, and nothing else in the system is ever
+      scored. Every other number on this page averages those four values over
+      a topic's last 8 attempts.
+    </p>
+    <p class="sub" style="margin:10px 0 0">
+      Two averages, and the gap between them is the point.
+    </p>
+    <ul class="sub" style="margin:4px 0 0">
+      <li><b>Observed score</b>. The raw mean, exactly what happened, or
+        <code>&mdash;</code> before the first attempt. Read it, but note that
+        the engine never decides on it. Two attempts and eight attempts read
+        the same here.</li>
+      <li><b>Estimated score</b>. The same mean pulled toward a 0.50
+        no-evidence prior, so it always has a value and one lucky answer
+        cannot swing it. <code>estimated_accuracy</code> adds 2
+        pseudo-observations at 0.5, so a student's own record starts to
+        outweigh the prior around their 3rd real attempt. <b>Selection acts
+        on this one.</b> It sets the difficulty served next and feeds the
+        weakness term in <code>pick_topic</code>. A wide gap from the
+        observed score means the student has few attempts, nothing more.</li>
+    </ul>
+  </div>
+  <div class="bar" id="stats" style="margin-top:18px"></div>
   <div class="panel" style="margin-top:0">
     <h2>What the engine would serve next</h2>
     <p class="sub" style="margin:6px 0 10px">
@@ -102,13 +130,13 @@
   </div>
   <table>
     <thead><tr>
-      <th>Topic</th><th>Origin</th><th>Estimate</th><th>Observed</th><th>Attempts</th><th>Diff.</th>
+      <th>Topic</th><th>Origin</th><th>Estimated score</th><th>Observed score</th><th>Attempts</th><th>Diff.</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
 
   <div class="panel">
-    <h2>Drive the loop with a synthetic attempt</h2>
+    <h2>Insert synthetic attempt</h2>
     <div class="row">
       <span id="selName" class="sub">Selected: <b>none</b> (click a topic)</span>
     </div>
@@ -122,22 +150,69 @@
   </div>
 
   <div class="panel">
-    <h2>Measure the policy with a simulation</h2>
+    <h2>Measure the <b>Selection</b> policy with a simulation</h2>
     <p class="sub" style="margin-bottom:8px">
-      Runs the real <code>pick_topic → record_attempt</code> loop over synthetic
-      students in a throwaway in-memory database. Nothing here touches
-      <code>mentora.db</code>. Difficulty should climb (growth shows up as
-      harder questions, not higher scores, since difficulty tracks the estimate),
-      score should hold steady rather than collapse, coverage should be high
-      (a flat pool has no wall), repeats should be near zero (the recency
-      penalty works), and calibration should fall as difficulty rises.
+      Replay
+      <code>pick_topic → mark_served → record_attempt</code> loop against
+      synthetic students in a throwaway in-memory database (DOES NOT 
+      TOUCH <code>mentora.db</code>), checks whether the <em><b>selection
+      policy</b></em> itself is behaving: 
+        <ul>
+          <li>does it cover the course instead of grinding a handful of topics?</li>
+          <li>holds difficulty steady rather than let it collapse? </li>
+          <li>avoids repeating the same topic back to back?</li>
+          <li>serves harder questions as a student's estimated score rises?</li>
+        </ul>
+    </p>
+    <p class="sub" style="margin-bottom:8px">
+      <b>Profile</b> lets you choose between student archetypes. Under the hood just changes
+      two values of the profile (ability_range, Learning Rate) ability range is where their true skill in any given
+      topic is set at. Learning Rate is how fast that student increases from that ability.
     </p>
     <div class="row">
+      <label class="sub">profile
+        <select id="simProfile">
+          <option value="mixed">mixed cohort</option>
+          <option value="strong">strong students</option>
+          <option value="struggling">struggling students</option>
+          <option value="fast_learner">fast learners</option>
+        </select>
+      </label>
       <label class="sub">students <input id="simStudents" value="12" size="4"></label>
       <label class="sub">questions each <input id="simQuestions" value="24" size="4"></label>
       <button id="bSimulate">Run simulation</button>
     </div>
     <div class="bar" id="simStats" style="margin-top:14px"></div>
+    <p class="sub" style="margin-bottom:8px">
+      <b>Coverage</b> is the share of the course's topics the average student
+      actually got. <b>Observed score</b> averages the first third of a run
+      against the last third. It should stay <em>level</em> rather than
+      climb, because the difficulty served rises with the estimated score.
+      <b>Difficulty</b> does the same two thirds for the difficulty the engine
+      asked for, 0 to 1, and <b>Growth</b> is that gap. Positive growth means
+      the engine pushed students harder as they improved. Level score plus
+      positive growth is the shape you want. <b>Repeat rate</b> is the share
+      of picks that served the same topic twice in a row.
+    </p>
+    <table id="simSkillsTable" style="margin-top:4px">
+      <thead><tr>
+        <th>Topic</th><th>Served</th><th>Observed score</th><th>Estimated score</th>
+      </tr></thead>
+      <tbody id="simSkillRows"></tbody>
+    </table>
+    <p class="sub" style="margin-top:8px">
+      The same two columns as the topics board above, across the whole cohort
+      instead of one student. <b>Served</b> counts how many times anyone in
+      the cohort got that topic. <b>Observed score</b> is the raw mean over
+      those attempts. A <code>&mdash;</code> means nobody was ever served it,
+      which we deliberately keep distinct from scoring 0. <b>Estimated
+      score</b> is where the engine's belief lands after the run, averaged
+      across the cohort. A student never served the topic counts at the flat
+      0.50 prior, exactly as a real never-attempted topic reads. That prior
+      also parks any lightly-served topic near 0.50 whatever happened on it.
+      Both columns report what the engine saw and believes, never the
+      synthetic learner's hidden true ability.
+    </p>
     <div id="simLog"></div>
   </div>
 
@@ -213,16 +288,19 @@ function render() {
     ['Topics', skills.length],
     ['Touched', seen.length],
     ['Coverage', skills.length ? (seen.length / skills.length * 100).toFixed(0) + '%' : '—'],
-    ['Avg observed', avg === null ? '—' : avg.toFixed(2)],
+    ['Avg observed score', avg === null ? '—' : avg.toFixed(2)],
   ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
 
   $('#rows').innerHTML = skills.map(s => {
     const cls = ['skill']; if (selected === s.skill_id) cls.push('sel');
     const origin = `<span class="pill ${s.origin}">${s.origin}</span>` +
       (s.is_recent ? '<span class="badge-new" title="added in the last 15 minutes">new</span>' : '');
-    // Two numbers on purpose: `estimate` is what selection acts on (the
-    // window shrunk toward the prior), `observed` is the raw mean. They
-    // converge as attempts accumulate; the gap is the confidence.
+    // Two numbers on purpose. The API fields are `estimate` / `observed`;
+    // the page labels them "estimated score" / "observed score" so one
+    // vocabulary covers this table and the simulation report alike.
+    // `estimate` is what selection acts on (the window shrunk toward the
+    // prior), `observed` is the raw mean. They converge as attempts
+    // accumulate; the gap is the confidence.
     const observedText = s.observed === null ? '—' : s.observed.toFixed(2);
     const width = s.estimate * 100;
     return `<tr class="${cls.join(' ')}" data-id="${s.skill_id}">
@@ -329,27 +407,34 @@ async function previewNext() {
 
 async function runSimulation() {
   const c = encodeURIComponent($('#course').value.trim());
+  const profile = encodeURIComponent($('#simProfile').value);
   const students = encodeURIComponent($('#simStudents').value.trim());
   const questions = encodeURIComponent($('#simQuestions').value.trim());
   $('#bSimulate').disabled = true;
   log('running…', null, '#simLog');
   try {
     const r = await fetch(
-      `/dev/courses/${c}/simulate?students=${students}&questions_each=${questions}`,
+      `/dev/courses/${c}/simulate?profile=${profile}&students=${students}&questions_each=${questions}`,
       { method: 'POST' });
     if (!r.ok) throw new Error(await r.text());
     const s = await r.json();
     const growth = s.difficulty_late - s.difficulty_early;
     $('#simStats').innerHTML = [
       ['Coverage', (s.coverage * 100).toFixed(0) + '%'],
-      ['Score', s.score_early.toFixed(2) + ' → ' + s.score_late.toFixed(2)],
+      ['Observed score', s.score_early.toFixed(2) + ' → ' + s.score_late.toFixed(2)],
       ['Difficulty', s.difficulty_early.toFixed(2) + ' → ' + s.difficulty_late.toFixed(2)],
       ['Growth', (growth >= 0 ? '+' : '') + growth.toFixed(2)],
       ['Repeat rate', (s.repeat_rate * 100).toFixed(0) + '%'],
     ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+    $('#simSkillRows').innerHTML = s.per_skill.map(sk => `<tr>
+        <td class="name">${sk.skill_name}</td>
+        <td>${sk.times_served}</td>
+        <td>${sk.mean_score === null ? '—' : sk.mean_score.toFixed(2)}</td>
+        <td>${sk.final_estimate.toFixed(2)}</td>
+      </tr>`).join('');
     const cal = Object.entries(s.calibration)
       .map(([k, v]) => `${k} ${v.toFixed(2)}`).join('  ·  ');
-    log(`${s.students} students × ${s.questions_each} questions over ${s.topics} topics. Calibration: ${cal || 'n/a'}`,
+    log(`${s.students} "${s.profile}" students × ${s.questions_each} questions over ${s.topics} topics. Calibration: ${cal || 'n/a'}`,
         false, '#simLog');
   } catch (e) {
     log('simulation failed: ' + e.message, true, '#simLog');
