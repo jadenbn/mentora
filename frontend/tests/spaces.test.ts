@@ -1,229 +1,188 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sessionStorageKey } from "@/lib/canvas/persistence";
-import {
-  createSpace,
-  deleteSpace,
-  getServerSpacesSnapshot,
-  getSpace,
-  getSpacesSnapshot,
-  listSpaces,
-  renameSpace,
-  subscribeToSpaces,
-  touchSpace,
-} from "@/lib/spaces/store";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-beforeEach(() => {
-  localStorage.clear();
-  vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-});
+const mocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  listSpaces: vi.fn(),
+  createSpace: vi.fn(),
+  deleteSpaceById: vi.fn(),
+  clearCanvas: vi.fn(),
+  getSpaceById: vi.fn(),
+  getCourseById: vi.fn(),
+  updateSpace: vi.fn(),
+}));
 
-afterEach(() => vi.useRealTimers());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock("@/lib/api/api", () => ({
+  listSpaces: mocks.listSpaces,
+  createSpace: mocks.createSpace,
+  deleteSpaceById: mocks.deleteSpaceById,
+  getSpaceById: mocks.getSpaceById,
+  getCourseById: mocks.getCourseById,
+  updateSpace: mocks.updateSpace,
+}));
+vi.mock("@/lib/canvas/persistence", () => ({ clearCanvas: mocks.clearCanvas }));
+vi.mock("@/features/whiteboard/Whiteboard", () => ({
+  Whiteboard: () => null,
+}));
 
-/** Advance the clock so successive writes get distinguishable timestamps. */
-function tick(ms = 1000) {
-  vi.setSystemTime(new Date(Date.now() + ms));
+import { SpaceGrid } from "@/features/spaces/SpaceGrid";
+import { SpaceWorkspace } from "@/features/spaces/SpaceWorkspace";
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+  .IS_REACT_ACT_ENVIRONMENT = true;
+
+const spaceRecord = {
+  id: "space_1",
+  course_id: "course_1",
+  title: "Warmup",
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
+async function mount(element: ReturnType<typeof createElement>) {
+  const container = window.document.createElement("div");
+  window.document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(element);
+  });
+  return { container, root };
 }
 
-describe("createSpace", () => {
-  it("returns a space belonging to the course", () => {
-    const space = createSpace("course_demo");
-    expect(space.courseId).toBe("course_demo");
+async function unmount(container: HTMLDivElement, root: Root) {
+  await act(async () => root.unmount());
+  container.remove();
+}
+
+describe("SpaceGrid", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("gives each space a distinct id", () => {
-    expect(createSpace("c").id).not.toBe(createSpace("c").id);
+  it("shows an empty state when the course has no spaces", async () => {
+    mocks.listSpaces.mockResolvedValue([]);
+    const { container, root } = await mount(createElement(SpaceGrid, { courseId: "course_1" }));
+    expect(container.textContent).toMatch(/no spaces yet/i);
+    await unmount(container, root);
   });
 
-  it("stamps both timestamps on creation", () => {
-    const space = createSpace("c");
-    expect(Number.isNaN(Date.parse(space.createdAt))).toBe(false);
-    expect(space.updatedAt).toBe(space.createdAt);
+  it("lists spaces returned by the API", async () => {
+    mocks.listSpaces.mockResolvedValue([spaceRecord]);
+    const { container, root } = await mount(createElement(SpaceGrid, { courseId: "course_1" }));
+    expect(container.textContent).toContain("Warmup");
+    await unmount(container, root);
   });
 
-  it("numbers untitled spaces per course", () => {
-    expect(createSpace("course_a").title).toBe("Space 1");
-    expect(createSpace("course_a").title).toBe("Space 2");
-    expect(createSpace("course_b").title).toBe("Space 1");
+  it("creates a space and navigates to it", async () => {
+    mocks.listSpaces.mockResolvedValue([]);
+    mocks.createSpace.mockResolvedValue({ ...spaceRecord, id: "space_new" });
+    const { container, root } = await mount(createElement(SpaceGrid, { courseId: "course_1" }));
+
+    const createButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "New space",
+    ) as HTMLButtonElement;
+    await act(async () => createButton.click());
+
+    expect(mocks.createSpace).toHaveBeenCalledWith("course_1");
+    expect(mocks.push).toHaveBeenCalledWith("/spaces/space_new");
+    await unmount(container, root);
   });
 
-  it("accepts a custom title", () => {
-    expect(createSpace("c", "Integration practice").title).toBe(
-      "Integration practice",
-    );
+  it("deletes a space and clears its canvas after confirmation", async () => {
+    mocks.listSpaces.mockResolvedValue([spaceRecord]);
+    mocks.deleteSpaceById.mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { container, root } = await mount(createElement(SpaceGrid, { courseId: "course_1" }));
+
+    const deleteButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Delete",
+    ) as HTMLButtonElement;
+    await act(async () => deleteButton.click());
+
+    expect(mocks.deleteSpaceById).toHaveBeenCalledWith("course_1", "space_1");
+    expect(mocks.clearCanvas).toHaveBeenCalledWith("space_1");
+    expect(container.textContent).toMatch(/no spaces yet/i);
+    await unmount(container, root);
   });
 
-  it("trims a custom title", () => {
-    expect(createSpace("c", "  Padded  ").title).toBe("Padded");
-  });
+  it("does not delete when the confirmation is declined", async () => {
+    mocks.listSpaces.mockResolvedValue([spaceRecord]);
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { container, root } = await mount(createElement(SpaceGrid, { courseId: "course_1" }));
 
-  it("falls back to a default when the title is only whitespace", () => {
-    expect(createSpace("c", "   ").title).toBe("Space 1");
-  });
+    const deleteButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Delete",
+    ) as HTMLButtonElement;
+    await act(async () => deleteButton.click());
 
-  it("persists across a reload", () => {
-    const space = createSpace("c", "Kept");
-    expect(getSpace(space.id)?.title).toBe("Kept");
-  });
-
-  it("persists the canonical generated problem with the Space", () => {
-    const problem = {
-      id: "problem_1",
-      course_id: "c",
-      document_id: "doc_1",
-      source: "generated" as const,
-      prompt: "Solve $x=1$.",
-    };
-    const space = createSpace("c", "Practice", problem);
-    expect(getSpace(space.id)?.problem).toEqual(problem);
-  });
-});
-
-describe("listSpaces", () => {
-  it("is empty for a course with no spaces", () => {
-    expect(listSpaces("course_demo")).toEqual([]);
-  });
-
-  it("returns only that course's spaces", () => {
-    createSpace("course_a", "A1");
-    createSpace("course_b", "B1");
-    expect(listSpaces("course_a").map((s) => s.title)).toEqual(["A1"]);
-  });
-
-  it("puts the most recently worked on space first", () => {
-    const first = createSpace("c", "First");
-    tick();
-    createSpace("c", "Second");
-    tick();
-    touchSpace(first.id);
-    expect(listSpaces("c").map((s) => s.title)).toEqual(["First", "Second"]);
+    expect(mocks.deleteSpaceById).not.toHaveBeenCalled();
+    await unmount(container, root);
   });
 });
 
-describe("renameSpace", () => {
-  it("changes the title", () => {
-    const space = createSpace("c", "Old");
-    renameSpace(space.id, "New");
-    expect(getSpace(space.id)?.title).toBe("New");
+describe("SpaceWorkspace", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("trims the new title", () => {
-    const space = createSpace("c");
-    renameSpace(space.id, "  Tidy  ");
-    expect(getSpace(space.id)?.title).toBe("Tidy");
+  it("shows a not-found state when the space does not exist", async () => {
+    mocks.getSpaceById.mockResolvedValue(null);
+    const { container, root } = await mount(createElement(SpaceWorkspace, { spaceId: "nope" }));
+    expect(container.textContent).toMatch(/space not found/i);
+    await unmount(container, root);
   });
 
-  it("ignores a blank title rather than erasing the name", () => {
-    const space = createSpace("c", "Keep");
-    renameSpace(space.id, "   ");
-    expect(getSpace(space.id)?.title).toBe("Keep");
-  });
-
-  it("leaves other spaces alone", () => {
-    const a = createSpace("c", "A");
-    const b = createSpace("c", "B");
-    renameSpace(a.id, "Renamed");
-    expect(getSpace(b.id)?.title).toBe("B");
-  });
-});
-
-describe("touchSpace", () => {
-  it("moves updatedAt forward", () => {
-    const space = createSpace("c");
-    tick();
-    touchSpace(space.id);
-    expect(getSpace(space.id)!.updatedAt > space.updatedAt).toBe(true);
-  });
-
-  it("leaves createdAt alone", () => {
-    const space = createSpace("c");
-    tick();
-    touchSpace(space.id);
-    expect(getSpace(space.id)!.createdAt).toBe(space.createdAt);
-  });
-
-  it("is a no-op for an unknown id", () => {
-    const space = createSpace("c");
-    touchSpace("nope");
-    expect(getSpace(space.id)!.updatedAt).toBe(space.updatedAt);
-  });
-});
-
-describe("deleteSpace", () => {
-  it("removes the space from the index", () => {
-    const space = createSpace("c");
-    deleteSpace(space.id);
-    expect(getSpace(space.id)).toBeNull();
-  });
-
-  it("also discards the canvas, so the id cannot be reused with stale work", () => {
-    const space = createSpace("c");
-    localStorage.setItem(sessionStorageKey(space.id), "{}");
-    deleteSpace(space.id);
-    expect(localStorage.getItem(sessionStorageKey(space.id))).toBeNull();
-  });
-
-  it("leaves other spaces intact", () => {
-    const a = createSpace("c", "A");
-    const b = createSpace("c", "B");
-    deleteSpace(a.id);
-    expect(listSpaces("c").map((s) => s.title)).toEqual(["B"]);
-  });
-
-  it("is safe for an unknown id", () => {
-    expect(() => deleteSpace("nope")).not.toThrow();
-  });
-});
-
-describe("external store contract", () => {
-  it("returns the same reference until something changes", () => {
-    // useSyncExternalStore re-renders forever if this is not stable.
-    createSpace("c");
-    expect(getSpacesSnapshot()).toBe(getSpacesSnapshot());
-  });
-
-  it("returns a new reference after a write", () => {
-    createSpace("c");
-    const before = getSpacesSnapshot();
-    createSpace("c");
-    expect(getSpacesSnapshot()).not.toBe(before);
-  });
-
-  it("serves an empty list on the server", () => {
-    expect(getServerSpacesSnapshot()).toEqual([]);
-  });
-
-  it("notifies subscribers when a space is created", () => {
-    const listener = vi.fn();
-    const unsubscribe = subscribeToSpaces(listener);
-    createSpace("c");
-    expect(listener).toHaveBeenCalled();
-    unsubscribe();
-  });
-
-  it("stops notifying after unsubscribe", () => {
-    const listener = vi.fn();
-    subscribeToSpaces(listener)();
-    createSpace("c");
-    expect(listener).not.toHaveBeenCalled();
-  });
-});
-
-describe("hostile storage", () => {
-  it("treats a corrupt index as empty rather than throwing", () => {
-    localStorage.setItem("mentora:spaces", "{not json");
-    expect(listSpaces("c")).toEqual([]);
-  });
-
-  it("ignores an index that is not an array", () => {
-    localStorage.setItem("mentora:spaces", JSON.stringify({ nope: true }));
-    expect(listSpaces("c")).toEqual([]);
-  });
-
-  it("fails explicitly when the index cannot be written", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("QuotaExceededError");
+  it("shows the course name once both the space and course have loaded", async () => {
+    mocks.getSpaceById.mockResolvedValue(spaceRecord);
+    mocks.getCourseById.mockResolvedValue({
+      id: "course_1",
+      name: "MATH 101",
+      description: "",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
     });
-    expect(() => createSpace("c")).toThrow(/save this Space/i);
+    const { container, root } = await mount(
+      createElement(SpaceWorkspace, { spaceId: "space_1" }),
+    );
+    expect(container.textContent).toContain("MATH 101");
+    expect(container.textContent).toContain("Warmup");
+    await unmount(container, root);
+  });
+
+  it("renames the space via the API when given a non-blank title", async () => {
+    mocks.getSpaceById.mockResolvedValue(spaceRecord);
+    mocks.getCourseById.mockResolvedValue(null);
+    mocks.updateSpace.mockResolvedValue({ ...spaceRecord, title: "Renamed" });
+    vi.spyOn(window, "prompt").mockReturnValue("Renamed");
+    const { container, root } = await mount(
+      createElement(SpaceWorkspace, { spaceId: "space_1" }),
+    );
+
+    const renameButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Rename",
+    ) as HTMLButtonElement;
+    await act(async () => renameButton.click());
+
+    expect(mocks.updateSpace).toHaveBeenCalledWith("course_1", "space_1", { title: "Renamed" });
+    await unmount(container, root);
+  });
+
+  it("ignores a blank rename rather than clearing the title", async () => {
+    mocks.getSpaceById.mockResolvedValue(spaceRecord);
+    mocks.getCourseById.mockResolvedValue(null);
+    vi.spyOn(window, "prompt").mockReturnValue("   ");
+    const { container, root } = await mount(
+      createElement(SpaceWorkspace, { spaceId: "space_1" }),
+    );
+
+    const renameButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Rename",
+    ) as HTMLButtonElement;
+    await act(async () => renameButton.click());
+
+    expect(mocks.updateSpace).not.toHaveBeenCalled();
+    await unmount(container, root);
   });
 });

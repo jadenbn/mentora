@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import {
+  createSpace,
   generateCourseQuestion,
   listCourseDocuments,
   uploadCourseDocument,
 } from "@/lib/api/api";
-import { createSpace } from "@/lib/spaces/store";
 import type { CourseDocument, DocumentType } from "@/types/domain";
 
 const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
@@ -92,11 +92,10 @@ export function CourseMaterials({ courseId }: { courseId: string }) {
         document.document_id,
         questionRequest,
       );
-      const space = createSpace(
-        courseId,
-        `Practice — ${withoutExtension(document.filename)}`,
-        problem,
-      );
+      const space = await createSpace(courseId, {
+        title: `Practice — ${withoutExtension(document.filename)}`,
+        problem_id: problem.id,
+      });
       router.push(`/spaces/${space.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Question generation failed.");

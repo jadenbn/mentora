@@ -106,3 +106,135 @@ def test_problem_rejects_chunks_from_another_document(tmp_path):
         pass
     else:
         raise AssertionError("foreign grounding chunk was accepted")
+
+
+def test_initialize_seeds_the_two_demo_courses(tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    ids = {course.id for course in repo.list_courses()}
+    assert {"course_demo", "course_linear"}.issubset(ids)
+    # Re-running initialize (e.g. on a second startup) must not duplicate or error.
+    repo.initialize()
+    ids_again = [course.id for course in repo.list_courses()]
+    assert ids_again.count("course_demo") == 1
+
+
+def test_course_crud_round_trips(tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    course = repo.create_course(name="MATH 301", description="Analysis")
+    assert repo.get_course(course.id) == course
+
+    updated = repo.update_course(course.id, name="MATH 302")
+    assert updated is not None
+    assert updated.name == "MATH 302"
+    assert updated.description == "Analysis"
+
+    assert repo.update_course("missing", name="x") is None
+
+    assert repo.delete_course(course.id) is True
+    assert repo.get_course(course.id) is None
+    assert repo.delete_course(course.id) is False
+
+
+def test_deleting_a_course_cascades_spaces_and_cleans_up_orphans(tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    course = repo.create_course(name="Temp", description="")
+    store(repo, texts=("alpha", "beta"))
+    # Re-point the stored document/chunks at the fresh course for this test.
+    with repo.connect() as connection:
+        connection.execute(
+            "UPDATE course_documents SET course_id = ? WHERE document_id = 'doc_a'",
+            (course.id,),
+        )
+        connection.execute(
+            "UPDATE document_chunks SET course_id = ? WHERE document_id = 'doc_a'",
+            (course.id,),
+        )
+    problem = ProblemContext(
+        id="problem_1",
+        course_id=course.id,
+        document_id="doc_a",
+        source="generated",
+        prompt="Q",
+    )
+    repo.create_problem(problem=problem, grounding_chunk_ids=["chunk_doc_a_00000"])
+    space = repo.create_space(course_id=course.id, title="Space", problem_id=None)
+
+    assert repo.delete_course(course.id) is True
+    assert repo.get_space(space.id) is None
+    assert repo.list_documents(course.id) == []
+    assert repo.get_grounded_problem(course_id=course.id, problem_id="problem_1") is None
+
+
+def test_space_crud_round_trips(tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    course = repo.create_course(name="Course", description="")
+    space = repo.create_space(course_id=course.id, title="Warmup", problem_id=None)
+    assert space.title == "Warmup"
+    assert space.problem is None
+    assert repo.get_space(space.id) == space
+
+    renamed = repo.update_space(space.id, title="Renamed")
+    assert renamed is not None
+    assert renamed.title == "Renamed"
+
+    touched = repo.update_space(space.id)
+    assert touched is not None
+    assert touched.title == "Renamed"
+    assert touched.updated_at >= renamed.updated_at
+
+    assert repo.delete_space(space.id) is True
+    assert repo.get_space(space.id) is None
+    assert repo.delete_space(space.id) is False
+
+
+def test_space_default_title_numbering(tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    course = repo.create_course(name="Course", description="")
+    first = repo.create_space(course_id=course.id, title=None, problem_id=None)
+    second = repo.create_space(course_id=course.id, title="   ", problem_id=None)
+    assert first.title == "Space 1"
+    assert second.title == "Space 2"
+
+
+def test_create_space_validates_problem_ownership(tmp_path):
+    repo = CourseRepository(tmp_path / "db.sqlite")
+    course_a = repo.create_course(name="A", description="")
+    course_b = repo.create_course(name="B", description="")
+    store(repo, texts=("alpha", "beta"))
+    with repo.connect() as connection:
+        connection.execute(
+            "UPDATE course_documents SET course_id = ? WHERE document_id = 'doc_a'",
+            (course_a.id,),
+        )
+        connection.execute(
+            "UPDATE document_chunks SET course_id = ? WHERE document_id = 'doc_a'",
+            (course_a.id,),
+        )
+    repo.create_problem(
+        problem=ProblemContext(
+            id="problem_1",
+            course_id=course_a.id,
+            document_id="doc_a",
+            source="generated",
+            prompt="Q",
+        ),
+        grounding_chunk_ids=["chunk_doc_a_00000"],
+    )
+
+    space = repo.create_space(course_id=course_a.id, title="ok", problem_id="problem_1")
+    assert space.problem is not None
+    assert space.problem.id == "problem_1"
+
+    try:
+        repo.create_space(course_id=course_b.id, title="bad", problem_id="problem_1")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("problem from another course was accepted")
+
+    try:
+        repo.create_space(course_id=course_a.id, title="bad", problem_id="does-not-exist")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown problem id was accepted")
