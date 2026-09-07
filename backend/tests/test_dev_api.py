@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session, select
 
 from app.api.dependencies import get_course_repository
+from app.db import engine
+from app.engine.models.attempt import Attempt
 from app.main import app
 
 
@@ -233,3 +236,96 @@ def test_a_synthetic_attempt_also_marks_the_topic_served():
             "/dev/courses/calc1/next-topic", params={"student_id": "dev-2"}
         ).json()["skill_id"]
     assert second != first
+
+
+def _import_one(client, skill_id="a", name="A"):
+    return client.post(
+        "/dev/courses/calc1/skills/import",
+        json={"skills": [
+            {"id": skill_id, "name": name, "description": "d", "difficulty_band": 0.5},
+        ]},
+    )
+
+
+def test_delete_skill_removes_it_from_the_course():
+    _create_course()
+    with TestClient(app) as client:
+        _import_one(client)
+        response = client.delete("/dev/courses/calc1/skills/calc1.a")
+        assert response.status_code == 200
+        assert response.json()["deleted"] == "calc1.a"
+
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "dev"}
+        ).json()
+    assert [s["skill_id"] for s in overview["skills"]] == []
+
+
+def test_delete_skill_takes_the_students_state_with_it():
+    """SkillState has no foreign key to skill.id, so the route deletes it by
+    hand. Skill ids are deterministic, so a leaked row would be silently
+    adopted by the next topic imported under the same name."""
+    _create_course()
+    with TestClient(app) as client:
+        _import_one(client)
+        client.post(
+            "/dev/courses/calc1/attempts",
+            json={"student_id": "stu1", "session_id": "dev", "problem_id": "p1",
+                  "expected_skills": ["calc1.a"], "difficulty": 0.5, "correct": True},
+        )
+        deleted = client.delete("/dev/courses/calc1/skills/calc1.a").json()
+        assert deleted["skill_states_removed"] == 1
+
+        # Re-import the same name: it must come back untouched, not inherit
+        # the attempt history of the topic that was deleted.
+        _import_one(client)
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "stu1"}
+        ).json()
+    revived = next(s for s in overview["skills"] if s["skill_id"] == "calc1.a")
+    assert revived["attempts"] == 0
+    assert revived["observed"] is None
+
+
+def test_delete_skill_leaves_the_attempt_ledger_alone():
+    """The ledger is immutable and carries its own resolved skill list."""
+    _create_course()
+    with TestClient(app) as client:
+        _import_one(client)
+        client.post(
+            "/dev/courses/calc1/attempts",
+            json={"student_id": "stu1", "session_id": "dev", "problem_id": "p1",
+                  "expected_skills": ["calc1.a"], "difficulty": 0.5, "correct": True},
+        )
+        client.delete("/dev/courses/calc1/skills/calc1.a")
+
+    with Session(engine) as session:
+        attempts = session.exec(select(Attempt)).all()
+    assert len(attempts) == 1
+    assert attempts[0].expected_skills == ["calc1.a"]
+
+
+def test_delete_skill_is_404_for_an_unknown_topic():
+    _create_course()
+    with TestClient(app) as client:
+        assert client.delete("/dev/courses/calc1/skills/calc1.nope").status_code == 404
+
+
+def test_delete_skill_will_not_cross_courses():
+    """A topic belongs to exactly one course, and the id carries the course
+    prefix -- deleting it from a different course must not work."""
+    _create_course()
+    _create_course("other")
+    with TestClient(app) as client:
+        _import_one(client)
+        response = client.delete("/dev/courses/other/skills/calc1.a")
+        assert response.status_code == 404
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "dev"}
+        ).json()
+    assert [s["skill_id"] for s in overview["skills"]] == ["calc1.a"]
+
+
+def test_delete_skill_is_404_for_an_unknown_course():
+    with TestClient(app) as client:
+        assert client.delete("/dev/courses/nope/skills/nope.a").status_code == 404

@@ -18,7 +18,9 @@ from sqlmodel import Session, select
 
 from app.api.dependencies import get_session, require_course
 from app.models.enums import SkillOrigin
+from app.models.problem_skill import ProblemSkill
 from app.models.skill import Skill
+from app.engine.models.skill_state import SkillState
 from app.engine.schemas import AttemptCreate, AttemptResult
 from app.schemas.taxonomy import TaxonomyPlan
 from app.engine import simulation, student_model_service
@@ -53,6 +55,58 @@ def import_skills(
     requested_ids = {s.id for s in produced}
     skipped = sorted(requested_ids - set(added))
     return {"added": added, "skipped": skipped}
+
+
+@router.delete("/courses/{course_id}/skills/{skill_id}", include_in_schema=False)
+def delete_skill(
+    course_id: str,
+    skill_id: str,
+    session: Session = Depends(get_session),
+    _course=Depends(require_course),
+) -> dict:
+    """Remove one topic from a course. Dev only, and deliberately not on the
+    product API: nothing a student does should be able to delete a topic.
+
+    `add_skills` only ever inserts, so before this route the only way to undo
+    a bad piggyback mint (a typo'd name, a duplicate the canonical key missed)
+    was editing SQLite by hand.
+
+    What goes with it:
+
+    - `ProblemSkill` rows cascade on the real foreign key, so problems already
+      attributed to this topic lose that attribution. A later attempt on such
+      a problem resolves to no known skill and records nothing, which is the
+      same path a hand-deleted skill already took.
+    - `SkillState` rows are deleted explicitly, because that table has no
+      foreign key to `skill.id`. Leaving them would not just leak rows: skill
+      ids are deterministic (`normalize_slug`), so re-importing a topic under
+      the same name would silently adopt the deleted topic's per-student
+      history.
+    - `Attempt` rows are left completely alone. The ledger is immutable and
+      stores its own resolved `expected_skills`, so history stays readable
+      even for a topic that no longer exists.
+    """
+    skill = session.get(Skill, skill_id)
+    if skill is None or skill.course_id != course_id:
+        raise HTTPException(404, f"skill '{skill_id}' is not a topic in this course")
+
+    states = session.exec(
+        select(SkillState).where(SkillState.skill_id == skill_id)
+    ).all()
+    attributions = session.exec(
+        select(ProblemSkill).where(ProblemSkill.skill_id == skill_id)
+    ).all()
+
+    for state in states:
+        session.delete(state)
+    session.delete(skill)
+    session.commit()
+
+    return {
+        "deleted": skill_id,
+        "skill_states_removed": len(states),
+        "problem_attributions_removed": len(attributions),
+    }
 
 
 @router.post("/courses/{course_id}/attempts", response_model=AttemptResult,

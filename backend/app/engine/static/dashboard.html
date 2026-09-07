@@ -144,6 +144,7 @@
       <button class="good" id="bCorrect" disabled>✓ Correct</button>
       <button class="warn" id="bPartial" disabled>◑ Partial</button>
       <button class="bad" id="bIncorrect" disabled>✗ Incorrect</button>
+      <button class="bad" id="bDelete" style="margin-left:auto" disabled>🗑 Delete topic</button>
     </div>
     <dl id="detail"></dl>
     <div id="log"></div>
@@ -327,7 +328,10 @@ function chips(items) {
 function renderSelected() {
   const s = data && selected ? data.skills.find(x => x.skill_id === selected) : null;
   $('#selName').innerHTML = 'Selected: <b>' + (s ? s.skill_name + ' <span class="id">' + s.skill_id + '</span>' : 'none') + '</b>';
-  for (const id of ['#bCorrect', '#bPartial', '#bIncorrect']) $(id).disabled = !s;
+  for (const id of ['#bCorrect', '#bPartial', '#bIncorrect', '#bDelete']) $(id).disabled = !s;
+  // Deleting is two clicks, and selecting anything else disarms it -- there
+  // is no undo, and add_skills only ever inserts.
+  resetDeleteButton();
 
   const detail = $('#detail');
   if (!s) { detail.classList.remove('show'); detail.innerHTML = ''; return; }
@@ -366,6 +370,49 @@ async function attempt(kind) {
   } catch (e) { log('attempt failed: ' + e.message, true); return; }
   await load();
   selected = s.skill_id; render(); renderSelected();
+}
+
+let deleteArmed = false;
+
+function resetDeleteButton() {
+  deleteArmed = false;
+  const b = $('#bDelete');
+  if (b) b.textContent = '🗑 Delete topic';
+}
+
+async function deleteSkill() {
+  const s = data && selected ? data.skills.find(x => x.skill_id === selected) : null;
+  if (!s) return;
+
+  // First click arms, second click commits. Cheaper than a modal and it
+  // cannot block the page the way a native confirm() can.
+  if (!deleteArmed) {
+    deleteArmed = true;
+    $('#bDelete').textContent = '🗑 Really delete? Click again';
+    return;
+  }
+
+  try {
+    const c = encodeURIComponent($('#course').value.trim());
+    const r = await fetch(`/dev/courses/${c}/skills/${encodeURIComponent(s.skill_id)}`, {
+      method: 'DELETE',
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    log(
+      `deleted ${res.deleted} (${res.skill_states_removed} student state row(s), ` +
+      `${res.problem_attributions_removed} problem attribution(s); attempts kept)`,
+      false,
+    );
+  } catch (e) {
+    log('delete failed: ' + e.message, true);
+    resetDeleteButton();
+    return;
+  }
+  selected = null;
+  await load();
+  render();
+  renderSelected();
 }
 
 async function importSkills() {
@@ -451,6 +498,7 @@ $('#student').onchange = load;
 $('#bCorrect').onclick = () => attempt('correct');
 $('#bPartial').onclick = () => attempt('partial');
 $('#bIncorrect').onclick = () => attempt('incorrect');
+$('#bDelete').onclick = () => deleteSkill();
 $('#bImport').onclick = importSkills;
 load();
 </script>
