@@ -105,14 +105,23 @@ export async function runTutorAnalysis(
   logSentImage(capture.blob);
   const priorAnnotations = collectPriorAnnotations(editor, capture.bounds);
 
-  // A skill-attributed problem goes through /work: the tutor grades and the
-  // server records the attempt in one round trip. The browser deciding
-  // `correct` for itself was the reason mastery could be forged. What the
-  // server recorded is not surfaced here -- the engine has no UI. Voice
-  // input has no server-recording counterpart yet, so it still goes through
-  // analyzeCanvas even for an attributed problem.
+  // Any generated problem goes through /work: the tutor grades and the server
+  // records the attempt in one round trip. The browser deciding `correct` for
+  // itself was the reason mastery could be forged. What the server recorded is
+  // not surfaced here -- the engine has no UI.
+  //
+  // Deliberately not gated on problem.skill. The server resolves the skills
+  // from ProblemSkill and records nothing when there are none, so asking the
+  // client whether a problem is attributed is both redundant and the same
+  // client-authority mistake in a smaller form. It also cannot work: a space
+  // loaded from GET /api/spaces/{id} carries a bare ProblemContext with no
+  // skill on it, so this used to silently fall through to analyzeCanvas on
+  // every reload and nothing was ever recorded.
+  //
+  // Voice input has no server-recording counterpart yet, so it still goes
+  // through analyzeCanvas.
   const response =
-    problem?.skill && studentId && sessionId && !options.transcript
+    problem && studentId && sessionId && !options.transcript
       ? await submitWork({
           courseId: options.courseId,
           studentId,
