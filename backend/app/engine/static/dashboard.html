@@ -65,6 +65,27 @@
     color:var(--muted); white-space:pre-wrap; max-height:180px; overflow:auto; }
   .err { color:var(--bad); }
   .ok { color:var(--good); }
+  /* Hover help. Everything explaining the simulation lives in these rather
+     than in paragraphs above the controls. */
+  [data-tip] { position:relative; cursor:help; }
+  [data-tip]:hover::after {
+    content:attr(data-tip); position:absolute; left:0; top:calc(100% + 6px);
+    z-index:30; width:max-content; max-width:250px;
+    background:var(--panel2); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:7px 9px;
+    font-size:11px; line-height:1.45; font-weight:400;
+    text-transform:none; letter-spacing:normal; white-space:normal;
+    box-shadow:0 6px 20px rgba(0,0,0,.5);
+  }
+  /* The table clips its own overflow for the rounded corners, so a tooltip
+     on the last column has to open leftward to stay inside it. */
+  [data-tip][data-tip-right]:hover::after { left:auto; right:0; }
+  .hint { border-bottom:1px dotted var(--muted); }
+  .whatis { display:inline-flex; align-items:center; justify-content:center;
+    width:15px; height:15px; margin-left:7px; border-radius:50%;
+    border:1px solid var(--line); background:var(--panel2);
+    color:var(--muted); font-size:10px; font-weight:700;
+    text-transform:none; letter-spacing:normal; vertical-align:middle; }
   dl.show { display:grid; grid-template-columns:max-content 1fr; gap:6px 14px;
     margin:14px 0 0; font-size:13px; }
   dl dt { color:var(--muted); }
@@ -151,27 +172,10 @@
   </div>
 
   <div class="panel">
-    <h2>Measure the <b>Selection</b> policy with a simulation</h2>
-    <p class="sub" style="margin-bottom:8px">
-      Replay
-      <code>pick_topic → mark_served → record_attempt</code> loop against
-      synthetic students in a throwaway in-memory database (DOES NOT 
-      TOUCH <code>mentora.db</code>), checks whether the <em><b>selection
-      policy</b></em> itself is behaving: 
-        <ul>
-          <li>does it cover the course instead of grinding a handful of topics?</li>
-          <li>holds difficulty steady rather than let it collapse? </li>
-          <li>avoids repeating the same topic back to back?</li>
-          <li>serves harder questions as a student's estimated score rises?</li>
-        </ul>
-    </p>
-    <p class="sub" style="margin-bottom:8px">
-      <b>Profile</b> lets you choose between student archetypes. Under the hood just changes
-      two values of the profile (ability_range, Learning Rate) ability range is where their true skill in any given
-      topic is set at. Learning Rate is how fast that student increases from that ability.
-    </p>
+    <h2>Measure the <b>Selection</b> policy with a simulation<span class="whatis"
+      data-tip="Replays pick_topic, mark_served and record_attempt against synthetic students in a throwaway in-memory database. Never touches mentora.db. Answers whether selection covers the course, holds difficulty steady, and avoids serving the same topic twice in a row.">?</span></h2>
     <div class="row">
-      <label class="sub">profile
+      <label class="sub"><span class="hint" data-tip="Student archetype. Sets two numbers: the ability range their true skill is drawn from, and how fast they learn.">profile</span>
         <select id="simProfile">
           <option value="mixed">mixed cohort</option>
           <option value="strong">strong students</option>
@@ -179,41 +183,20 @@
           <option value="fast_learner">fast learners</option>
         </select>
       </label>
-      <label class="sub">students <input id="simStudents" value="12" size="4"></label>
-      <label class="sub">questions each <input id="simQuestions" value="24" size="4"></label>
+      <label class="sub"><span class="hint" data-tip="How many synthetic students to run. More narrows the noise, it does not test anything new.">students</span> <input id="simStudents" value="12" size="4"></label>
+      <label class="sub"><span class="hint" data-tip="Questions each student answers, in order, one topic pick per question.">questions each</span> <input id="simQuestions" value="24" size="4"></label>
       <button id="bSimulate">Run simulation</button>
     </div>
     <div class="bar" id="simStats" style="margin-top:14px"></div>
-    <p class="sub" style="margin-bottom:8px">
-      <b>Coverage</b> is the share of the course's topics the average student
-      actually got. <b>Observed score</b> averages the first third of a run
-      against the last third. It should stay <em>level</em> rather than
-      climb, because the difficulty served rises with the estimated score.
-      <b>Difficulty</b> does the same two thirds for the difficulty the engine
-      asked for, 0 to 1, and <b>Growth</b> is that gap. Positive growth means
-      the engine pushed students harder as they improved. Level score plus
-      positive growth is the shape you want. <b>Repeat rate</b> is the share
-      of picks that served the same topic twice in a row.
-    </p>
     <table id="simSkillsTable" style="margin-top:4px">
       <thead><tr>
-        <th>Topic</th><th>Served</th><th>Observed score</th><th>Estimated score</th>
+        <th>Topic</th>
+        <th data-tip="How many times anyone in the cohort was served this topic.">Served</th>
+        <th data-tip="Raw mean score over those attempts. A dash means nobody was ever served it, which is kept distinct from scoring 0.">Observed score</th>
+        <th data-tip-right data-tip="Where the engine's belief lands after the run, averaged over the cohort. A student never served the topic counts at the flat 0.50 prior, so lightly-served topics sit near 0.50 whatever happened. This is what the engine believes, never the synthetic student's hidden true ability.">Estimated score</th>
       </tr></thead>
       <tbody id="simSkillRows"></tbody>
     </table>
-    <p class="sub" style="margin-top:8px">
-      The same two columns as the topics board above, across the whole cohort
-      instead of one student. <b>Served</b> counts how many times anyone in
-      the cohort got that topic. <b>Observed score</b> is the raw mean over
-      those attempts. A <code>&mdash;</code> means nobody was ever served it,
-      which we deliberately keep distinct from scoring 0. <b>Estimated
-      score</b> is where the engine's belief lands after the run, averaged
-      across the cohort. A student never served the topic counts at the flat
-      0.50 prior, exactly as a real never-attempted topic reads. That prior
-      also parks any lightly-served topic near 0.50 whatever happened on it.
-      Both columns report what the engine saw and believes, never the
-      synthetic learner's hidden true ability.
-    </p>
     <div id="simLog"></div>
   </div>
 
@@ -467,12 +450,19 @@ async function runSimulation() {
     const s = await r.json();
     const growth = s.difficulty_late - s.difficulty_early;
     $('#simStats').innerHTML = [
-      ['Coverage', (s.coverage * 100).toFixed(0) + '%'],
-      ['Observed score', s.score_early.toFixed(2) + ' → ' + s.score_late.toFixed(2)],
-      ['Difficulty', s.difficulty_early.toFixed(2) + ' → ' + s.difficulty_late.toFixed(2)],
-      ['Growth', (growth >= 0 ? '+' : '') + growth.toFixed(2)],
-      ['Repeat rate', (s.repeat_rate * 100).toFixed(0) + '%'],
-    ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+      ['Coverage', (s.coverage * 100).toFixed(0) + '%',
+        "Share of the course's topics the average student was served."],
+      ['Observed score', s.score_early.toFixed(2) + ' → ' + s.score_late.toFixed(2),
+        'Mean score over the first third of the run, then the last third. It should stay level rather than climb, because the difficulty served rises with the estimated score.'],
+      ['Difficulty', s.difficulty_early.toFixed(2) + ' → ' + s.difficulty_late.toFixed(2),
+        'The difficulty the engine asked for, 0 to 1, over the same first and last thirds.'],
+      ['Growth', (growth >= 0 ? '+' : '') + growth.toFixed(2),
+        'Late difficulty minus early. Positive means the engine pushed students harder as they improved. Level score plus positive growth is the shape you want.'],
+      ['Repeat rate', (s.repeat_rate * 100).toFixed(0) + '%',
+        'Share of picks that served the same topic twice in a row.'],
+    ].map(([l, n, tip]) =>
+      `<div class="stat"><div class="n">${n}</div><div class="l" data-tip="${tip}">${l}</div></div>`
+    ).join('');
     $('#simSkillRows').innerHTML = s.per_skill.map(sk => `<tr>
         <td class="name">${sk.skill_name}</td>
         <td>${sk.times_served}</td>
