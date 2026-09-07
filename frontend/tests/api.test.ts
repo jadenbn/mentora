@@ -9,8 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   analyzeCanvas,
   apiBaseUrl,
+  createCourse,
+  deleteCourseById,
+  deleteSpaceById,
   generateCourseQuestion,
+  getCourseById,
   listCourseDocuments,
+  submitWork,
+  transcribeSpeech,
   TutorApiError,
   uploadCourseDocument,
 } from "@/lib/api/api";
@@ -24,7 +30,7 @@ function mockFetch(response: Partial<Response> & { json?: () => Promise<unknown>
   return spy;
 }
 
-const ok = (body: unknown = { interaction_id: "i1", status: "partial", canvas_actions: [], summary: null }) => ({
+const ok = (body: unknown = { interaction_id: "i1", status: "partial", canvas_actions: [], summary: "Keep going." }) => ({
   ok: true,
   status: 200,
   json: async () => body,
@@ -212,6 +218,30 @@ describe("course material APIs", () => {
     });
   });
 
+  it("posts a skill-attributed attempt to the engine's /work route", async () => {
+    const spy = mockFetch(ok({
+      tutor: { interaction_id: "i2", status: "correct", canvas_actions: [], summary: "Nice." },
+      attempt: null,
+    }));
+    const response = await submitWork({
+      courseId: "course_demo",
+      studentId: "stu_1",
+      sessionId: "sess_1",
+      problemId: "problem_1",
+      mode: "mark",
+      canvasImage: IMAGE,
+      priorAnnotations: [],
+    });
+    expect(response).toEqual({ interaction_id: "i2", status: "correct", canvas_actions: [], summary: "Nice." });
+    const [url, init] = spy.mock.calls[0];
+    expect(url).toContain("/api/courses/course_demo/work");
+    expect(url).toContain("student_id=stu_1");
+    const form = init.body as FormData;
+    expect(form.get("session_id")).toBe("sess_1");
+    expect(form.get("problem_id")).toBe("problem_1");
+    expect(form.get("mode")).toBe("mark");
+  });
+
   it("leaves skill undefined when the server attributed nothing", async () => {
     mockFetch(ok({
       problem: {
@@ -290,5 +320,88 @@ describe("failure mapping", () => {
   it("does not translate an unrecognised status into a misleading message", async () => {
     mockFetch(failure(418));
     await expect(call()).rejects.toThrow(/418/);
+  });
+});
+
+describe("voice", () => {
+  const AUDIO = new Blob(["wav"], { type: "audio/wav" });
+  const transcribe = () => transcribeSpeech({ audio: AUDIO });
+
+  it("posts the recording to the transcribe endpoint", async () => {
+    const spy = mockFetch(ok({ transcript: "why is this wrong?" }));
+    await transcribe();
+
+    expect(spy.mock.calls[0][0]).toContain("/api/voice/transcribe");
+    expect(spy.mock.calls[0][1].method).toBe("POST");
+    expect((bodyOf(spy).get("audio") as File).name).toBe("speech.wav");
+  });
+
+  it("returns the transcript rather than the envelope around it", async () => {
+    mockFetch(ok({ transcript: "why is this wrong?" }));
+    await expect(transcribe()).resolves.toBe("why is this wrong?");
+  });
+
+  it("tells the student we did not catch it when no speech was found", async () => {
+    mockFetch(failure(422));
+    await expect(transcribe()).rejects.toThrow(/did not catch/i);
+  });
+
+  it("names the missing configuration without exposing its value", async () => {
+    mockFetch(failure(503, { missing_settings: ["GEMINI_API_KEY"] }));
+    await expect(transcribe()).rejects.toThrow(/GEMINI_API_KEY/);
+  });
+
+  it("maps a provider failure onto something a student can read", async () => {
+    mockFetch(failure(502));
+    await expect(transcribe()).rejects.toBeInstanceOf(TutorApiError);
+    mockFetch(failure(502));
+    await expect(transcribe()).rejects.toThrow(/temporarily unavailable/i);
+  });
+
+  it("sends a spoken question alongside the canvas, not instead of it", async () => {
+    const spy = mockFetch(ok());
+    await call({ transcript: "why can't I cancel the x?" });
+    const body = bodyOf(spy);
+
+    expect(body.get("transcript")).toBe("why can't I cancel the x?");
+    expect(body.get("canvas_image")).not.toBeNull();
+  });
+
+  it("omits the field entirely when the student did not speak", async () => {
+    const spy = mockFetch(ok());
+    await call();
+
+    expect(bodyOf(spy).has("transcript")).toBe(false);
+  });
+});
+
+describe("courses and spaces", () => {
+  it("returns the parsed course on create", async () => {
+    const course = {
+      id: "course_1",
+      name: "MATH 301",
+      description: "Analysis",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    mockFetch(ok(course));
+    await expect(createCourse({ name: "MATH 301", description: "Analysis" })).resolves.toEqual(
+      course,
+    );
+  });
+
+  it("returns null rather than throwing when a course is missing", async () => {
+    mockFetch(failure(404));
+    await expect(getCourseById("nope")).resolves.toBeNull();
+  });
+
+  it("does not try to parse a body on a 204 delete", async () => {
+    mockFetch({ ok: true, status: 204, json: async () => { throw new Error("no body"); } });
+    await expect(deleteCourseById("course_1")).resolves.toBeUndefined();
+  });
+
+  it("maps a failed delete onto a readable error, same as other endpoints", async () => {
+    mockFetch(failure(404, "Space was not found"));
+    await expect(deleteSpaceById("course_1", "space_1")).rejects.toThrow(/space was not found/i);
   });
 });

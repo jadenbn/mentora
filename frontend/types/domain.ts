@@ -4,6 +4,8 @@ export interface Course {
   id: string;
   name: string;
   description: string;
+  created_at: string;
+  updated_at: string;
 }
 
 /** The topic this generated problem was attributed to, if any --
@@ -45,12 +47,12 @@ export interface CourseDocument {
   updated_at: string;
 }
 
-/** A persistent whiteboard document, local to the browser. */
+/** A persistent whiteboard document, stored on the backend. */
 export interface Space {
   id: string;
-  courseId: string;
+  course_id: string;
   title: string;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
   problem?: ProblemContext;
 }

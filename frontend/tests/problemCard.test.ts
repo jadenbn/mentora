@@ -19,9 +19,16 @@ describe("ProblemBody", () => {
       }),
     );
     expect(html).toContain('class="katex"');
-    expect(html).toContain("<mtext>Find the derivative of </mtext>");
+    expect(html).toContain("<mtext>Find</mtext>");
     expect(html).toContain("<mi>f</mi>");
     expect(html).toContain("<mi>x</mi>");
+  });
+
+  it("adds break opportunities between prose words", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProblemBody, { prompt: "A long feedback sentence can wrap cleanly." }),
+    );
+    expect(html).toContain('class="mspace allowbreak"');
   });
 
   it("falls back to readable source when LaTeX is malformed", () => {
@@ -47,6 +54,16 @@ describe("ProblemBody", () => {
     );
     expect(html).toContain('class="katex"');
     expect(html).toContain("e^{3x}");
+  });
+
+  it("renders compact exponent notation inside prose as math", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProblemBody, {
+        prompt: "Use the chain rule for e^(x^2) before simplifying.",
+      }),
+    );
+    expect(html).toContain('class="katex"');
+    expect(html).not.toContain("data-math-error");
   });
 
   it("keeps the complete function clause in the math font", () => {

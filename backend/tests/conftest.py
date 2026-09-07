@@ -7,9 +7,6 @@ has to be set before the first `import app.*` anywhere in the run.
 conftest.py is imported before any test module, so setting it here is early
 enough. Without it, the API tests (which drive app.main.app through
 TestClient) write to the developer's real backend/mentora.db.
-
-The course files under data/courses are read-only bootstrap data, so they
-need no isolation: topics are added to the database, never back to a file.
 """
 
 from __future__ import annotations

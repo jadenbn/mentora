@@ -91,11 +91,9 @@ exercisable with no `GEMINI_API_KEY` set.
 
 `conftest.py` points `MENTORA_DB_PATH` at a temp location before the first
 `import app.*` and rebuilds the DB schemas around each test, so the suite
-never touches `backend/mentora.db`. The course files under `data/courses`
-need no such guard: they are read-only bootstrap data. **The
-suite must pass twice in a row** — that is the check that catches a test
-leaking state, which is how two fixture skills once ended up permanently in
-the development database.
+never touches `backend/mentora.db`. **The suite must pass twice in a row** —
+that is the check that catches a test leaking state, which is how two
+fixture skills once ended up permanently in the development database.
 
 ## What each layer answers
 

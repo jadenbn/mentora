@@ -1,9 +1,7 @@
-"""Tests for the flat topic list: loading, normalization, validation,
-bootstrap seeding, and adding new topics via the piggyback path."""
+"""Tests for the flat topic list: normalization, validation, and adding new
+topics via the piggyback path."""
 
 from __future__ import annotations
-
-import json
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
@@ -11,14 +9,11 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.services.taxonomy import (
-    DATA_DIR,
     TaxonomyError,
     add_skills,
     build_taxonomy,
     canonical_key,
-    load_taxonomy,
     normalize_slug,
-    seed_all_courses,
     validate_taxonomy,
 )
 
@@ -29,34 +24,6 @@ def session():
     SQLModel.metadata.create_all(engine)
     with Session(engine) as s:
         yield s
-
-
-def _write_course_json(directory, course_id: str, skills: list[dict]) -> None:
-    (directory / f"{course_id}.json").write_text(
-        json.dumps({"course_id": course_id, "skills": skills}), encoding="utf-8"
-    )
-
-
-class TestLoading:
-    def test_load_taxonomy_returns_validated_skills(self) -> None:
-        skills = load_taxonomy("calc1")
-        assert skills
-        assert all(isinstance(s, Skill) for s in skills)
-        assert all(s.id.startswith("calc1.") for s in skills)
-
-    def test_every_shipped_course_loads(self) -> None:
-        for path in sorted(DATA_DIR.glob("*.json")):
-            skills = load_taxonomy(path.stem)
-            assert skills
-            for skill in skills:
-                assert isinstance(skill.keywords, list)
-                assert isinstance(skill.question_forms, list)
-
-    def test_load_taxonomy_reads_optional_keyword_and_form_fields(self) -> None:
-        by_id = {s.id: s for s in load_taxonomy("calc1")}
-        chain = by_id["calc1.derivatives.chain-rule"]
-        assert "composite function" in chain.keywords
-        assert chain.question_forms
 
 
 class TestValidation:
@@ -186,36 +153,6 @@ class TestBuildTaxonomy:
         bad = [{"id": "a", "name": "A", "description": "d", "difficulty_band": 4.2}]
         with pytest.raises(TaxonomyError, match=r"out of \[0, 1\]"):
             build_taxonomy("calc1", bad, SkillOrigin.GENERATED)
-
-
-class TestSeedAllCourses:
-    def test_seeds_a_course_with_no_skills(self, session, tmp_path) -> None:
-        _write_course_json(tmp_path, "calc1", [
-            {"id": "root", "name": "Root", "description": "v1", "difficulty_band": 0.2},
-        ])
-        seed_all_courses(session, data_dir=tmp_path)
-        assert session.get(Skill, "calc1.root").description == "v1"
-
-    def test_already_seeded_course_is_untouched(self, session, tmp_path) -> None:
-        """The DB is the source of truth: once a course has topics, a later
-        startup must not re-read the file over them, and must not drop the
-        topics the model has added since."""
-        _write_course_json(tmp_path, "calc1", [
-            {"id": "root", "name": "Root", "description": "v1", "difficulty_band": 0.2},
-        ])
-        seed_all_courses(session, data_dir=tmp_path)
-
-        session.add(Skill(id="calc1.generated", course_id="calc1", name="Generated",
-                          description="d", difficulty_band=0.4, origin=SkillOrigin.GENERATED))
-        session.commit()
-
-        _write_course_json(tmp_path, "calc1", [
-            {"id": "root", "name": "Root", "description": "v2", "difficulty_band": 0.2},
-        ])
-        seed_all_courses(session, data_dir=tmp_path)
-
-        assert session.get(Skill, "calc1.generated") is not None
-        assert session.get(Skill, "calc1.root").description == "v1"
 
 
 class TestAddSkills:

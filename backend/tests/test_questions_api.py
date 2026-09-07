@@ -25,8 +25,15 @@ DOCUMENT_ID = "doc_1"
 
 
 def _seed_document(repository, course_id=COURSE_ID, document_id=DOCUMENT_ID):
-    """A real document with one real chunk -- generate() always persists via
-    create_problem, whose grounding-chunk FK requires this to already exist."""
+    """A real course and a real document with one real chunk -- generate()
+    always persists via create_problem, whose grounding-chunk FK requires the
+    document to already exist, and require_course now needs the course row."""
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO courses (course_id, name, description, created_at, updated_at) "
+            "VALUES (?, 'Test course', '', '2024-01-01', '2024-01-01')",
+            (course_id,),
+        )
     repository.replace_document(
         document_id=document_id,
         course_id=course_id,

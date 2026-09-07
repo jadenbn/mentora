@@ -4,7 +4,19 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.api.dependencies import get_course_repository
 from app.main import app
+
+
+def _create_course(course_id: str = "calc1") -> None:
+    """Courses are DB-owned now, so a route behind require_course needs a
+    real row before anything else in these tests can work."""
+    repo = get_course_repository()
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO courses (course_id, name, description, created_at, updated_at) "
+            f"VALUES ('{course_id}', 'Calculus I', '', '2024-01-01', '2024-01-01')"
+        )
 
 
 def test_dashboard_serves_html():
@@ -16,6 +28,7 @@ def test_dashboard_serves_html():
 
 
 def test_import_skills_persists_a_new_topic():
+    _create_course()
     with TestClient(app) as client:
         response = client.post(
             "/dev/courses/calc1/skills/import",
@@ -47,13 +60,29 @@ def test_import_skills_persists_a_new_topic():
 
 
 def test_import_skills_skips_an_id_that_already_exists():
+    _create_course()
     with TestClient(app) as client:
+        first = client.post(
+            "/dev/courses/calc1/skills/import",
+            json={
+                "skills": [
+                    {
+                        "id": "derivatives.power-rule",
+                        "name": "Power rule",
+                        "description": "d",
+                        "difficulty_band": 0.3,
+                    }
+                ]
+            },
+        )
+        assert first.status_code == 200
+
         response = client.post(
             "/dev/courses/calc1/skills/import",
             json={
                 "skills": [
                     {
-                        "id": "derivatives.power-rule",  # already in the calc1 seed file
+                        "id": "derivatives.power-rule",  # already imported above
                         "name": "Overwrite attempt",
                         "description": "x",
                         "difficulty_band": 0.9,
@@ -66,6 +95,7 @@ def test_import_skills_skips_an_id_that_already_exists():
 
 
 def test_import_skills_rejects_a_batch_that_collides_after_normalization():
+    _create_course()
     with TestClient(app) as client:
         response = client.post(
             "/dev/courses/calc1/skills/import",
@@ -82,6 +112,7 @@ def test_import_skills_rejects_a_batch_that_collides_after_normalization():
 def test_import_skills_rejects_an_unknown_field():
     """prereqs is gone -- topics are flat -- so a batch that still sends it
     should fail shape validation rather than being silently accepted."""
+    _create_course()
     with TestClient(app) as client:
         response = client.post(
             "/dev/courses/calc1/skills/import",
@@ -100,11 +131,25 @@ def test_import_skills_rejects_an_unknown_field():
     assert response.status_code == 422
 
 
+def test_import_skills_is_404_for_an_unknown_course():
+    with TestClient(app) as client:
+        response = client.post(
+            "/dev/courses/nope/skills/import",
+            json={"skills": [{"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5}]},
+        )
+    assert response.status_code == 404
+
+
 def test_next_topic_previews_the_pick_without_serving_it():
     """The dashboard's window onto selection. Read-only: looking at the
     answer must not change it, or the dashboard would be driving the engine
     it is there to observe."""
+    _create_course()
     with TestClient(app) as client:
+        client.post(
+            "/dev/courses/calc1/skills/import",
+            json={"skills": [{"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5}]},
+        )
         first = client.get(
             "/dev/courses/calc1/next-topic", params={"student_id": "dev-1"}
         )
@@ -115,7 +160,7 @@ def test_next_topic_previews_the_pick_without_serving_it():
     assert first.json()["skill_id"] == second.json()["skill_id"]
 
 
-def test_next_topic_is_404_for_a_course_with_no_topics():
+def test_next_topic_is_404_for_an_unknown_course():
     with TestClient(app) as client:
         response = client.get(
             "/dev/courses/nope/next-topic", params={"student_id": "dev-1"}
@@ -123,8 +168,22 @@ def test_next_topic_is_404_for_a_course_with_no_topics():
     assert response.status_code == 404
 
 
-def test_simulate_reports_on_the_policy_without_touching_the_database():
+def test_next_topic_is_404_for_a_course_with_no_topics():
+    _create_course()
     with TestClient(app) as client:
+        response = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-1"}
+        )
+    assert response.status_code == 404
+
+
+def test_simulate_reports_on_the_policy_without_touching_the_database():
+    _create_course()
+    with TestClient(app) as client:
+        client.post(
+            "/dev/courses/calc1/skills/import",
+            json={"skills": [{"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5}]},
+        )
         response = client.post(
             "/dev/courses/calc1/simulate",
             params={"students": 3, "questions_each": 6},
@@ -149,7 +208,17 @@ def test_a_synthetic_attempt_also_marks_the_topic_served():
     without serving would let the dashboard hand back the same topic
     forever, which is not what a student would see.
     """
+    _create_course()
     with TestClient(app) as client:
+        client.post(
+            "/dev/courses/calc1/skills/import",
+            json={
+                "skills": [
+                    {"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5},
+                    {"id": "b", "name": "B", "description": "d", "difficulty_band": 0.5},
+                ]
+            },
+        )
         first = client.get(
             "/dev/courses/calc1/next-topic", params={"student_id": "dev-2"}
         ).json()["skill_id"]

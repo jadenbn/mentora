@@ -1,28 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { Whiteboard } from "@/features/whiteboard/Whiteboard";
-import { getCourse } from "@/lib/spaces/courses";
-import {
-  getServerSpacesSnapshot,
-  getSpacesSnapshot,
-  renameSpace,
-  subscribeToSpaces,
-} from "@/lib/spaces/store";
-import { useIsClient } from "@/lib/useIsClient";
+import { getCourseById, getSpaceById, updateSpace } from "@/lib/api/api";
+import { migrateLegacySpace } from "@/lib/spaces/migration";
+import type { Course, Space } from "@/types/domain";
 
 export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
-  const hydrated = useIsClient();
-  // Read the index directly so a rename elsewhere is reflected here.
-  const all = useSyncExternalStore(
-    subscribeToSpaces,
-    getSpacesSnapshot,
-    getServerSpacesSnapshot,
-  );
-  const space = all.find((candidate) => candidate.id === spaceId);
+  const [feedbackHost, setFeedbackHost] = useState<HTMLDivElement | null>(null);
+  const [thinkingHost, setThinkingHost] = useState<HTMLDivElement | null>(null);
+  const [space, setSpace] = useState<Space | null | undefined>(undefined);
+  const [course, setCourse] = useState<Course | null>(null);
 
-  if (!hydrated) {
+  useEffect(() => {
+    let active = true;
+    void getSpaceById(spaceId)
+      .then((loaded) => {
+        if (loaded) return loaded;
+        return migrateLegacySpace(spaceId);
+      })
+      .then((loaded) => {
+        if (active) setSpace(loaded);
+      })
+      .catch(() => {
+        if (active) setSpace(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [spaceId]);
+
+  useEffect(() => {
+    if (!space) return;
+    let active = true;
+    void getCourseById(space.course_id)
+      .then((loaded) => {
+        if (active) setCourse(loaded);
+      })
+      .catch(() => {
+        // The course name is a nice-to-have in the header; failing to load
+        // it should not block the workspace.
+      });
+    return () => {
+      active = false;
+    };
+  }, [space]);
+
+  // undefined: still loading. null: fetched and not found.
+  if (space === undefined) {
     return (
       <main className="grid h-dvh place-items-center text-sm text-slate-500">
         Opening space…
@@ -36,8 +62,7 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
         <div>
           <h1 className="text-2xl font-bold text-slate-950">Space not found</h1>
           <p className="mt-2 text-slate-600">
-            This space does not exist on this device. Spaces are stored locally
-            for now, so they do not follow you between browsers.
+            This space does not exist, or it may have been deleted.
           </p>
           <Link
             className="mt-6 inline-block rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white"
@@ -50,45 +75,49 @@ export function SpaceWorkspace({ spaceId }: { spaceId: string }) {
     );
   }
 
-  const course = getCourse(space.courseId);
-
   function handleRename() {
     const next = prompt("Rename space", space!.title);
-    if (next && next.trim()) {
-      renameSpace(space!.id, next);
-    }
+    const trimmed = next?.trim();
+    if (!trimmed) return;
+    void updateSpace(space!.course_id, space!.id, { title: trimmed })
+      .then((updated) => setSpace(updated))
+      .catch(() => {
+        // A failed rename is surfaced by the title simply staying the same.
+      });
   }
 
   return (
-    <main className="flex h-dvh flex-col bg-[#f5f2e9] text-[#202620]">
-      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-[#d9d6cc] bg-[#fffdf8] px-3 py-2 sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            aria-hidden="true"
-            className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#607d6c] font-serif text-xl font-bold text-white shadow-sm"
+    <main className="relative h-dvh bg-white">
+      <header className="pointer-events-none absolute inset-0 z-50 bg-transparent px-3 py-2 sm:px-5">
+        <div className="mentora-workspace-info pointer-events-auto absolute bottom-4 left-3 min-w-0 sm:bottom-5 sm:left-5">
+          <Link
+            className="text-sm font-semibold text-blue-700"
+            href={`/courses/${space.course_id}`}
           >
-            M
-          </div>
-          <div className="min-w-0">
-            <Link
-              className="text-xs font-bold uppercase tracking-[0.13em] text-[#607d6c] hover:text-[#405f4d]"
-              href={`/courses/${space.courseId}`}
-            >
-              ← {course?.name ?? "Course"}
-            </Link>
-            <p className="truncate text-sm font-semibold text-[#404940]">{space.title}</p>
-          </div>
+            ← {course?.name ?? "Course"}
+          </Link>
+          <p className="truncate text-sm text-slate-600">{space.title}</p>
+          <button
+            className="mt-1 inline-flex rounded-md border border-slate-200 bg-white/70 px-3 py-1.5 text-sm font-semibold text-slate-700 backdrop-blur-sm hover:cursor-grab hover:bg-white/90"
+            onClick={handleRename}
+            type="button"
+          >
+            Rename
+          </button>
         </div>
-        <button
-          className="shrink-0 rounded-lg border border-[#d9d6cc] bg-white px-3 py-1.5 text-sm font-semibold text-[#536057] hover:bg-[#f5f2e9]"
-          onClick={handleRename}
-          type="button"
-        >
-          Rename
-        </button>
+        <div className="pointer-events-none absolute inset-x-0 top-14 px-3 sm:top-2 sm:px-52">
+          <div ref={setFeedbackHost} />
+          <div className="mt-1 flex justify-center" ref={setThinkingHost} />
+        </div>
       </header>
-      <section className="min-h-0 flex-1" aria-label="Whiteboard canvas">
-        <Whiteboard courseId={space.courseId} problem={space.problem} spaceId={space.id} />
+      <section className="relative h-full min-h-0" aria-label="Whiteboard canvas">
+        <Whiteboard
+          courseId={space.course_id}
+          feedbackHost={feedbackHost}
+          thinkingHost={thinkingHost}
+          problem={space.problem}
+          spaceId={space.id}
+        />
       </section>
     </main>
   );

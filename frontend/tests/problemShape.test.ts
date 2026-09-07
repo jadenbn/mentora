@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ensureProblemShape, problemShapeId, PROBLEM_SHAPE_TYPE } from "@/lib/problems/renderProblem";
 import { SYSTEM_SHAPE_OWNER } from "@/lib/canvas/ownership";
+import { VERTICAL_PAGE_ID } from "@/lib/canvas/verticalPage";
 import { box, makeEditor } from "./fakeEditor";
 
 const problem = {
@@ -11,15 +12,21 @@ const problem = {
   prompt: "Solve $x=1$.",
 };
 
+const page = {
+  id: VERTICAL_PAGE_ID,
+  type: "geo",
+  pageBounds: box(100, 200, 900, 1_400),
+};
+
 describe("ensureProblemShape", () => {
-  it("creates one locked system-owned shape near the viewport", () => {
-    const { editor, created } = makeEditor({ viewport: box(100, 200, 400, 300) });
+  it("creates one locked system-owned shape centered near the top of the page", () => {
+    const { editor, created } = makeEditor({ shapes: [page] });
     expect(ensureProblemShape(editor, problem)).toBe(true);
     expect(created[0]).toMatchObject({
       id: problemShapeId(problem.id),
       type: PROBLEM_SHAPE_TYPE,
-      x: 180,
-      y: 280,
+      x: 210,
+      y: 264,
       isLocked: true,
       meta: { owner: SYSTEM_SHAPE_OWNER, problemId: problem.id },
       props: { problemId: problem.id, w: 680, h: 180 },
@@ -27,13 +34,41 @@ describe("ensureProblemShape", () => {
   });
 
   it("is idempotent after the shape is restored", () => {
-    const first = makeEditor();
+    const first = makeEditor({ shapes: [page] });
     ensureProblemShape(first.editor, problem);
     const second = makeEditor({
-      shapes: [{ id: problemShapeId(problem.id), type: PROBLEM_SHAPE_TYPE }],
+      shapes: [
+        page,
+        {
+          id: problemShapeId(problem.id),
+          type: PROBLEM_SHAPE_TYPE,
+          x: 210,
+          y: 264,
+          props: { problemId: problem.id, w: 680, h: 180 },
+        },
+      ],
     });
     expect(ensureProblemShape(second.editor, problem)).toBe(false);
     expect(second.created).toHaveLength(0);
+  });
+
+  it("recenters a problem restored at an old viewport-relative position", () => {
+    const id = problemShapeId(problem.id);
+    const { editor, shapes } = makeEditor({
+      shapes: [
+        page,
+        {
+          id,
+          type: PROBLEM_SHAPE_TYPE,
+          x: -120,
+          y: 20,
+          props: { problemId: problem.id, w: 680, h: 180 },
+        },
+      ],
+    });
+
+    expect(ensureProblemShape(editor, problem)).toBe(true);
+    expect(shapes.get(id)).toMatchObject({ x: 210, y: 264 });
   });
 
   it("replaces a legacy problem note without removing other system shapes", () => {
@@ -45,10 +80,12 @@ describe("ensureProblemShape", () => {
       meta: { owner: SYSTEM_SHAPE_OWNER, problemId: problem.id },
     };
     const other = { id: "other", type: "note", meta: { owner: SYSTEM_SHAPE_OWNER, problemId: "other" } };
-    const { editor, created, deleted, shapes } = makeEditor({ shapes: [legacy, other] });
+    const { editor, created, deleted, shapes } = makeEditor({
+      shapes: [page, legacy, other],
+    });
     expect(ensureProblemShape(editor, problem)).toBe(true);
     expect(deleted).toEqual(["legacy"]);
-    expect(created[0]).toMatchObject({ type: PROBLEM_SHAPE_TYPE, x: 240, y: 260 });
+    expect(created[0]).toMatchObject({ type: PROBLEM_SHAPE_TYPE, x: 210, y: 264 });
     expect(shapes.has("other")).toBe(true);
   });
 });

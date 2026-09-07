@@ -47,7 +47,7 @@ Frontend packages are managed with Bun (`frontend/bun.lock`).
 │ React / Next.js / tldraw              │
 │ Course UI                             │
 │ Session grid                          │
-│ Infinite whiteboard                   │
+│ Vertical whiteboard                   │
 │ Problem rendering                     │
 │ Tutor controls                        │
 │ Select for AI                         │
@@ -136,11 +136,13 @@ Conceptual representation:
 
 ## 7. Whiteboard Session
 A session is a persistent working document. Called a **space** in the UI and in
-the frontend code, and currently stored in browser localStorage rather than on
-the server. A generated problem is stored with the local space and rendered in
-a pinned, typeset card above the infinite canvas; its canonical grounding
-record lives in SQLite. Older locked problem notes are removed on restore only
-when they match that space's current structured problem.
+the frontend code. Its metadata and problem association are stored on the
+server (`courses` and `spaces` tables in `backend/app/database.py`); the
+canvas and tutor checkpoints remain in browser localStorage for now. A
+generated problem is rendered in a pinned, typeset card above the infinite
+canvas; its canonical grounding record lives in SQLite. Older locked problem
+notes are removed on restore only when they match that space's current
+structured problem.
 Conceptual representation:
 ```json
 {
@@ -164,6 +166,15 @@ the space record rather than duplicated inside the tldraw snapshot.
 Camera/viewport state may also be stored.
 Avoid inventing a parallel graphics document model unless necessary.
 
+The current student-facing surface is a page-like vertical document implemented
+with one locked, system-owned transparent boundary shape in the tldraw document.
+The frontend renders the white dotted page against a neutral workspace and
+keeps the tldraw camera freely pannable and zoomable around it. The writing
+surface starts at a readable minimum height and grows downward in chunks when
+student content approaches its bottom safety margin. This is intentionally not
+multi-page navigation yet; the persisted tldraw document remains the source of
+truth.
+
 ## 9. Shape Ownership
 At minimum:
 ```text
@@ -177,10 +188,13 @@ type ShapeOwner = "system" | "student" | "ai";
 ```
 The frontend's authoritative constants live in `lib/canvas/ownership.ts`.
 Shapes the tutor draws carry `owner: "ai"` and the `interaction_id` that
-produced them, which is how re-rendering one interaction replaces its own
-shapes without disturbing earlier feedback. Ownership no longer crosses the
-wire as a shape list: the capture excludes tutor-authored shapes from the
-image and sends their bounds as `prior_annotations`.
+produced them. Each response is also stored as a per-Space tutor checkpoint in
+browser storage, including a document-only tldraw snapshot captured when the
+request began; the selected checkpoint restores that canvas state without
+moving the current viewport and renders its feedback.
+History viewing is read-only and does not overwrite the live session. Ownership
+no longer crosses the wire as a shape list: capture excludes tutor-authored
+shapes from the image and sends their bounds as `prior_annotations`.
 The critical invariant is that the system can distinguish what the problem said, what the student wrote, and what the AI wrote.
 
 ## 10. Frontend Responsibilities
@@ -194,6 +208,7 @@ Frontend owns:
 - Select for AI
 - canvas capture/export
 - tutor controls
+- microphone lifecycle, audio encoding, and transcript confirmation for voice
 - live-tutor timing/detection where appropriate
 Keep backend access behind a small API/client layer.
 Do not call private AI-provider APIs directly from browser code.
@@ -201,8 +216,8 @@ Do not call private AI-provider APIs directly from browser code.
 Whiteboard controls remain canvas-adjacent rather than becoming a second
 workspace: drawing styles open from a palette button in the left tool rail, and
 tutor actions fan out from the right-edge control. Starting a tutor request
-collapses the action fan and exposes only a transient top-of-canvas status;
-feedback itself remains on the canvas.
+collapses the action fan and exposes a transient navbar status. The current
+feedback summary lives in that navbar; spatial marks alone live on the canvas.
 
 ## 11. Backend Responsibilities
 Backend owns:
@@ -241,14 +256,23 @@ Possible routes:
 ```text
 GET  /health                                  implemented
 POST /api/tutor/analyze                       implemented
+POST /api/voice/transcribe                    implemented
 POST /api/courses/{course_id}/documents       implemented
 GET  /api/courses/{course_id}/documents       implemented
 POST /api/courses/{course_id}/questions/generate implemented
 POST /api/courses/{course_id}/work            implemented
 GET  /api/courses/{course_id}/skills-overview implemented
-GET  /api/courses
-POST /api/courses
-GET  /api/courses/{course_id}
+GET  /api/courses/{course_id}/search          implemented
+GET  /api/courses                                implemented
+POST /api/courses                                implemented
+GET  /api/courses/{course_id}                   implemented
+PATCH /api/courses/{course_id}                  implemented
+DELETE /api/courses/{course_id}                 implemented
+GET  /api/courses/{course_id}/spaces            implemented
+POST /api/courses/{course_id}/spaces            implemented
+PATCH /api/courses/{course_id}/spaces/{space_id} implemented
+DELETE /api/courses/{course_id}/spaces/{space_id} implemented
+GET  /api/spaces/{space_id}                     implemented
 GET  /api/courses/{course_id}/sessions
 POST /api/courses/{course_id}/sessions
 GET  /api/sessions/{session_id}
@@ -257,10 +281,11 @@ POST /api/problems/import
 GET  /api/courses/{course_id}/student-model
 ```
 
-The marked document, question, health, tutor, and learning-engine routes
-exist; the engine's routes are documented in `LEARNING_ENGINE.md`. Sessions
-("spaces" in the UI) live in
-browser localStorage, not on the server, so there is no session endpoint.
+The implemented course routes support course CRUD, document upload/listing,
+grounded question generation, and Space CRUD. Space metadata lives on the
+server; the canvas document and tutor checkpoints remain in browser
+localStorage for now. The engine's own routes (`/work`, `/skills-overview`,
+and the `/dev/*` surface) are documented separately in `LEARNING_ENGINE.md`.
 Prefer domain operations over one endpoint per prompt.
 
 ## 14. Shared Schemas
@@ -282,17 +307,23 @@ mode               mark | hint | explain | stuck
 canvas_image       optional PNG/JPEG/WebP; maximum 10 MB when present
 prior_annotations  JSON array of normalized bounds; defaults to []
 problem_context    optional validated ProblemContext JSON
+transcript         optional spoken instruction; trimmed, max 1000 chars
 ```
 
-Five fields at most, no JSON request body. The browser sends the student image
-and small scalar/JSON fields; the backend loads recorded document excerpts by
-problem id, so course material never crosses the browser tutor boundary. A
-`stuck` request with `problem_context` may omit the image; the tutor then
-reasons from the structured question and course grounding alone.
+Six fields at most, no JSON request body. Normal work-analysis requests send
+an image, three scalars, and optionally the exact structured problem separately
+from the image. The backend loads recorded document excerpts by problem id, so
+course material never crosses the browser tutor boundary. A `stuck` request
+with `problem_context` may omit the image; the tutor then reasons from the
+structured question and course grounding alone.
 
 Tutor-authored shapes are excluded from the exported image and their positions
 are sent as `prior_annotations` instead, so the model cannot read its own
-handwriting back as student work. See `TUTOR_AGENT.md`.
+handwriting back as student work.
+
+`transcript` is what the student asked out loud, and is optional in the strict
+sense: omitting it leaves the request byte-for-byte what it was before voice
+existed. See `TUTOR_AGENT.md`.
 
 ## 16. Tutor Modes
 Backend-facing enum:
@@ -313,16 +344,25 @@ canvas_actions   at most 12
 summary          short plain-language explanation
 ```
 
-`canvas_actions` is a discriminated union of two shapes: `text` says something
-at a normalized point, and `circle` / `check` / `cross` point at a normalized
-box. There is no third shape, and no action carries a label — text is the one
-way to put words on a canvas.
+`canvas_actions` contains target actions: `highlight`, `circle`, `check`, or
+`cross`, each pointing at a normalized box. Prose is never a canvas action; the
+required, concise `summary` is shown in the navbar instead and rendered as a
+single KaTeX document, including its prose. Highlights are optional and the
+array may contain multiple independent highlight targets.
 
 Gemini output is schema-constrained, then validated independently with
 Pydantic, then passed through a deterministic safety policy. The renderer never
 receives arbitrary tldraw operations.
 
 The invariant remains: **validated structured output before tldraw rendering**.
+
+The frontend stores the last 10 validated responses per Space as tutor
+checkpoints in local storage. Each checkpoint includes the document snapshot at
+request time, while AI shapes remain renderable separately and user highlights
+remain part of the document. The navbar exposes
+immediate previous/next navigation and a visibility toggle; historical
+navigation restores the checkpoint read-only, and the newest response always
+selects the live canvas.
 
 ## 18. Coordinates
 Prefer normalized image-space coordinates at the AI/API boundary:
@@ -346,12 +386,12 @@ Annotation Renderer
       ↓
 tldraw operations
 ```
-The renderer creates controlled text, circles, checks, and crosses — the four
-implemented actions. `TutorAnnotation` was an earlier name for this and no
-longer exists.
-The whiteboard uses a progressive renderer for tutor feedback: text is revealed
-as a typewriter sequence, while circles, checks, and crosses are emitted as
-freehand draw-shape points at a capped rate. Animation is presentation-only,
+The renderer creates controlled highlights, circles, checks, and crosses — the
+four implemented actions. `TutorAnnotation` was an earlier name for this and
+no longer exists. The whiteboard uses a progressive renderer for tutor
+feedback: circles, checks, and crosses are emitted as freehand draw-shape
+points at a capped rate, while highlights appear immediately. Animation is
+presentation-only,
 ignores the undo history, can be cancelled on teardown, and does not change the
 validated tutor contract or ownership metadata.
 
@@ -361,7 +401,14 @@ Expose a clean frontend boundary conceptually like:
 async function captureCanvasForAnalysis(): Promise<Blob>
 ```
 Hide low-level tldraw export details from unrelated code.
-Where useful, send image plus structured metadata.
+The implementation captures student work plus relevant prior tutor marks,
+adds a bounded padding margin, and excludes system/problem shapes from the
+image. The returned world-space frame is the same frame used to normalize
+tutor coordinates and render them back onto tldraw. Development builds log a
+temporary object URL for the exact outgoing image; the image is not persisted.
+When `TUTOR_DEBUG_LOG_REQUESTS=1`, the backend also logs the assembled Gemini
+request as structured JSON, including prompts, context, image metadata, and
+generation config. Raw image bytes are intentionally omitted.
 
 ## 21. Select for AI
 Conceptual representation:
@@ -548,9 +595,9 @@ student-model updates
 preview image
 camera/viewport state
 ```
-Spaces use browser localStorage for now; course documents, chunks, generated
-problems, and grounding use SQLite. Pinecone is an index, never the canonical
-text store.
+Space canvas documents and tutor checkpoints use browser localStorage for now;
+course metadata, Space metadata, course documents, chunks, generated problems,
+and grounding use SQLite. Pinecone is an index, never the canonical text store.
 
 ## 29. Autosave
 Desired UX is automatic persistence.
@@ -594,16 +641,85 @@ For 2 Seconds, inactivity detection is straightforward.
 For New Line, a heuristic is acceptable initially.
 
 ## 32. Voice
-Potential flow:
+Implemented as an extra input to the existing tutor call, not a second
+assistant:
 ```text
-audio
+microphone (MediaRecorder)
   ↓
-speech-to-text
+re-encode to 16 kHz mono WAV in the browser
   ↓
-transcript + selected canvas + course/problem context
+POST /api/voice/transcribe   →  Gemini  →  transcript
   ↓
-tutor service
+the student reads it, edits it, and taps Ask   ← nothing is sent before this
+  ↓
+POST /api/tutor/analyze with transcript + canvas + problem + course
+  ↓
+the same validated canvas actions, drawn by the same renderer
 ```
+
+A transcript is never submitted to the tutor on arrival. Speech recognition is
+wrong often enough that spending a tutor call on a misheard question costs more
+than one extra tap, and the student is the only one who knows what they meant.
+Rerecord and Cancel leave from the same step. Which tutor mode the confirmed
+question uses is unchanged: `explain` when there is written work to look at,
+`stuck` when there is not.
+
+Transcription is deliberately a separate round trip rather than audio attached
+to the tutor call. It keeps the tutor at one model call, lets the interface
+show transcribing and thinking as the distinct waits they are, and confines the
+audio to the request that carried it — nothing is persisted and no object URL
+is ever created.
+
+The browser re-encodes because MediaRecorder's container is browser-dependent
+(Safari: AAC in MP4, Chrome: Opus in WebM) and the provider documents neither.
+One format crossing the wire means one signature to verify server-side. The
+sample rate is enforced in the encoder rather than taken on trust, which is
+what keeps the longest allowed recording inside the server's 5 MiB cap.
+
+`getUserMedia` requires a secure context, so voice works on `localhost` and
+over HTTPS but not on a plain-HTTP LAN address — which is how an iPad is
+usually reached in development. See the README.
+
+Frontend layout, deliberately outside `Whiteboard.tsx`:
+```text
+lib/voice/microphone.ts     MediaStream + MediaRecorder, guaranteed teardown
+lib/voice/wav.ts            decode and re-encode
+lib/voice/voiceCapture.ts   the lifecycle state machine, framework-free
+lib/voice/useVoiceCapture.ts  React binding
+features/tutor/TutorControls.tsx  the microphone, on the tutor action fan
+features/tutor/VoiceControl.tsx   recording and confirmation, presentation only
+features/tutor/StatusPill.tsx     the shared "we are waiting" indicator
+```
+The lifecycle is one discriminated union rather than a set of flags:
+`idle | requesting | recording | stopping | transcribing | confirming |
+submitting`, each carrying only the data that step owns — an elapsed clock
+exists exactly while the microphone is open, a transcript exactly while there
+is one to review or send.
+
+Starting a spoken question is a tutor action, so the microphone fans out of the
+same right-edge control as Mark, Hint, Explain, and I'm Stuck rather than
+occupying its own corner. While a question is being recorded, transcribed,
+reviewed, or sent, the other tutor actions are disabled: they share one busy
+slot, and a button tapped mid-question would drop the words already spoken.
+`StatusPill` exists so that "Thinking" and "Transcribing" are the same object
+rather than two indicators that resemble each other, and only one of them is
+ever on screen — the tutor call is announced once, by the whiteboard.
+
+The provider lives behind `app/agents/transcription_workflow.py`, the one
+module voice may import an SDK into; replacing the speech-to-text service means
+replacing that file. It reuses `GEMINI_API_KEY`, so voice adds no credential
+and no dependency. It calls a dedicated speech-to-text model
+(`gemini-3.5-transcribe`) through the Interactions API: the WAV is uploaded,
+transcribed, and deleted again within the request. That model takes no prompt,
+no response schema, and no thinking configuration, so the adapter sends none —
+see `TUTOR_AGENT.md`.
+
+Transcripts are untrusted twice: speech the tutor did not choose, and
+provider-generated text. They are trimmed, capped, and delimited before they
+reach a prompt, which states that nothing inside them changes the rules. The
+confirmation step adds a third check that no provider can bypass: a person read
+the words before they were sent.
+
 Treat transcript as contextual instruction, not a separate chat architecture.
 
 ## 33. Student Model
@@ -642,13 +758,13 @@ AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
 
-The tutor is one direct asynchronous Gemini SDK call:
+The tutor is one direct asynchronous Gemini call through the `google-genai` SDK:
 
 ```text
 student-only canvas image + mode + problem + recorded excerpts
                          + prior annotation bounds
         ↓
-google-genai generate_content (TutorPlan response schema)
+Gemini multimodal generation (TutorPlan response schema)
         ↓ independent Pydantic validation and safety policy
 TutorResponse
 ```
@@ -657,11 +773,13 @@ Reading the canvas and deciding what to draw are the same judgement, so
 splitting them only bought a second round trip on the path where
 responsiveness is the product.
 
-The SDK performs up to three bounded attempts for explicitly transient HTTP
-statuses. The application makes one additional call only when structured output
-is malformed. The same direct boundary powers grounded question generation.
-The model defaults to `gemini-3.5-flash-lite` and is replaceable through
-`GEMINI_MODEL`.
+The SDK performs up to three bounded transient HTTP attempts for 408 and
+5xx responses. The application makes one additional request only when
+structured output is malformed. The same direct boundary powers grounded
+question generation. The model defaults to `gemini-3.5-flash-lite` and is
+replaceable through `GEMINI_MODEL`; thinking defaults to `low` and is
+replaceable through `GEMINI_THINKING_LEVEL`. These settings are shared by
+tutoring and grounded question generation.
 
 ## 36. Prompt Organization
 Possible layout:
@@ -736,12 +854,13 @@ Treat model output as untrusted.
 Do not execute arbitrary model instructions.
 Avoid logging sensitive course content unnecessarily.
 
-Tutor and question-generation readiness require `GEMINI_API_KEY`. Course
-indexing and large-document retrieval additionally require `OPENAI_API_KEY`,
-`PINECONE_API_KEY`, and `PINECONE_INDEX_NAME`. `/health` reports these readiness
-groups separately and configuration errors expose missing variable names only.
-Image type is verified from file signatures rather than trusting multipart
-headers.
+Tutor and question-generation readiness — and voice with it — require
+`GEMINI_API_KEY` and nothing else. Course indexing and large-document
+retrieval additionally require `OPENAI_API_KEY`, `PINECONE_API_KEY`, and
+`PINECONE_INDEX_NAME`. `/health` reports these readiness groups separately
+and configuration errors expose missing variable names only. Image and audio
+types are verified from file signatures rather than trusting multipart
+headers. Recorded audio is never written to disk or persisted.
 
 ## 42. Testing
 Prioritize deterministic tests for:
@@ -839,12 +958,13 @@ If the architecture supports this cleanly, it is serving the product.
 
 The backend is the merge of two halves: the **tutor product** (Gemini
 whiteboard tutor, grounded question generation, Pinecone retrieval, document
-repository — everything above) and the **learning engine**, which has no
-surface of its own. It is the tutor's brain: a per-course topic list and a
-per-student read of how they're doing on each one, consulted implicitly
-during question generation. There is no student-facing "next problem" screen
-and no mastery score shown anywhere — see `docs/LEARNING_ENGINE.md` for the
-full design, this section is only how the two halves connect.
+repository, course and space CRUD — everything above) and the **learning
+engine**, which has no surface of its own. It is the tutor's brain: a
+per-course topic list and a per-student read of how they're doing on each
+one, consulted implicitly during question generation. There is no
+student-facing "next problem" screen and no mastery score shown anywhere —
+see `docs/LEARNING_ENGINE.md` for the full design, this section is only how
+the two halves connect.
 
 ### 47.1 Two persistence layers, one file
 
@@ -852,12 +972,22 @@ Two ORMs open the same `backend/mentora.db`:
 
 ```text
 app/db.py        SQLModel engine   -> skill, skill_state, attempt,
-                                       problem_skill, course_taxonomy_version
-app/database.py  raw sqlite3       -> course_documents, document_chunks,
-                 CourseRepository     generated_problems,
+                                       hint_usage, problem_skill
+app/database.py  raw sqlite3       -> courses, spaces, course_documents,
+                 CourseRepository     document_chunks, generated_problems,
                                        problem_grounding_chunks,
                                        problem_difficulty
 ```
+
+`courses` and `spaces` are DB-owned, not engine tables: `courses` is the
+single source of truth for which course ids exist, seeded with two demo rows
+(`course_demo`, `course_linear`) and otherwise grown by `POST /api/courses`,
+which mints `course_{uuid4().hex}` ids. The engine's tables carry `course_id`
+as a plain string with no foreign key back to `courses` -- the two ORMs never
+join across the file -- so every engine route that takes a `course_id`
+validates it against `courses` at the boundary (`api.dependencies.
+require_course`) before touching a skill or an attempt. See 47.4 for what a
+freshly created course's topic list looks like.
 
 `ProblemSkill` -- which skill(s) a generated problem counts toward -- lives in
 the SQLModel layer specifically so `skill_id` can carry a real foreign key to
@@ -928,9 +1058,12 @@ any order, case, or article, so "the chain rule" and "chain rule" collapse to
 one topic without an embedding call); or, if neither matches, a genuinely new
 topic. New topics go through `build_taxonomy` — the same normalizer and
 validator every topic source uses — and then `taxonomy.add_skills`, which
-inserts it. The database is the source of truth;
-`data/courses/{course_id}.json` only bootstraps a course that has no topics
-yet, and nothing writes back to it.
+inserts it. The database is the sole source of truth; there is no seed file
+anywhere, so a freshly created course starts with zero topics and grows
+entirely through this path (see 47.4). The one other writer is
+`POST /dev/courses/{id}/skills/import`, which runs a pasted batch through the
+same `build_taxonomy` → `add_skills` call — useful for testing a topic list
+without a model call, but otherwise equivalent to the piggyback.
 
 A malformed batch (e.g. two entries that collide after normalization) raises
 `TaxonomyError` inside `_attribute_skills`; it is caught and logged there, and
@@ -944,7 +1077,15 @@ A brand-new course has no topics and nothing to select. `pick_topic` returns
 in this material" with no required topic — the model's own read of the
 document seeds the first one or two topics through the ordinary piggyback
 path. Every generation after that has topics to select from. There is no
-separate bootstrap call.
+separate bootstrap call, and this applies uniformly to every course:
+`course_demo` and `course_linear` (the two rows `CourseRepository` seeds) cold
+start exactly like a course a user just created through `POST /api/courses`.
+
+One visible cost of that uniformity: `normalize_slug` prefixes every skill id
+with its course id, so a topic on a UUID-named course reads as
+`course_a1b2c3....chain-rule` rather than something short like
+`calc1.chain-rule`. Functional, and never surfaced to a student, but worth
+knowing when reading the dev dashboard or `/dev` responses.
 
 ### 47.5 What was cut, and why
 

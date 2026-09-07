@@ -118,47 +118,59 @@ piggyback in question generation mints a topic whenever the model names
 one the course lacks, and that is how a course's list grows.
 
 The **database is the source of truth**. `add_skills()` inserts into `Skill`
-and does nothing else — no file I/O on a request path.
-
-`backend/data/courses/{course_id}.json` is **bootstrap data only**: a
-starting list so a fresh course isn't empty. `seed_all_courses()` runs at
-startup and skips any course that already has topics, so it never overwrites
-or deletes what the model has added. Nothing writes back to those files.
+and does nothing else — no file I/O, no seed file, on any request path. A
+freshly created course starts with zero topics; the model's own read of the
+first document it is asked to write from mints the first one or two through
+the ordinary piggyback (§5). `POST /dev/courses/{id}/skills/import` is the
+one other writer — a pasted batch through the same `build_taxonomy` path, for
+testing a topic list without a model call.
 
 ### What still isn't shippable
 
+- **`Course` now exists, but `Skill.course_id` still isn't wired to it.**
+  `courses` (`backend/app/database.py`) is server-minted (`course_<uuid>`,
+  never the user's typed subject name) and is the real source of truth for
+  which course ids are valid — every engine route validates against it at
+  the boundary (`api.dependencies.require_course`) before touching a skill.
+  But that check is a runtime guard, not a schema constraint: `Skill.course_id`
+  is still a plain string in a different ORM (SQLModel) than `courses` lives
+  in (raw sqlite3), so there is no foreign key, and nothing stops a row
+  existing for a course that was since deleted.
 - **There is no owner.** `Skill` is keyed on `course_id` alone, and a skill
   id is `{course_id}.{slug}`. Two users who both create a course about
   physics collide on the primary key. This is the real blocker for
-  multi-user.
-- **No `Course` table.** A course id is a bare string with no row behind it.
-  It should be server-minted (`course_<uuid>`, never the user's typed
-  subject name), with an indexed `owner_id`, a display `name`, and
-  `created_at` — keeping the display name separate from the identifier is
-  what stops two "Physics" courses being the same course.
+  multi-user, and it survives the `courses` table above unless
+  `owner_id` scoping is added to it too.
 - **`owner_id` scoping** on every taxonomy read, so a user only ever sees
   their own topics. Free text at first, exactly as `student_id` is today
   (§9), then wired to real accounts.
-- **`Skill.course_id` should become a real foreign key** to `course.id`.
+- **`Skill.course_id` should become a real foreign key** to `courses.course_id`.
   This cannot be done with the additive-column reconciler in §3 — SQLite
   cannot `ALTER TABLE ADD CONSTRAINT`, so declaring it would enforce the FK
-  on freshly created databases and silently skip every existing one. It
-  needs a real migration tool.
+  on freshly created databases and silently skip every existing one. It also
+  cannot cross the ORM boundary as-is: `courses` lives in the raw-sqlite3
+  repository, not the SQLModel engine `Skill` is defined against. It needs a
+  real migration tool, and probably the two persistence layers moved closer
+  together first.
 
 ---
 
 ## 3. Data model
 
-Six SQLModel tables plus a raw-sqlite3 repository for documents, chunks and
-generated problems. Same SQLite file (`mentora.db`, override
-`MENTORA_DB_PATH`). The engine owns three of the six; the taxonomy and
-attribution own the rest.
+Five SQLModel tables plus a raw-sqlite3 repository for documents, chunks,
+generated problems, and now courses and spaces too. Same SQLite file
+(`mentora.db`, override `MENTORA_DB_PATH`). The engine owns three of the
+five; the taxonomy and attribution own the rest.
 
 **`Skill`** (`models/skill.py`) — one topic in a course's flat list. Id is
-course-prefixed and normalized (`calc1.derivatives.chain-rule`). No
-prerequisite field — topics are flat. Carries `keywords` (retrieval
-vocabulary), `question_forms` (§5), `difficulty_band`, and `origin` (`seed`
-from the course's bootstrap file, or `generated` via the piggyback).
+course-prefixed and normalized (`calc1.derivatives.chain-rule`, or
+`course_a1b2c3....chain-rule` for a UUID-named course — see ARCHITECTURE.md
+§47.4). No prerequisite field — topics are flat. Carries `keywords`
+(retrieval vocabulary), `question_forms` (§5), `difficulty_band`, and
+`origin`. `origin` defaults to `seed` on the model, but every topic actually
+created today goes through the piggyback or the dev import route, both of
+which stamp `generated` explicitly — there is no seed file left to produce a
+`seed`-origin row.
 
 **`SkillState`** (`engine/models/skill_state.py`) — one student's rolling
 window for one topic, keyed `(student_id, skill_id)`. `recent_outcomes`: the
@@ -660,8 +672,8 @@ migration will rewrite.
 Three surfaces, and they answer different questions.
 
 ```bash
-python -m pytest -q       # 285 passed, 2 skipped; must pass twice in a row.
-                          # Never touches mentora.db or data/courses/*.json
+python -m pytest -q       # 389 passed, 2 skipped; must pass twice in a row.
+                          # Never touches the developer's real mentora.db
                           # (see tests/conftest.py).
 ```
 
@@ -726,9 +738,10 @@ stays visible, and retuning the weights for spaced practice is open work.
 
 ## 16. Known gaps
 
-- **The taxonomy is a JSON prototype.** Six specific failure modes and the
-  planned migration are in §2. This is the largest structural gap, and it
-  blocks the multi-user product entirely.
+- **The taxonomy has no owner, and `Skill.course_id` has no foreign key to
+  `courses`.** Specific failure modes and the planned migration are in §2.
+  This is the largest structural gap, and it blocks the multi-user product
+  entirely.
 - **No item-quality signal.** A generated question that is ambiguous or
   simply wrong gets the student marked incorrect, and the engine records a
   genuine weakness on that topic. There is no per-item statistic, no way to

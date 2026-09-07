@@ -11,13 +11,11 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
-from sqlmodel import Session
 
 from app.api.dependencies import get_course_repository
 from app.engine.api.dev import router as dev_router
 from app.engine.api.learning import router as learning_router
-from app.db import engine, init_db
-from app.services.taxonomy import seed_all_courses
+from app.db import init_db
 
 
 def register_learning_engine(app: FastAPI) -> None:
@@ -28,9 +26,9 @@ def register_learning_engine(app: FastAPI) -> None:
 @asynccontextmanager
 async def learning_engine_lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db()
-    with Session(engine) as session:
-        seed_all_courses(session)
     # Touch the raw-sqlite3 repository so CourseRepository.initialize() runs
-    # its schema before the first request rather than inside it.
+    # its schema (and seeds its default courses) before the first request
+    # rather than inside it. Topics are never seeded here -- every course
+    # starts with none and grows only through add_skills.
     get_course_repository()
     yield

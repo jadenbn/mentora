@@ -8,6 +8,9 @@ from pathlib import Path
 
 REQUIRED_SETTINGS = ("GEMINI_API_KEY",)
 INDEXING_SETTINGS = ("OPENAI_API_KEY", "PINECONE_API_KEY", "PINECONE_INDEX_NAME")
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_GEMINI_THINKING_LEVEL = "low"
+GEMINI_THINKING_LEVELS = ("minimal", "low", "medium", "high")
 
 
 def missing_settings() -> list[str]:
@@ -69,12 +72,37 @@ def database_path() -> Path:
 class TutorSettings:
     gemini_api_key: str = field(repr=False)
     gemini_model: str
+    gemini_thinking_level: str
     request_timeout_seconds: float
 
     @classmethod
     def from_environment(cls) -> "TutorSettings":
+        thinking_level = (
+            os.getenv("GEMINI_THINKING_LEVEL") or DEFAULT_GEMINI_THINKING_LEVEL
+        ).strip().lower()
+        if thinking_level not in GEMINI_THINKING_LEVELS:
+            choices = ", ".join(GEMINI_THINKING_LEVELS)
+            raise ValueError(f"GEMINI_THINKING_LEVEL must be one of: {choices}")
         return cls(
             gemini_api_key=os.getenv("GEMINI_API_KEY") or "",
-            gemini_model=os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite",
+            gemini_model=os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL,
+            gemini_thinking_level=thinking_level,
             request_timeout_seconds=float(os.getenv("TUTOR_REQUEST_TIMEOUT_SECONDS") or "45"),
+        )
+
+
+@dataclass(frozen=True)
+class TranscriptionSettings:
+    """Voice reuses the tutor's credential; only the model and budget differ."""
+
+    gemini_api_key: str
+    gemini_model: str
+    request_timeout_seconds: float
+
+    @classmethod
+    def from_environment(cls) -> "TranscriptionSettings":
+        return cls(
+            gemini_api_key=os.getenv("GEMINI_API_KEY") or "",
+            gemini_model=os.getenv("GEMINI_TRANSCRIPTION_MODEL") or "gemini-3.5-transcribe",
+            request_timeout_seconds=float(os.getenv("VOICE_REQUEST_TIMEOUT_SECONDS") or "30"),
         )

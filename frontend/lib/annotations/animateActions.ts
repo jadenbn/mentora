@@ -1,30 +1,29 @@
 /**
  * The animated counterpart to renderCanvasActions.
  *
- * Same input, same coordinate rules, different output: geometry is drawn as
- * freehand strokes rather than perfect geo shapes, because a sketched ellipse
- * next to handwriting reads better than a vector one.
+ * Same input and coordinate rules, with circles drawn as freehand strokes and
+ * check/cross marks fading in as the same settled glyphs used during restore.
  */
 
-import type { Box, Editor, TLDefaultColorStyle } from "tldraw";
+import { createShapeId } from "tldraw";
+import type { Editor, TLDefaultColorStyle } from "tldraw";
 import {
+  animateTextShape,
   animateStrokes,
-  animateText,
   sequence,
   type AnimationHandle,
 } from "@/lib/annotations/animate";
 import {
-  checkStrokes,
-  crossStrokes,
   ellipseStroke,
   makeJitter,
-  toWorldPoint,
   toWorldRect,
+  type WorldBounds,
   type Stroke,
 } from "@/lib/annotations/geometry";
 import {
   AI_SHAPE_OWNER,
   clearAiShapesForInteraction,
+  buildMarkShape,
   type RenderContext,
 } from "@/lib/annotations/renderCanvasActions";
 import type { CanvasAction } from "@/types/tutor";
@@ -38,14 +37,12 @@ function metaFor(context: RenderContext) {
 
 /** Deterministic wobble seed from the action itself, so a replay looks identical. */
 function seedFor(action: CanvasAction): string {
-  return action.type === "text"
-    ? `text:${action.position.x},${action.position.y}:${action.text}`
-    : `${action.type}:${action.target.x},${action.target.y}`;
+  return `${action.type}:${action.target.x},${action.target.y}`;
 }
 
-/** Strokes for the geometric actions; null for the text-shaped ones. */
-function strokesFor(action: CanvasAction, frame: Box): Stroke[] | null {
-  if (action.type === "text") {
+/** Strokes for hand-drawn actions; highlights use a translucent region. */
+function strokesFor(action: CanvasAction, frame: WorldBounds): Stroke[] | null {
+  if (action.type === "highlight") {
     return null;
   }
   const jitter = makeJitter(seedFor(action), JITTER);
@@ -54,17 +51,13 @@ function strokesFor(action: CanvasAction, frame: Box): Stroke[] | null {
   switch (action.type) {
     case "circle":
       return [ellipseStroke(rect, jitter)];
-    case "check":
-      return checkStrokes(rect, jitter);
-    case "cross":
-      return crossStrokes(rect, jitter);
     default:
       return null;
   }
 }
 
 const COLORS: Partial<Record<CanvasAction["type"], TLDefaultColorStyle>> = {
-  check: "green",
+  highlight: "yellow",
 };
 
 function colorFor(action: CanvasAction): TLDefaultColorStyle {
@@ -79,14 +72,43 @@ function stepFor(
   const meta = metaFor(context);
   const color = colorFor(action);
 
+  if (action.type === "check" || action.type === "cross") {
+    const shape = buildMarkShape(action, context);
+    if (!shape) return null;
+    return () => animateTextShape(editor, shape);
+  }
+
   const strokes = strokesFor(action, context.bounds);
   if (strokes) {
     return () => animateStrokes(editor, strokes, { meta, color });
   }
 
-  if (action.type === "text") {
-    const at = toWorldPoint(action.position, context.bounds);
-    return () => animateText(editor, at, action.text, { meta, color });
+  if (action.type === "highlight") {
+    const rect = toWorldRect(action.target, context.bounds);
+    return () => {
+      editor.run(
+        () =>
+          editor.createShape({
+            id: createShapeId(),
+            type: "geo",
+            x: rect.x,
+            y: rect.y,
+            opacity: 0.28,
+            meta,
+            props: {
+              geo: "rectangle",
+              w: rect.w,
+              h: rect.h,
+              color,
+              fill: "solid",
+              dash: "solid",
+              size: "s",
+            },
+          }),
+        { history: "ignore" },
+      );
+      return { done: Promise.resolve(), cancel: () => {} };
+    };
   }
 
   // Unrecognised action from a newer backend: skip rather than guess.

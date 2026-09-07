@@ -3,17 +3,17 @@
 A topic is a label for grouping attempts, not a node in a curriculum: there
 is no prerequisite graph and nothing here gates what a student can be served.
 
-Topics are model-generated. data/courses/{course_id}.json only bootstraps a
-course that has none yet; after that the database is the source of truth and
-add_skills is the only way the list grows.
+Topics are entirely model-generated: a course starts with none, and add_skills
+is the only way the list grows -- either from question generation's own
+piggyback (QuestionService._attribute_skills) or from a pasted batch via
+POST /dev/courses/{course_id}/skills/import. The database is always the
+source of truth; nothing here reads from disk.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import re
-from pathlib import Path
 
 from sqlmodel import Session, select
 
@@ -22,10 +22,6 @@ from app.models.skill import Skill
 
 logger = logging.getLogger(__name__)
 
-
-# Read-only: nothing writes to these files. seed_all_courses takes a data_dir
-# override for tests that need their own bootstrap set.
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "courses"
 
 _SLUG_INVALID = re.compile(r"[^a-z0-9.]+")
 _SLUG_REPEAT = re.compile(r"-{2,}")
@@ -142,47 +138,6 @@ def build_taxonomy(
     ]
     validate_taxonomy(skills)
     return skills
-
-
-def load_taxonomy(course_id: str, data_dir: Path | None = None) -> list[Skill]:
-    """Load a course's bootstrap topic list from data/courses/{course_id}.json.
-
-    Normalizes every id and validates the result before returning. Raises
-    TaxonomyError on any structural problem.
-    """
-    directory = data_dir or DATA_DIR
-    path = directory / f"{course_id}.json"
-    raw = json.loads(path.read_text(encoding="utf-8"))
-
-    if raw.get("course_id") != course_id:
-        raise TaxonomyError(
-            f"{path}: course_id mismatch (expected {course_id}, "
-            f"got {raw.get('course_id')})"
-        )
-
-    return build_taxonomy(course_id, raw["skills"], SkillOrigin.SEED)
-
-
-def seed_all_courses(session: Session, data_dir: Path | None = None) -> None:
-    """Give every course in data/courses a starting topic list, once.
-
-    Called on startup. A course that already has skills is skipped entirely:
-    the database is the source of truth, and everything the model has added
-    since lives only there.
-    """
-    directory = data_dir or DATA_DIR
-    for path in sorted(directory.glob("*.json")):
-        course_id = path.stem
-        already_seeded = session.exec(
-            select(Skill.id).where(Skill.course_id == course_id).limit(1)
-        ).first()
-        if already_seeded:
-            continue
-
-        for skill in load_taxonomy(course_id, data_dir=directory):
-            session.add(skill)
-
-    session.commit()
 
 
 def add_skills(session: Session, course_id: str, produced: list[Skill]) -> list[str]:

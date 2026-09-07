@@ -15,7 +15,8 @@ from app.main import app
 from app.engine.models.skill_state import SkillState
 from app.engine.accuracy import observed_accuracy
 from app.services import attribution
-from app.services.taxonomy import seed_all_courses
+from app.models.enums import SkillOrigin
+from app.models.skill import Skill
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import ProblemContext
 from app.schemas.tutor import TutorResponse, WorkStatus
@@ -41,6 +42,11 @@ class StubTutor:
 @pytest.fixture
 def seeded():
     repo = get_course_repository()
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO courses (course_id, name, description, created_at, updated_at) "
+            "VALUES ('calc1', 'Calculus I', '', '2024-01-01', '2024-01-01')"
+        )
     repo.replace_document(
         document_id="doc_1", course_id="calc1", filename="l.txt",
         document_type=DocumentType.lecture, total_pages=1,
@@ -55,11 +61,15 @@ def seeded():
                                source="generated", prompt="Differentiate."),
         grounding_chunk_ids=["chunk_doc_1_00000"],
     )
-    # Seed the real calc1 taxonomy here rather than relying on the app
-    # lifespan: attribution now validates against skill.id, so the skill has
-    # to exist before the problem can be attributed to it.
+    # attribution validates against skill.id, so the skill has to exist
+    # before the problem can be attributed to it.
     with Session(engine) as s:
-        seed_all_courses(s)
+        s.add(Skill(
+            id="calc1.derivatives.chain-rule", course_id="calc1", name="Chain rule",
+            description="Differentiating a composite function.", difficulty_band=0.5,
+            origin=SkillOrigin.SEED,
+        ))
+        s.commit()
         attribution.set_problem_skills(s, problem.id, ["calc1.derivatives.chain-rule"])
     repo.set_problem_difficulty(problem_id=problem.id, target_difficulty=0.65)
     return problem

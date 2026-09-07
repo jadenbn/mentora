@@ -28,6 +28,8 @@ async def upload_document(
     repository: CourseRepository = Depends(get_course_repository),
 ):
     """Upload a course document, extract it, chunk it, and persist it."""
+    if repository.get_course(course_id) is None:
+        raise HTTPException(404, "Course was not found")
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
         raise HTTPException(400, f"Unsupported file type: {suffix}")
@@ -86,4 +88,6 @@ async def list_documents(
     course_id: str,
     repository: CourseRepository = Depends(get_course_repository),
 ) -> list[CourseDocument]:
+    if repository.get_course(course_id) is None:
+        raise HTTPException(404, "Course was not found")
     return repository.list_documents(course_id)

@@ -1,5 +1,6 @@
 import type { NormalizedBounds, TutorMode, TutorResponse } from "@/types/tutor";
-import type { CourseDocument, DocumentType, ProblemContext } from "@/types/domain";
+import type { Course, CourseDocument, DocumentType, ProblemContext, Space } from "@/types/domain";
+import type { TranscriptionResponse } from "@/types/voice";
 
 /** The port the FastAPI backend listens on in development. */
 const DEFAULT_API_PORT = 8000;
@@ -87,6 +88,8 @@ export async function analyzeCanvas(args: {
   canvasImage?: Blob;
   priorAnnotations: NormalizedBounds[];
   problem?: ProblemContext;
+  /** What the student asked out loud, when they used the microphone. */
+  transcript?: string;
   signal?: AbortSignal;
 }): Promise<TutorResponse> {
   const form = new FormData();
@@ -98,6 +101,9 @@ export async function analyzeCanvas(args: {
   form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
   if (args.problem) {
     form.append("problem_context", JSON.stringify(args.problem));
+  }
+  if (args.transcript) {
+    form.append("transcript", args.transcript);
   }
 
   const response = await fetch(`${apiBaseUrl()}/api/tutor/analyze`, {
@@ -159,23 +165,98 @@ export async function submitWork(args: {
   return data.tutor;
 }
 
-async function courseResponse<T>(response: Response, action: string): Promise<T> {
+/** Maps the transcribe endpoint's failures onto something a student can read. */
+function messageForTranscriptionStatus(status: number, detail: unknown): string {
+  switch (status) {
+    case 400:
+      return "That recording was empty.";
+    case 413:
+      return "That recording was too long.";
+    case 415:
+      return "That recording format is not supported.";
+    case 422:
+      return "We did not catch that. Try again.";
+    case 502:
+      return "Voice input is temporarily unavailable.";
+    case 503: {
+      const missing = (detail as { missing_settings?: string[] } | null)?.missing_settings;
+      return missing?.length
+        ? `Voice input is not configured. Missing: ${missing.join(", ")}.`
+        : "Voice input is not configured on the server.";
+    }
+    case 504:
+      return "Transcribing took too long.";
+    default:
+      return `Transcribing failed (${status}).`;
+  }
+}
+
+/**
+ * POST /api/voice/transcribe
+ *
+ * Multipart, WAV only — see lib/voice/wav.ts for why the browser re-encodes.
+ * Content-Type is deliberately left unset so the browser supplies the
+ * multipart boundary.
+ */
+export async function transcribeSpeech(args: {
+  audio: Blob;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const form = new FormData();
+  form.append("audio", args.audio, "speech.wav");
+
+  const response = await fetch(`${apiBaseUrl()}/api/voice/transcribe`, {
+    method: "POST",
+    body: form,
+    signal: args.signal,
+  });
+
   if (!response.ok) {
     let detail: unknown = null;
     try {
       detail = (await response.json())?.detail ?? null;
     } catch {
-      // The fixed fallback below is safer than exposing an HTML/provider body.
+      // Non-JSON error body; the status alone has to carry the meaning.
     }
-    const message =
-      typeof detail === "string"
-        ? detail
-        : Array.isArray((detail as { missing_settings?: unknown } | null)?.missing_settings)
-          ? `${action} is not configured. Missing: ${(detail as { missing_settings: string[] }).missing_settings.join(", ")}.`
-          : `${action} failed (${response.status}).`;
-    throw new TutorApiError(message, response.status, detail);
+    throw new TutorApiError(
+      messageForTranscriptionStatus(response.status, detail),
+      response.status,
+      detail,
+    );
+  }
+
+  const body: TranscriptionResponse = await response.json();
+  return body.transcript;
+}
+
+async function throwCourseApiError(response: Response, action: string): Promise<never> {
+  let detail: unknown = null;
+  try {
+    detail = (await response.json())?.detail ?? null;
+  } catch {
+    // The fixed fallback below is safer than exposing an HTML/provider body.
+  }
+  const message =
+    typeof detail === "string"
+      ? detail
+      : Array.isArray((detail as { missing_settings?: unknown } | null)?.missing_settings)
+        ? `${action} is not configured. Missing: ${(detail as { missing_settings: string[] }).missing_settings.join(", ")}.`
+        : `${action} failed (${response.status}).`;
+  throw new TutorApiError(message, response.status, detail);
+}
+
+async function courseResponse<T>(response: Response, action: string): Promise<T> {
+  if (!response.ok) {
+    await throwCourseApiError(response, action);
   }
   return response.json() as Promise<T>;
+}
+
+/** For endpoints that return 204 No Content on success. */
+async function courseVoidResponse(response: Response, action: string): Promise<void> {
+  if (!response.ok) {
+    await throwCourseApiError(response, action);
+  }
 }
 
 export async function listCourseDocuments(courseId: string): Promise<CourseDocument[]> {
@@ -236,4 +317,103 @@ export async function generateCourseQuestion(
     "Generating a question",
   );
   return { ...data.problem, skill: data.skills[0] };
+}
+
+export async function listCourses(): Promise<Course[]> {
+  const response = await fetch(`${apiBaseUrl()}/api/courses`);
+  return courseResponse<Course[]>(response, "Loading courses");
+}
+
+/** Returns null on a 404, so callers can go straight to notFound(). */
+export async function getCourseById(courseId: string): Promise<Course | null> {
+  const response = await fetch(`${apiBaseUrl()}/api/courses/${courseId}`);
+  if (response.status === 404) {
+    return null;
+  }
+  return courseResponse<Course>(response, "Loading the course");
+}
+
+export async function createCourse(args: {
+  name: string;
+  description: string;
+}): Promise<Course> {
+  const response = await fetch(`${apiBaseUrl()}/api/courses`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  return courseResponse<Course>(response, "Creating the course");
+}
+
+export async function updateCourse(
+  courseId: string,
+  args: { name?: string; description?: string },
+): Promise<Course> {
+  const response = await fetch(`${apiBaseUrl()}/api/courses/${courseId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  return courseResponse<Course>(response, "Updating the course");
+}
+
+export async function deleteCourseById(courseId: string): Promise<void> {
+  const response = await fetch(`${apiBaseUrl()}/api/courses/${courseId}`, {
+    method: "DELETE",
+  });
+  return courseVoidResponse(response, "Deleting the course");
+}
+
+/**
+ * Looks up a space without knowing its course ahead of time — the whiteboard
+ * route only has a space id. Returns null on a 404.
+ */
+export async function getSpaceById(spaceId: string): Promise<Space | null> {
+  const response = await fetch(`${apiBaseUrl()}/api/spaces/${spaceId}`);
+  if (response.status === 404) {
+    return null;
+  }
+  return courseResponse<Space>(response, "Loading the space");
+}
+
+export async function listSpaces(courseId: string): Promise<Space[]> {
+  const response = await fetch(`${apiBaseUrl()}/api/courses/${courseId}/spaces`);
+  return courseResponse<Space[]>(response, "Loading spaces");
+}
+
+export async function createSpace(
+  courseId: string,
+  args: { space_id?: string; title?: string; problem_id?: string } = {},
+): Promise<Space> {
+  const response = await fetch(`${apiBaseUrl()}/api/courses/${courseId}/spaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  return courseResponse<Space>(response, "Creating the space");
+}
+
+/** Used for both rename and touch — call with {} to just bump updated_at. */
+export async function updateSpace(
+  courseId: string,
+  spaceId: string,
+  args: { title?: string } = {},
+): Promise<Space> {
+  const response = await fetch(
+    `${apiBaseUrl()}/api/courses/${courseId}/spaces/${spaceId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    },
+  );
+  return courseResponse<Space>(response, "Updating the space");
+}
+
+export async function deleteSpaceById(courseId: string, spaceId: string): Promise<void> {
+  const response = await fetch(
+    `${apiBaseUrl()}/api/courses/${courseId}/spaces/${spaceId}`,
+    { method: "DELETE" },
+  );
+  return courseVoidResponse(response, "Deleting the space");
 }

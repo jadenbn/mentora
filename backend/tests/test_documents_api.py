@@ -18,6 +18,11 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.ingestion.delete_document_vectors", lambda _id: 0)
     monkeypatch.setattr("app.services.ingestion.upsert_chunks", lambda chunks: len(chunks))
     repository = CourseRepository(tmp_path / "db.sqlite")
+    with repository.connect() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO courses (course_id, name, description, created_at, updated_at) "
+            "VALUES ('course_1', 'Test course', '', '2024-01-01', '2024-01-01')"
+        )
     app.dependency_overrides[get_course_repository] = lambda: repository
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -39,6 +44,16 @@ def test_upload_persists_and_lists_a_text_document(client):
     assert body["replaced_existing"] is False
     listed = client.get("/api/courses/course_1/documents").json()
     assert [item["document_id"] for item in listed] == [body["document_id"]]
+
+
+def test_missing_course_is_rejected(client):
+    response = client.post(
+        "/api/courses/nope/documents",
+        data={"document_type": "lecture"},
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert response.status_code == 404
+    assert client.get("/api/courses/nope/documents").status_code == 404
 
 
 def test_reupload_is_reported_as_a_replacement(client):

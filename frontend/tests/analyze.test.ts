@@ -8,7 +8,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EmptyCanvasError, runTutorAnalysis } from "@/lib/tutor/analyze";
 import { AI_SHAPE_OWNER } from "@/lib/annotations/renderCanvasActions";
+import type { RenderContext } from "@/lib/annotations/renderCanvasActions";
 import type { ProblemContext } from "@/types/domain";
+import type { TutorResponse } from "@/types/tutor";
 import { box, makeEditor } from "./fakeEditor";
 
 const RESPONSE = {
@@ -16,7 +18,7 @@ const RESPONSE = {
   status: "partial",
   summary: "You dropped the coefficient.",
   canvas_actions: [
-    { type: "text", position: { x: 0.5, y: 0.5 }, text: "What about the 2?" },
+    { type: "highlight", target: { x: 0.5, y: 0.5, width: 0.1, height: 0.1 } },
     { type: "circle", target: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
   ],
 };
@@ -38,7 +40,7 @@ const student = (id: string, bounds = box(150, 300, 100, 200)) => ({
 
 const priorMark = (id: string) => ({
   id,
-  type: "text",
+  type: "geo",
   meta: { owner: AI_SHAPE_OWNER, interactionId: "interaction_1" },
   pageBounds: box(200, 400, 100, 100),
 });
@@ -79,6 +81,23 @@ describe("the happy path", () => {
     await run(fake.editor);
     expect(fake.created[0].meta).toMatchObject({ interactionId: "interaction_7" });
   });
+
+  it("captures the canvas before tutor marks are rendered", async () => {
+    const fake = makeEditor({
+      shapes: [
+        student("s1"),
+        { ...student("highlight"), type: "draw" },
+      ],
+    });
+    mockFetch();
+    let snapshot: unknown;
+    await run(fake.editor, {
+      onResponse: (_response: TutorResponse, _context: RenderContext, captured: unknown) => {
+        snapshot = captured;
+      },
+    });
+    expect(snapshot).toEqual({ shapes: ["s1", "highlight"] });
+  });
 });
 
 describe("what it sends", () => {
@@ -89,6 +108,23 @@ describe("what it sends", () => {
     const body = spy.mock.calls[0][1].body as FormData;
     expect(body.get("mode")).toBe("mark");
     expect(body.get("course_id")).toBe("course_linear");
+  });
+
+  it("carries a spoken question alongside the canvas", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    const spy = mockFetch();
+    await run(fake.editor, { mode: "explain", transcript: "why can't I cancel the x?" });
+    const body = spy.mock.calls[0][1].body as FormData;
+    expect(body.get("transcript")).toBe("why can't I cancel the x?");
+    expect(body.get("canvas_image")).not.toBeNull();
+  });
+
+  it("sends no transcript when the student used a button", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    const spy = mockFetch();
+    await run(fake.editor);
+    const body = spy.mock.calls[0][1].body as FormData;
+    expect(body.has("transcript")).toBe(false);
   });
 
   it("tells the backend where its earlier marks are", async () => {
@@ -141,6 +177,18 @@ describe("when there is nothing to analyze", () => {
     const body = spy.mock.calls[0][1].body as FormData;
     expect(body.get("canvas_image")).toBeNull();
     expect(JSON.parse(body.get("problem_context") as string)).toEqual(PROBLEM);
+  });
+
+  it("lets that student ask their question out loud too", async () => {
+    const fake = makeEditor({ shapes: [] });
+    const spy = mockFetch();
+    await run(fake.editor, {
+      mode: "stuck",
+      problem: PROBLEM,
+      transcript: "what is this even asking?",
+    });
+    const body = spy.mock.calls[0][1].body as FormData;
+    expect(body.get("transcript")).toBe("what is this even asking?");
   });
 
   it("still requires student work for other modes", async () => {

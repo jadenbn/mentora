@@ -31,12 +31,36 @@ WEBP = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 32
 NOT_AN_IMAGE = b"%PDF-1.7\n" + b"\x00" * 32
 
 
+def wav(samples: int = 16) -> bytes:
+    """A real RIFF/WAVE header: the voice API sniffs content, not filenames."""
+    data = samples * 2
+    return (
+        b"RIFF"
+        + (36 + data).to_bytes(4, "little")
+        + b"WAVEfmt "
+        + (16).to_bytes(4, "little")
+        + (1).to_bytes(2, "little")
+        + (1).to_bytes(2, "little")
+        + (16_000).to_bytes(4, "little")
+        + (32_000).to_bytes(4, "little")
+        + (2).to_bytes(2, "little")
+        + (16).to_bytes(2, "little")
+        + b"data"
+        + data.to_bytes(4, "little")
+        + b"\x00" * data
+    )
+
+
+WAV = wav()
+NOT_AUDIO = b"%PDF-1.7\n" + b"\x00" * 32
+
+
 def bounds(x: float = 0.2, y: float = 0.3, width: float = 0.2, height: float = 0.1) -> dict:
     return {"x": x, "y": y, "width": width, "height": height}
 
 
-def text_action(text: str = "What happens to the exponent?", **over) -> dict:
-    return {"type": "text", "position": {"x": 0.4, "y": 0.3}, "text": text, **over}
+def highlight_action(**over) -> dict:
+    return {"type": "highlight", "target": bounds(), **over}
 
 
 def circle_action(**over) -> dict:
@@ -63,9 +87,9 @@ def plan(
     *,
     status: WorkStatus | str = WorkStatus.partial,
     actions: list[dict] | None = None,
-    summary: str | None = "A restrained power-rule hint.",
-    error_tag: str | None = None,
+    summary: str = "A restrained power-rule hint.",
     uncertainties: list[dict] | None = None,
+    error_tag: str | None = None,
 ) -> TutorPlan:
     """A model-produced plan, already validated."""
     return TutorPlan.model_validate(
@@ -73,8 +97,8 @@ def plan(
             "status": status,
             "canvas_actions": [circle_action()] if actions is None else actions,
             "summary": summary,
-            "error_tag": error_tag,
             "uncertainties": uncertainties or [],
+            "error_tag": error_tag,
         }
     )
 
@@ -84,7 +108,7 @@ def normalized_bounds(**over) -> NormalizedBounds:
 
 
 def action_types(actions: list[CanvasAction]) -> list[str]:
-    """Readable assertion helper: ['text', 'circle'] instead of object reprs."""
+    """Readable assertion helper: ['highlight', 'circle'] instead of object reprs."""
     return [action.type for action in actions]
 
 
@@ -101,6 +125,26 @@ class StubWorkflow:
         self.calls: list[dict] = []
 
     async def run(self, **kwargs) -> TutorPlan:
+        self.calls.append(kwargs)
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+    @property
+    def last_call(self) -> dict:
+        assert self.calls, "workflow was never invoked"
+        return self.calls[-1]
+
+
+class StubTranscriptionWorkflow:
+    """Implements the TranscriptionWorkflow port without touching a provider."""
+
+    def __init__(self, result: str = "why can't I do this?", error: Exception | None = None):
+        self._result = result
+        self._error = error
+        self.calls: list[dict] = []
+
+    async def run(self, **kwargs) -> str:
         self.calls.append(kwargs)
         if self._error is not None:
             raise self._error

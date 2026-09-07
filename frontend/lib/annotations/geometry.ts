@@ -4,8 +4,7 @@
  * one place (ARCHITECTURE.md section 19).
  */
 
-import type { Box } from "tldraw";
-import type { NormalizedBounds, NormalizedPoint } from "@/types/tutor";
+import type { NormalizedBounds } from "@/types/tutor";
 
 export interface Vec2 {
   x: number;
@@ -22,14 +21,14 @@ export interface WorldRect {
   h: number;
 }
 
-export function toWorldPoint(point: NormalizedPoint, frame: Box): Vec2 {
-  return {
-    x: frame.x + point.x * frame.w,
-    y: frame.y + point.y * frame.h,
-  };
+export interface WorldBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
-export function toWorldRect(target: NormalizedBounds, frame: Box): WorldRect {
+export function toWorldRect(target: NormalizedBounds, frame: WorldBounds): WorldRect {
   return {
     x: frame.x + target.x * frame.w,
     y: frame.y + target.y * frame.h,

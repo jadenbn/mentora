@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
 
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
-from app.api.dependencies import get_course_repository, get_session
+from app.api.dependencies import get_course_repository, get_session, require_course
 from app.api.tutor import get_tutor_service, parse_prior_annotations, read_canvas_image
 from app.database import CourseRepository
 from app.engine.schemas import AttemptCreate, SkillsOverviewResponse, WorkResponse
@@ -35,6 +35,7 @@ def get_skills_overview(
     course_id: str,
     student_id: str,
     session: Session = Depends(get_session),
+    _course=Depends(require_course),
 ):
     """Every topic in the course with this student's attempt history.
 
@@ -55,6 +56,7 @@ async def submit_work(
     session: Session = Depends(get_session),
     repository: CourseRepository = Depends(get_course_repository),
     tutor: TutorService = Depends(get_tutor_service),
+    _course=Depends(require_course),
 ) -> WorkResponse:
     """Grade a canvas and record the attempt, in one round trip.
 

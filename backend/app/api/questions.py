@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
-from app.api.dependencies import get_course_repository, get_session
+from app.api.dependencies import get_course_repository, get_session, require_course
 from app.config import (
     TutorSettings,
     missing_indexing_settings,
@@ -76,6 +76,7 @@ def get_question_service(
         workflow=GeminiQuestionWorkflow(
             api_key=settings.gemini_api_key,
             model=settings.gemini_model,
+            thinking_level=settings.gemini_thinking_level,
             timeout_seconds=settings.request_timeout_seconds,
         ),
         retriever=Retriever(),
@@ -157,6 +158,7 @@ async def generate_question(
     service: QuestionService = Depends(get_question_service),
     repository: CourseRepository = Depends(get_course_repository),
     session: Session = Depends(get_session),
+    _course=Depends(require_course),
 ) -> GeneratedProblemResponse:
     ask = _build_ask(session, course_id, request)
 

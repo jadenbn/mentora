@@ -36,6 +36,7 @@ class TutorWorkflow(Protocol):
         prior_annotations: list[NormalizedBounds],
         problem: ProblemContext | None,
         course_context: list[GroundingChunk],
+        transcript: str | None,
         learner: LearnerContext | None = None,
     ) -> TutorPlan: ...
 
@@ -65,6 +66,7 @@ class TutorService:
         canvas_mime_type: str | None,
         prior_annotations: list[NormalizedBounds],
         problem_context: ProblemContext | None = None,
+        transcript: str | None = None,
         learner: LearnerContext | None = None,
     ) -> TutorResponse:
         problem = problem_context
@@ -89,6 +91,7 @@ class TutorService:
             prior_annotations=prior_annotations,
             problem=problem,
             course_context=course_context,
+            transcript=transcript,
             learner=learner,
         )
         safe = apply_safety_policy(plan)

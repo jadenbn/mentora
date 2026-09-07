@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Box, Editor } from "tldraw";
+import type { Editor } from "tldraw";
 import { animateCanvasActions } from "@/lib/annotations/animateActions";
 
 function makeEditor() {
@@ -28,7 +28,7 @@ function makeEditor() {
 }
 
 const CONTEXT = {
-  bounds: { x: 100, y: 200, w: 400, h: 800 } as Box,
+  bounds: { x: 100, y: 200, w: 400, h: 800 },
   interactionId: "interaction_1",
 };
 
@@ -36,22 +36,23 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("animateCanvasActions", () => {
-  it("reveals tutor text over time instead of creating it complete", async () => {
+  it("creates a highlight region immediately", async () => {
     const fake = makeEditor();
     const handle = animateCanvasActions(
       fake.editor,
-      [{ type: "text", position: { x: 0.25, y: 0.5 }, text: "Check this" }],
+      [{ type: "highlight", target: { x: 0.25, y: 0.5, width: 0.2, height: 0.1 } }],
       CONTEXT,
     );
 
-    expect(fake.created).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
     expect(fake.created).toHaveLength(1);
-    expect(JSON.stringify(fake.created[0])).not.toContain("Check this");
-
-    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fake.created[0]).toMatchObject({
+      type: "geo",
+      opacity: 0.28,
+      meta: { owner: "ai" },
+      props: { fill: "solid", color: "yellow" },
+    });
     await handle.done;
-    expect(fake.updated.length).toBeGreaterThan(1);
   });
 
   it("draws geometric feedback as progressive freehand strokes", async () => {
@@ -69,12 +70,32 @@ describe("animateCanvasActions", () => {
     expect(fake.updated.length).toBeGreaterThan(3);
   });
 
+  it("fades the settled check glyph in instead of drawing a different mark", async () => {
+    const fake = makeEditor();
+    const handle = animateCanvasActions(
+      fake.editor,
+      [{ type: "check", target: { x: 0.2, y: 0.2, width: 0.2, height: 0.2 } }],
+      CONTEXT,
+    );
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.created[0]).toMatchObject({
+      type: "text",
+      opacity: 0,
+      props: { color: "green", size: "l" },
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await handle.done;
+    expect(fake.updated.at(-1)).toMatchObject({ type: "text", opacity: 1 });
+  });
+
   it("cancels an in-flight reveal without leaving later actions running", async () => {
     const fake = makeEditor();
     const handle = animateCanvasActions(
       fake.editor,
       [
-        { type: "text", position: { x: 0.1, y: 0.1 }, text: "A long hint" },
+        { type: "circle", target: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
         { type: "check", target: { x: 0.2, y: 0.2, width: 0.2, height: 0.2 } },
       ],
       CONTEXT,

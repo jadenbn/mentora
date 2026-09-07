@@ -6,9 +6,12 @@ runs on a laptop with a single credential.
 
 from __future__ import annotations
 
+import pytest
+
 from app.config import (
     INDEXING_SETTINGS,
     REQUIRED_SETTINGS,
+    TranscriptionSettings,
     TutorSettings,
     cors_allow_origins,
     database_path,
@@ -45,10 +48,12 @@ def test_missing_settings_reports_names_never_values(monkeypatch):
 def test_settings_come_from_the_environment_with_usable_defaults(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "secret-test-key")
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_THINKING_LEVEL", raising=False)
     monkeypatch.delenv("TUTOR_REQUEST_TIMEOUT_SECONDS", raising=False)
     settings = TutorSettings.from_environment()
     assert settings.gemini_api_key == "secret-test-key"
     assert settings.gemini_model
+    assert settings.gemini_thinking_level == "low"
     assert settings.request_timeout_seconds > 0
 
 
@@ -66,9 +71,11 @@ def test_an_empty_override_falls_back_rather_than_sending_a_blank_model(monkeypa
     # `KEY=` in a .env file sets the variable to "", which defeats getenv's
     # default and would send an empty model id to the provider.
     monkeypatch.setenv("GEMINI_MODEL", "")
+    monkeypatch.setenv("GEMINI_THINKING_LEVEL", "")
     monkeypatch.setenv("TUTOR_REQUEST_TIMEOUT_SECONDS", "")
     settings = TutorSettings.from_environment()
     assert settings.gemini_model
+    assert settings.gemini_thinking_level == "low"
     assert settings.request_timeout_seconds > 0
 
 
@@ -80,6 +87,39 @@ def test_settings_repr_never_discloses_the_key(monkeypatch):
 def test_the_model_is_overridable_without_a_code_change(monkeypatch):
     monkeypatch.setenv("GEMINI_MODEL", "gemini-3-flash-preview")
     assert TutorSettings.from_environment().gemini_model == "gemini-3-flash-preview"
+
+
+def test_the_thinking_level_is_overridable_without_a_code_change(monkeypatch):
+    monkeypatch.setenv("GEMINI_THINKING_LEVEL", "HIGH")
+    assert TutorSettings.from_environment().gemini_thinking_level == "high"
+
+
+def test_an_unknown_thinking_level_is_rejected_early(monkeypatch):
+    monkeypatch.setenv("GEMINI_THINKING_LEVEL", "maximum")
+    with pytest.raises(ValueError, match="GEMINI_THINKING_LEVEL"):
+        TutorSettings.from_environment()
+
+
+def test_voice_defaults_to_the_dedicated_transcription_model(monkeypatch):
+    # A general multimodal model would need a prompt, a response schema, and a
+    # thinking budget back; the transcription model takes none of them.
+    monkeypatch.delenv("GEMINI_TRANSCRIPTION_MODEL", raising=False)
+    settings = TranscriptionSettings.from_environment()
+    assert settings.gemini_model == "gemini-3.5-transcribe"
+    assert settings.request_timeout_seconds > 0
+
+
+def test_the_transcription_model_is_overridable_without_a_code_change(monkeypatch):
+    monkeypatch.setenv("GEMINI_TRANSCRIPTION_MODEL", "gemini-3.5-transcribe-preview")
+    assert (
+        TranscriptionSettings.from_environment().gemini_model
+        == "gemini-3.5-transcribe-preview"
+    )
+
+
+def test_an_empty_transcription_override_falls_back(monkeypatch):
+    monkeypatch.setenv("GEMINI_TRANSCRIPTION_MODEL", "")
+    assert TranscriptionSettings.from_environment().gemini_model
 
 
 def test_cors_defaults_to_the_local_frontend(monkeypatch):
@@ -121,11 +161,17 @@ class TestApiKeyGate:
     def test_the_api_is_open_when_no_key_is_configured(self, monkeypatch):
         from fastapi.testclient import TestClient
 
+        from app.api.dependencies import get_course_repository
         from app.config import api_key
         from app.main import app
 
         monkeypatch.delenv("MENTORA_API_KEY", raising=False)
         assert api_key() is None
+        with get_course_repository().connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO courses (course_id, name, description, created_at, updated_at) "
+                "VALUES ('calc1', 'Calculus I', '', '2024-01-01', '2024-01-01')"
+            )
         with TestClient(app) as client:
             assert client.get("/health").status_code == 200
             assert client.get(
@@ -135,9 +181,15 @@ class TestApiKeyGate:
     def test_a_configured_key_is_required_on_api_routes(self, monkeypatch):
         from fastapi.testclient import TestClient
 
+        from app.api.dependencies import get_course_repository
         from app.main import app
 
         monkeypatch.setenv("MENTORA_API_KEY", "secret")
+        with get_course_repository().connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO courses (course_id, name, description, created_at, updated_at) "
+                "VALUES ('calc1', 'Calculus I', '', '2024-01-01', '2024-01-01')"
+            )
         with TestClient(app) as client:
             unauthorized = client.get(
                 "/api/courses/calc1/skills-overview", params={"student_id": "s"}

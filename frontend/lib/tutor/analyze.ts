@@ -17,6 +17,23 @@ import {
 import type { TutorMode, TutorResponse } from "@/types/tutor";
 import type { ProblemContext } from "@/types/domain";
 
+const IMAGE_URL_TTL_MS = 5 * 60 * 1_000;
+
+/** Log the exact blob sent in canvas_image without persisting it to disk. */
+function logSentImage(blob: Blob): void {
+  if (
+    process.env.NODE_ENV === "production" ||
+    typeof URL === "undefined" ||
+    typeof URL.createObjectURL !== "function"
+  ) {
+    return;
+  }
+  const imageUrl = URL.createObjectURL(blob);
+  console.log("[tutor] image sent for Gemini analysis");
+  console.log(imageUrl);
+  setTimeout(() => URL.revokeObjectURL(imageUrl), IMAGE_URL_TTL_MS);
+}
+
 export class EmptyCanvasError extends Error {
   constructor() {
     super("There is nothing on the canvas to analyze yet.");
@@ -29,6 +46,8 @@ export interface TutorAnalysisOptions {
   mode: TutorMode;
   courseId: string;
   problem?: ProblemContext;
+  /** What the student asked out loud, when they used the microphone. */
+  transcript?: string;
   signal?: AbortSignal;
   /** Supplied for a skill-attributed problem, so the server can record. */
   studentId?: string;
@@ -39,6 +58,12 @@ export interface TutorAnalysisOptions {
     actions: TutorResponse["canvas_actions"],
     context: RenderContext,
   ) => void | Promise<void>;
+  /** Called when the provider response arrives, before presentation animation. */
+  onResponse?: (
+    response: TutorResponse,
+    context: RenderContext,
+    snapshot: unknown,
+  ) => void;
 }
 
 export async function runTutorAnalysis(
@@ -46,6 +71,7 @@ export async function runTutorAnalysis(
 ): Promise<TutorResponse> {
   const { editor, problem, studentId, sessionId } = options;
   const renderActions = options.renderActions ?? renderCanvasActions;
+  const snapshot = editor.getSnapshot().document;
 
   // A canvas holding only the tutor's own earlier feedback has nothing of the
   // student's left to analyze, even though the page is not empty.
@@ -60,27 +86,33 @@ export async function runTutorAnalysis(
     // requires an image, so this path never records an attempt either way.
     const bounds = editor.getCurrentPageBounds() ?? editor.getViewportPageBounds();
     const response = await analyzeCanvas({
-      courseId: options.courseId,
       mode: options.mode,
+      courseId: options.courseId,
       priorAnnotations: collectPriorAnnotations(editor, bounds),
       problem,
+      transcript: options.transcript,
       signal: options.signal,
     });
-    await renderActions(editor, response.canvas_actions, {
+    const context = {
       bounds,
       interactionId: response.interaction_id,
-    });
+    };
+    options.onResponse?.(response, context, snapshot);
+    await renderActions(editor, response.canvas_actions, context);
     return response;
   }
 
+  logSentImage(capture.blob);
   const priorAnnotations = collectPriorAnnotations(editor, capture.bounds);
 
   // A skill-attributed problem goes through /work: the tutor grades and the
   // server records the attempt in one round trip. The browser deciding
   // `correct` for itself was the reason mastery could be forged. What the
-  // server recorded is not surfaced here -- the engine has no UI.
+  // server recorded is not surfaced here -- the engine has no UI. Voice
+  // input has no server-recording counterpart yet, so it still goes through
+  // analyzeCanvas even for an attributed problem.
   const response =
-    problem?.skill && studentId && sessionId
+    problem?.skill && studentId && sessionId && !options.transcript
       ? await submitWork({
           courseId: options.courseId,
           studentId,
@@ -97,13 +129,16 @@ export async function runTutorAnalysis(
           canvasImage: capture.blob,
           priorAnnotations,
           problem,
+          transcript: options.transcript,
           signal: options.signal,
         });
 
-  await renderActions(editor, response.canvas_actions, {
+  const context = {
     bounds: capture.bounds,
     interactionId: response.interaction_id,
-  });
+  };
+  options.onResponse?.(response, context, snapshot);
+  await renderActions(editor, response.canvas_actions, context);
 
   return response;
 }

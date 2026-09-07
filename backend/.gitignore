@@ -13,3 +13,4 @@ test_data/
 *.db
 *.db-wal
 *.db-shm
+*.sqlite3

@@ -16,6 +16,10 @@ export function box(x: number, y: number, w: number, h: number): Box {
 export interface FakeShape {
   id: string;
   type: string;
+  x?: number;
+  y?: number;
+  isLocked?: boolean;
+  opacity?: number;
   meta?: Record<string, unknown>;
   props?: Record<string, unknown>;
   pageBounds?: Box | null;
@@ -24,7 +28,6 @@ export interface FakeShape {
 export interface FakeEditorOptions {
   shapes?: FakeShape[];
   pageBounds?: Box | null;
-  shapesBounds?: Box | null;
   viewport?: Box | null;
   zoom?: number;
   image?: { blob: Blob; width: number; height: number } | null;
@@ -42,7 +45,6 @@ export function makeEditor(options: FakeEditorOptions = {}): FakeEditor {
   const {
     shapes = [],
     pageBounds = box(0, 0, 1000, 800),
-    shapesBounds = pageBounds,
     viewport = box(-50, -25, 500, 400),
     zoom = 1.5,
     image = { blob: new Blob(["png"], { type: "image/png" }), width: 800, height: 640 },
@@ -52,16 +54,23 @@ export function makeEditor(options: FakeEditorOptions = {}): FakeEditor {
   const created: TLShapePartial[] = [];
   const deleted: TLShapeId[] = [];
   const toImageCalls: { ids: TLShapeId[]; opts: Record<string, unknown> }[] = [];
+  let ignoreShapeLock = false;
 
   const editor = {
+    getSnapshot: () => ({ document: { shapes: [...store.keys()] } }),
     getCurrentPageShapeIds: () => new Set(store.keys()) as Set<TLShapeId>,
     getCurrentPageBounds: () => pageBounds,
-    getShapesPageBounds: () => shapesBounds,
     getViewportPageBounds: () => viewport,
     getZoomLevel: () => zoom,
     getShape: (id: TLShapeId) => store.get(id as string) as unknown as TLShape | undefined,
     getShapePageBounds: (shape: TLShape) =>
       (store.get((shape as unknown as FakeShape).id)?.pageBounds ?? null) as Box,
+    run: (fn: () => void, options?: { ignoreShapeLock?: boolean }) => {
+      const previousIgnoreShapeLock = ignoreShapeLock;
+      ignoreShapeLock = options?.ignoreShapeLock ?? previousIgnoreShapeLock;
+      fn();
+      ignoreShapeLock = previousIgnoreShapeLock;
+    },
     toImage: vi.fn(async (ids: TLShapeId[], opts: Record<string, unknown>) => {
       toImageCalls.push({ ids: [...ids], opts });
       return image;
@@ -72,16 +81,23 @@ export function makeEditor(options: FakeEditorOptions = {}): FakeEditor {
         store.set(p.id as string, {
           id: p.id as string,
           type: p.type as string,
+          x: p.x,
+          y: p.y,
+          isLocked: p.isLocked,
+          opacity: p.opacity,
           meta: p.meta as Record<string, unknown>,
+          props: p.props as Record<string, unknown>,
         });
       }
     },
-    createShape: (partial: TLShapePartial) => {
-      created.push(partial);
+    updateShape: (partial: TLShapePartial) => {
+      const current = store.get(partial.id as string);
+      if (!current || (current.isLocked && !ignoreShapeLock)) return;
       store.set(partial.id as string, {
-        id: partial.id as string,
-        type: partial.type as string,
-        meta: partial.meta as Record<string, unknown>,
+        ...current,
+        ...partial,
+        meta: { ...current.meta, ...(partial.meta as Record<string, unknown>) },
+        props: { ...current.props, ...(partial.props as Record<string, unknown>) },
       });
     },
     deleteShapes: (ids: TLShapeId[]) => {

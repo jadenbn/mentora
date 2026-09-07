@@ -18,42 +18,42 @@ class TestUncertainWork:
     def test_uncertain_work_is_never_marked_correct_or_incorrect(self):
         plan = f.plan(
             status=WorkStatus.uncertain,
-            actions=[f.check_action(), f.cross_action(), f.text_action()],
+            actions=[f.check_action(), f.cross_action(), f.highlight_action()],
         )
         result = apply_safety_policy(plan)
-        assert f.action_types(result.canvas_actions) == ["text"]
+        assert f.action_types(result.canvas_actions) == ["highlight"]
+        assert "rewrite" in result.summary
 
     def test_uncertain_work_still_gets_a_way_forward(self):
         # Stripping the marks must not leave the student staring at nothing.
         plan = f.plan(status=WorkStatus.uncertain, actions=[f.check_action()])
         result = apply_safety_policy(plan)
-        assert f.action_types(result.canvas_actions) == ["text"]
-        assert result.canvas_actions[0].text
+        assert result.canvas_actions == []
+        assert result.summary
 
-    def test_the_clarification_request_lands_on_the_canvas(self):
+    def test_the_clarification_request_lands_in_the_summary(self):
         plan = f.plan(status=WorkStatus.uncertain, actions=[])
-        action = apply_safety_policy(plan).canvas_actions[0]
-        assert 0 <= action.position.x <= 1
-        assert 0 <= action.position.y <= 1
+        assert "rewrite" in apply_safety_policy(plan).summary
 
-    def test_a_clarification_is_not_added_when_the_tutor_already_spoke(self):
+    def test_uncertainty_always_uses_a_safe_summary(self):
         plan = f.plan(
             status=WorkStatus.uncertain,
-            actions=[f.text_action(text="Which step did you mean?")],
+            actions=[f.highlight_action()],
+            summary="Which step did you mean?",
         )
         result = apply_safety_policy(plan)
         assert len(result.canvas_actions) == 1
-        assert result.canvas_actions[0].text == "Which step did you mean?"
+        assert "rewrite" in result.summary
 
 
 class TestConfidentWork:
     def test_a_confident_plan_passes_through_untouched(self):
         plan = f.plan(
             status=WorkStatus.incorrect,
-            actions=[f.cross_action(), f.text_action()],
+            actions=[f.cross_action(), f.highlight_action()],
         )
         result = apply_safety_policy(plan)
-        assert f.action_types(result.canvas_actions) == ["cross", "text"]
+        assert f.action_types(result.canvas_actions) == ["cross", "highlight"]
 
     def test_marks_survive_where_the_tutor_is_still_grading(self):
         for status in (WorkStatus.incorrect, WorkStatus.partial):
@@ -70,14 +70,13 @@ class TestNamedUncertainty:
         plan = f.plan(status=WorkStatus.correct, uncertainties=[f.uncertainty()])
         assert apply_safety_policy(plan).status is WorkStatus.uncertain
 
-    def test_the_question_lands_on_the_symbol_it_is_about(self):
+    def test_the_summary_names_the_symbol_it_is_about(self):
         plan = f.plan(
             status=WorkStatus.partial,
             actions=[],
             uncertainties=[f.uncertainty(x=0.7, y=0.2)],
         )
-        action = apply_safety_policy(plan).canvas_actions[0]
-        assert (action.position.x, action.position.y) == (0.7, 0.2)
+        assert "rewrite" in apply_safety_policy(plan).summary
 
     def test_the_question_names_the_symbol(self):
         plan = f.plan(
@@ -85,7 +84,7 @@ class TestNamedUncertainty:
             actions=[],
             uncertainties=[f.uncertainty(description="The exponent is unclear.")],
         )
-        assert "exponent" in apply_safety_policy(plan).canvas_actions[0].text
+        assert "exponent" in apply_safety_policy(plan).summary
 
     def test_marks_are_still_stripped_when_a_symbol_is_unreadable(self):
         plan = f.plan(
@@ -97,7 +96,7 @@ class TestNamedUncertainty:
 
     def test_an_unnamed_uncertainty_still_asks_something(self):
         plan = f.plan(status=WorkStatus.uncertain, actions=[])
-        assert apply_safety_policy(plan).canvas_actions[0].text
+        assert apply_safety_policy(plan).summary
 
 
 class TestCompletedWork:
@@ -118,15 +117,7 @@ class TestCompletedWork:
     def test_completed_work_is_confirmed_in_words(self):
         plan = f.plan(status=WorkStatus.correct, actions=[], summary="Nicely done.")
         result = apply_safety_policy(plan)
-        assert result.canvas_actions[-1].text == "Nicely done."
-
-    def test_the_confirmation_lands_where_the_tutor_was_speaking(self):
-        plan = f.plan(
-            status=WorkStatus.correct,
-            actions=[f.text_action(text="all good")],
-        )
-        action = apply_safety_policy(plan).canvas_actions[-1]
-        assert (action.position.x, action.position.y) == (0.4, 0.3)
+        assert result.summary == "Nicely done."
 
     def test_a_correct_verdict_survives_as_correct(self):
         assert apply_safety_policy(f.plan(status=WorkStatus.correct)).status is WorkStatus.correct
@@ -143,13 +134,12 @@ class TestActionBudget:
         assert len(result.canvas_actions) == MAX_ACTIONS
 
     def test_truncation_keeps_the_earliest_actions(self):
-        actions = [f.text_action(text=f"step {i}") for i in range(MAX_ACTIONS + 3)]
+        actions = [f.circle_action() for _ in range(MAX_ACTIONS + 3)]
         result = apply_safety_policy(f.plan(actions=actions))
-        assert result.canvas_actions[0].text == "step 0"
-        assert result.canvas_actions[-1].text == f"step {MAX_ACTIONS - 1}"
+        assert len(result.canvas_actions) == MAX_ACTIONS
 
     def test_a_plan_within_budget_is_not_padded(self):
-        result = apply_safety_policy(f.plan(actions=[f.text_action()]))
+        result = apply_safety_policy(f.plan(actions=[f.highlight_action()]))
         assert len(result.canvas_actions) == 1
 
 

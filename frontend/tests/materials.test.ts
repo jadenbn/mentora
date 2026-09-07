@@ -11,11 +11,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/lib/api/api", () => ({
+  createSpace: mocks.createSpace,
   generateCourseQuestion: mocks.generate,
   listCourseDocuments: mocks.list,
   uploadCourseDocument: vi.fn(),
 }));
-vi.mock("@/lib/spaces/store", () => ({ createSpace: mocks.createSpace }));
 vi.mock("@/lib/student/identity", () => ({ getStudentId: () => "stu_1" }));
 
 import { CourseMaterials } from "@/features/materials/CourseMaterials";
@@ -51,7 +51,7 @@ describe("course-material question request", () => {
       source: "generated",
       prompt: "Question",
     });
-    mocks.createSpace.mockReturnValue({ id: "space_1" });
+    mocks.createSpace.mockResolvedValue({ id: "space_1" });
     await act(async () => {
       root.render(createElement(CourseMaterials, { courseId: "course_1" }));
     });
@@ -96,11 +96,10 @@ describe("course-material question request", () => {
       "doc_1",
       "A difficult conceptual question",
     );
-    expect(mocks.createSpace).toHaveBeenCalledWith(
-      "course_1",
-      "Practice — lecture",
-      expect.objectContaining({ course_id: "course_1" }),
-    );
+    expect(mocks.createSpace).toHaveBeenCalledWith("course_1", {
+      title: "Practice — lecture",
+      problem_id: "problem_1",
+    });
     expect(mocks.push).toHaveBeenCalledWith("/spaces/space_1");
   });
 });

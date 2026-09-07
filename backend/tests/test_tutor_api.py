@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.api.tutor import get_tutor_service
 from app.main import app
+from app.schemas.voice import MAX_TRANSCRIPT_CHARS
 from app.services.tutor_service import TutorService
 from tests import factories as f
 
@@ -139,6 +140,47 @@ class TestRequestValidation:
             "prompt": "Question",
         }
         assert post(client, problem_context=json.dumps(problem)).status_code == 422
+
+
+class TestSpokenContext:
+    """Voice is an optional extra input, never a second request path."""
+
+    def test_a_request_without_a_transcript_still_works(self, client, workflow):
+        assert post(client).status_code == 200
+        assert workflow.last_call["transcript"] is None
+
+    def test_a_spoken_question_reaches_the_workflow(self, client, workflow):
+        post(client, transcript="why can't I cancel the x here?")
+        assert workflow.last_call["transcript"] == "why can't I cancel the x here?"
+
+    def test_a_spoken_question_is_normalized_before_it_is_forwarded(self, client, workflow):
+        post(client, transcript="  why   is\n this wrong? ")
+        assert workflow.last_call["transcript"] == "why is this wrong?"
+
+    @pytest.mark.parametrize("blank", ["   ", "\n\t "])
+    def test_a_transcript_with_no_words_in_it_is_rejected(self, client, workflow, blank):
+        # Sending it would spend a model call telling the tutor nothing.
+        assert post(client, transcript=blank).status_code == 422
+        assert workflow.calls == []
+
+    def test_an_empty_form_value_is_indistinguishable_from_not_speaking(
+        self, client, workflow
+    ):
+        # FastAPI collapses an empty form field to the field's default, so this
+        # is the one blank the route cannot see. Degrading to a plain analysis
+        # is the safe reading of it.
+        assert post(client, transcript="").status_code == 200
+        assert workflow.last_call["transcript"] is None
+
+    def test_an_oversized_transcript_is_rejected_before_it_reaches_a_provider(
+        self, client, workflow
+    ):
+        assert post(client, transcript="a" * (MAX_TRANSCRIPT_CHARS + 1)).status_code == 422
+        assert workflow.calls == []
+
+    def test_a_transcript_at_the_cap_is_accepted(self, client, workflow):
+        assert post(client, transcript="a" * MAX_TRANSCRIPT_CHARS).status_code == 200
+        assert len(workflow.last_call["transcript"]) == MAX_TRANSCRIPT_CHARS
 
 
 class TestImageHandling:

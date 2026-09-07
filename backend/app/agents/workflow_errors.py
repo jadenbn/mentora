@@ -27,9 +27,12 @@ class QuestionWorkflowTimeout(QuestionWorkflowError):
     """The provider did not generate a question in time."""
 
 
-class TaxonomyWorkflowError(RuntimeError):
-    """Skill-taxonomy generation failed without exposing provider details."""
+class TranscriptionWorkflowError(RuntimeError):
+    """Speech could not be turned into a transcript.
+
+    Carries no provider text, for the same reason TutorWorkflowError does not.
+    """
 
 
-class TaxonomyWorkflowTimeout(TaxonomyWorkflowError):
-    """The provider did not generate a taxonomy in time."""
+class TranscriptionWorkflowTimeout(TranscriptionWorkflowError):
+    """The provider did not transcribe in time."""

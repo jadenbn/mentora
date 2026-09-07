@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
-from app.api.dependencies import get_session
+from app.api.dependencies import get_session, require_course
 from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.engine.schemas import AttemptCreate, AttemptResult
@@ -36,6 +36,7 @@ def import_skills(
     course_id: str,
     payload: TaxonomyPlan,
     session: Session = Depends(get_session),
+    _course=Depends(require_course),
 ) -> dict:
     """Post a raw topic batch straight into a course.
 
@@ -60,6 +61,7 @@ def create_synthetic_attempt(
     course_id: str,
     payload: AttemptCreate,
     session: Session = Depends(get_session),
+    _course=Depends(require_course),
 ):
     """Record an attempt from an explicitly stated outcome. Dev only.
 
@@ -87,6 +89,7 @@ def preview_next_topic(
     course_id: str,
     student_id: str,
     session: Session = Depends(get_session),
+    _course=Depends(require_course),
 ) -> dict:
     """What pick_topic would choose right now, without serving it.
 
@@ -109,6 +112,7 @@ def simulate_course(
     questions_each: int = Query(default=24, ge=1, le=200),
     seed: int = 0,
     session: Session = Depends(get_session),
+    _course=Depends(require_course),
 ) -> dict:
     """Replay the selection policy against synthetic students. Dev only.
 
