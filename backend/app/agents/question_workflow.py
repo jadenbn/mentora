@@ -61,7 +61,10 @@ class GeminiQuestionWorkflow:
             system_instruction=QUESTION_INSTRUCTION,
             response_mime_type="application/json",
             response_schema=QUESTION_PLAN_RESPONSE_SCHEMA,
-            max_output_tokens=6_144,
+            # One skill entry, not four. The prompt itself can still run to
+            # 8,000 chars, so this stays well above what a question plus one
+            # skill needs rather than dropping back to main's 2,048.
+            max_output_tokens=4_096,
             temperature=0.7,
             thinking_config=types.ThinkingConfig(
                 thinking_level=as_thinking_level(self.thinking_level)

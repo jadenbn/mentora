@@ -10,6 +10,7 @@ from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import GroundingChunk, QuestionPlan
+from app.schemas.taxonomy import RawSkillEntry
 from app.services import attribution
 from app.services.question_service import (
     ContextRetrievalError,
@@ -44,10 +45,16 @@ class StubQuestionWorkflow:
 
     async def run(self, **kwargs):
         self.calls.append(kwargs)
-        return QuestionPlan(
+        # model_construct, not the validating constructor: the wire schema
+        # caps the model at one skill, and that cap is tested against the real
+        # adapter in test_question_workflow.py. These tests are about what
+        # _attribute_skills does with whatever list reaches it, including the
+        # multi-entry lists that still occur once a required skill is added,
+        # so they must not be re-validated here.
+        return QuestionPlan.model_construct(
             prompt="Differentiate a nested function.",
             grounding_chunk_ids=[self.chunk_id],
-            skills=self.skills,
+            skills=[RawSkillEntry.model_validate(s) for s in self.skills],
         )
 
 
@@ -251,7 +258,10 @@ def test_a_differently_worded_name_resolves_to_the_same_topic(tmp_path, session)
     assert session.get(Skill, "course_1.the-chain-rule") is None
 
 
-def test_generation_attributes_every_existing_skill_the_model_names(tmp_path, session):
+def test_attribution_resolves_every_entry_in_a_multi_skill_list(tmp_path, session):
+    """The wire schema caps the model at one skill, but a problem can still
+    carry two attributions once a required skill leads the list, so the
+    resolver has to handle more than one entry."""
     _existing_skill(session, "course_1.chain-rule", name="Chain rule")
     _existing_skill(session, "course_1.product-rule", name="Product rule")
     repo = seeded_repo(tmp_path)

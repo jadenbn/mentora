@@ -70,10 +70,15 @@ def test_persistently_invalid_source_ids_fail_closed():
     assert workflow.attempts == 2
 
 
-def test_more_than_four_skills_is_rejected():
-    five = [{**VALID_SKILL, "id": f"s{i}"} for i in range(5)]
+def test_more_than_one_skill_is_rejected():
+    """record_attempt scores expected_skills[0] and nothing else, so a second
+    skill costs output tokens and moves no estimate. Capped on the wire schema
+    rather than trimmed after parsing, so an over-eager response spends the
+    repair attempt instead of being silently truncated to whichever skill the
+    model happened to list first."""
+    two = [VALID_SKILL, {**VALID_SKILL, "id": "second", "name": "Second"}]
     workflow = Harness([
-        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": five},
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": two},
         {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [VALID_SKILL]},
     ])
     result = asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
@@ -135,4 +140,4 @@ def test_direct_request_sends_grounding_and_schema_configuration(monkeypatch):
     assert "moderate" not in request_block
     assert call["config"].response_schema == QUESTION_PLAN_RESPONSE_SCHEMA
     assert "Wrap inline mathematics" in call["config"].system_instruction
-    assert "identify every skill it exercises" in call["config"].system_instruction
+    assert "identify the single skill it mainly exercises" in call["config"].system_instruction

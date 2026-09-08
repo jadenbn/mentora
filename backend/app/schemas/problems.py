@@ -51,15 +51,22 @@ class GroundedProblem(StrictModel):
 class QuestionPlan(StrictModel):
     """Provider output before source IDs have been verified by the workflow.
 
-    skills: every skill this question exercises, usually one but sometimes a
-    few for a composite problem. Each entry either names an existing course
-    skill (by id, offered as context) or names a new one -- see
-    QuestionService._attribute_skills for how each is resolved.
+    skills: the one skill this question exercises. Either names an existing
+    course skill (by id, offered as context) or names a new one -- see
+    QuestionService._attribute_skills for how it is resolved.
+
+    A list of exactly one rather than a bare object, because it is written
+    straight into ProblemSkill, which is genuinely ordered and multi-row: a
+    problem can still end up with two attributions when selection required a
+    topic and the model's own read named a different one. What changed is
+    that the *model* no longer proposes more than one. It used to be allowed
+    up to four, and record_attempt scores only expected_skills[0], so entries
+    past the first cost output tokens and bought nothing.
     """
 
     prompt: str = Field(min_length=1, max_length=8_000)
     grounding_chunk_ids: list[str] = Field(min_length=1, max_length=8)
-    skills: list[RawSkillEntry] = Field(min_length=1, max_length=4)
+    skills: list[RawSkillEntry] = Field(min_length=1, max_length=1)
 
 
 class AttributedSkill(StrictModel):
