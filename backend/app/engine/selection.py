@@ -67,16 +67,22 @@ def _staleness(state: SkillState, now: datetime, strength: float) -> float:
     return min(days_since(state.last_seen, now) / cap, 1.0)
 
 
-def _target_difficulty(skill: Skill, state: SkillState | None) -> float:
-    """How hard to write. An untouched topic is written at the difficulty its
-    taxonomy entry claims; after that, at the student's own estimate.
+def target_difficulty(recent_outcomes: list[float]) -> float:
+    """How hard to write: the student's own estimate for the topic, clamped.
+
+    An untouched topic reads at the prior, so its first question is written
+    at "moderate". `difficulty_band` deliberately plays no part: the
+    generator only ever sees the word from `difficulty_bucket`, and it reads
+    that word relative to the topic the request names ("a challenging
+    question on the chain rule"). The band is how advanced the topic is
+    within the course, so folding it in counted the topic's hardness twice,
+    and a correct first answer on a high-band topic *lowered* the next
+    question's difficulty.
 
     There is no `mastery + offset` productive-struggle term: the estimate
     already sits where a residual estimator's fixed point would.
     """
-    if state is None or not state.recent_outcomes:
-        return skill.difficulty_band
-    return min(max(estimated_accuracy(state.recent_outcomes), DIFFICULTY_FLOOR), DIFFICULTY_CEIL)
+    return min(max(estimated_accuracy(recent_outcomes), DIFFICULTY_FLOOR), DIFFICULTY_CEIL)
 
 
 def _recently_served(states: list[SkillState], limit: int) -> set[str]:
@@ -129,16 +135,18 @@ def pick_topic(
         return base - (W_RECENCY_PENALTY if skill.id in recent else 0.0)
 
     def rank(skill: Skill) -> tuple[float, float]:
-        # Ties break toward the easier topic -- on a student's first
-        # question every topic scores exactly W_COVERAGE.
+        # Ties break toward the less advanced topic -- on a student's first
+        # question every topic scores exactly W_COVERAGE. This ordering is
+        # the only thing difficulty_band is used for.
         return (priority(skill), -skill.difficulty_band)
 
     chosen = max(skills, key=rank)
+    chosen_state = state_by_id.get(chosen.id)
     return TopicPick(
         skill_id=chosen.id,
         skill_name=chosen.name,
         skill_description=chosen.description,
-        target_difficulty=_target_difficulty(chosen, state_by_id.get(chosen.id)),
+        target_difficulty=target_difficulty(chosen_state.recent_outcomes if chosen_state else []),
         question_forms=list(chosen.question_forms),
     )
 

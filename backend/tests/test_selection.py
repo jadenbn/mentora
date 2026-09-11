@@ -14,6 +14,7 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.models.skill import Skill
+from app.engine.accuracy import PRIOR_ACCURACY
 from app.engine.models.skill_state import SkillState
 from app.engine import selection
 
@@ -172,14 +173,30 @@ def test_difficulty_tracks_the_estimate(session):
     assert topic.target_difficulty == pytest.approx(4.5 / 7)
 
 
-def test_an_untouched_topic_is_written_at_its_authored_band(session):
-    """The taxonomy already says how hard the topic is. Ignoring that and
-    defaulting to 0.5 threw away the only cold-start prior on offer."""
+def test_an_untouched_topic_is_written_at_the_prior_whatever_its_band(session):
+    """difficulty_band is the topic's place in the course, not a question
+    difficulty. The generator reads the difficulty word relative to the
+    topic, so a first question is "moderate for this topic" everywhere."""
     _skill(session, "calc1.hard", difficulty_band=0.8)
     session.commit()
 
     topic = selection.pick_topic(session, "calc1", "stu1")
-    assert topic.target_difficulty == pytest.approx(0.8)
+    assert topic.target_difficulty == pytest.approx(PRIOR_ACCURACY)
+
+
+def test_a_correct_answer_never_lowers_the_next_difficulty(session):
+    """The regression the band used to cause: a first question on a band-0.8
+    topic was written at 0.8, one correct answer moved the estimate to 0.67,
+    and the student was served an easier question for getting it right."""
+    _skill(session, "calc1.hard", difficulty_band=0.8)
+    session.commit()
+    first = selection.pick_topic(session, "calc1", "stu1").target_difficulty
+
+    _state(session, "calc1.hard", recent_outcomes=[1.0], attempts=1, days_ago=0)
+    session.commit()
+    after = selection.pick_topic(session, "calc1", "stu1").target_difficulty
+
+    assert after > first
 
 
 def test_a_topic_gone_stale_under_an_explicit_clock_outranks_a_freshly_seen_one(session):

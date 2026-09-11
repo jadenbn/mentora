@@ -19,11 +19,13 @@ from app.engine.schemas import (
 )
 from app.services import attribution
 from app.engine.accuracy import (
+    difficulty_bucket,
     estimated_accuracy,
     observed_accuracy,
     push_outcome,
     score_attempt,
 )
+from app.engine.selection import target_difficulty
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +196,7 @@ def get_skills_overview(
         created_at = skill.created_at
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=timezone.utc)
+        target = target_difficulty(outcomes)
 
         out.append(
             SkillOverviewOut(
@@ -208,6 +211,8 @@ def get_skills_overview(
                 is_recent=(now - created_at) <= RECENT_SKILL_WINDOW,
                 observed=observed_accuracy(outcomes),
                 estimate=estimated_accuracy(outcomes),
+                target_difficulty=target,
+                difficulty_word=difficulty_bucket(target),
                 attempts=state.attempts if state else 0,
                 last_served=state.last_served if state else None,
             )

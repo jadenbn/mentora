@@ -58,6 +58,11 @@ class SkillOverviewOut(StrictModel):
     observed: float | None
     #: What the engine acts on: the same mean shrunk toward the prior.
     estimate: float
+    #: What the next question on this topic would be written at: the
+    #: estimate clamped to selection's range, and the word the generator
+    #: receives for it. Exactly what pick_topic would hand generation.
+    target_difficulty: float
+    difficulty_word: str
     attempts: int
     last_served: datetime | None
 

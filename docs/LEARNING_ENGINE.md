@@ -167,7 +167,9 @@ course-prefixed and normalized (`calc1.derivatives.chain-rule`, or
 `course_a1b2c3....chain-rule` for a UUID-named course — see ARCHITECTURE.md
 §47.4). No prerequisite field — topics are flat. Carries `keywords`
 (retrieval vocabulary), `question_forms` (§5), `difficulty_band`, and
-`origin`. `origin` defaults to `seed` on the model, but every topic actually
+`origin`. Despite its name, `difficulty_band` is how advanced the topic is
+within the course, not a question difficulty. Its only use is ordering
+untried topics (§6), and the dashboard labels it "course level". `origin` defaults to `seed` on the model, but every topic actually
 created today goes through the piggyback or the dev import route, both of
 which stamp `generated` explicitly — there is no seed file left to produce a
 `seed`-origin row.
@@ -339,7 +341,8 @@ An earlier, gated version of this scored "never attempted" staleness at a
 full 1.0 — a term meaning "decayed since practice" — so an untouched topic
 beat a topic the student was actively failing. Novelty beat remediation,
 always. Ties break toward lower `difficulty_band`, so a cold student starts at
-the easiest topic rather than wherever the query happened to order the rows.
+the least advanced topic rather than wherever the query happened to order the
+rows. That tie-break is the band's only job.
 
 **Where `W_COVERAGE` sits, and why it moved.** It is placed deliberately
 between two weakness scores: above a topic the student is doing fine on
@@ -363,9 +366,23 @@ abandoned left no trace at all — so the engine re-served that topic forever,
 to exactly the student who was bouncing off it. Reading `last_served` also
 means secondary skills no longer dodge the penalty, and it removes a query.
 
-**Difficulty** — an untouched topic is written at the `difficulty_band` its
-taxonomy entry claims; after that, at the student's own estimate for it,
-clamped to `[0.15, 0.85]`. There is no `mastery + offset` productive-struggle
+**Difficulty** — `target_difficulty` is the student's own estimate for the
+topic, clamped to `[0.15, 0.85]`. An untouched topic reads at the 0.5 prior,
+so every topic's first question is `moderate`.
+
+`difficulty_band` used to set that first question, and it was wrong in two
+ways. First, it counted the topic's hardness twice. The generator sees only
+the word from `difficulty_bucket`, never the number, and the request names
+the topic, so it reads "challenging" relative to that topic. A band-0.8
+topic's first question was therefore a hard question on an already-advanced
+topic. Second, it disagreed with the estimate: the estimate is shrunk toward
+0.5, not toward the band, so one correct answer on a band-0.8 topic moved the
+estimate to 0.67 and served an *easier* question for getting it right.
+Pulling the estimate toward the band instead would have fixed that and broken
+selection: the weakness weights assume a 0.5 prior, and a failed band-0.8
+topic would have read as 0.53, too strong to be revisited.
+
+There is no `mastery + offset` productive-struggle
 formula — the estimate already sits where a residual estimator's fixed point
 would. One consequence worth stating plainly: **a student who improves is
 served harder questions at a similar score, rather than a rising score on the
@@ -494,7 +511,7 @@ Under `/api/courses/{course_id}`:
 | --- | --- |
 | `POST /questions/generate` | The one generation path. Engine consulted implicitly (§1). |
 | `POST /work` | Grade a canvas and record the attempt, or answer a hint and count it. Builds the learner context (§8). |
-| `GET /skills-overview` | Every topic with this student's observed accuracy and estimate. Dev dashboard only. |
+| `GET /skills-overview` | Every topic with this student's observed accuracy, estimate, and the target difficulty and word the next question would be generated at. Dev dashboard only. |
 
 `POST /work` records an attempt only when `mode=mark` and the tutor's status
 is not `uncertain`. A hint is not a graded attempt — it is counted and
@@ -672,7 +689,7 @@ migration will rewrite.
 Three surfaces, and they answer different questions.
 
 ```bash
-python -m pytest -q       # 389 passed, 2 skipped; must pass twice in a row.
+python -m pytest -q       # 397 passed, 2 skipped; must pass twice in a row.
                           # Never touches the developer's real mentora.db
                           # (see tests/conftest.py).
 ```
@@ -683,6 +700,11 @@ an unknown skill is refused, a repeat mark doesn't count twice.
 `GET /dev/dashboard` shows the **state**: the whole topic list, each topic's
 estimate beside its observed accuracy (the gap between the two columns is the
 confidence), when it was last served, and buttons to drive the loop by hand.
+The page labels the two as "estimated ability" and "observed ability". Under
+each estimate bar is the difficulty word the generator would be sent for that
+topic's next question. The "course level" column is `difficulty_band`.
+Synthetic attempts record the topic's target difficulty, the same value a
+real attempt would carry.
 "Preview next topic" runs the real `pick_topic` without serving it, so you can
 watch selection change as you record synthetic attempts.
 
@@ -697,30 +719,46 @@ policy to drift from the first and no synthetic student ever reaches
 | Metric | Should be |
 | --- | --- |
 | `coverage` | High. A flat pool has no wall; a low number means selection is grinding on a few topics. |
-| `difficulty_early` → `difficulty_late` | Rising. This is where growth shows up (§6). |
+| `difficulty_early` → `difficulty_late` | Rising, once each topic gets enough practice for the learner to improve. On a wide course over few questions it can sit flat. See below. |
 | `score_early` → `score_late` | Roughly level. A collapse means students are being pushed past what they can do. |
 | `repeat_rate` | Near zero. The recency penalty exists for this. |
-| `calibration` | Falling across introductory → moderate → challenging. Read the caveat below before trusting it. |
+| `calibration` | Not a verdict on anything. Read the caveat below. |
 
 `tests/test_simulation.py` pins these as directional assertions, so a
 regression in the policy fails the suite rather than waiting to be noticed.
 The learner model is crude and the absolute numbers mean little; the signal
 is how they *move* when a constant changes.
 
-**The calibration metric is confounded, and the test says so.** Difficulty is
-*defined* as the student's own estimate for the topic (§6), so a
-"challenging" question is by construction one served on a topic the student
-is already good at — the metric regresses score against a variable derived
-from the same quantity that predicts score. Asserting a strict ordering at
-one hardcoded seed is therefore closer to a coin flip than a measurement: on
-the suite's synthetic 15-topic course 1 seed in 11 inverts outright, and on
-the real `calc1` taxonomy an earlier review found 2 in 5.
-`test_harder_questions_produce_lower_scores_on_average_across_seeds` now
-sweeps seeds 1–11 and asserts on the average, which does not remove the
-confound but does answer a narrower honest question: does the intended
-direction dominate. It does — 0.60 → 0.54 → 0.34 across the three buckets.
-The real fix is for generation to report the difficulty it believes it wrote
-at, and to calibrate against the delta from the requested target.
+**The calibration metric is fully confounded, so nothing asserts on it.**
+Difficulty is *defined* as the student's own estimate for the topic (§6), so
+a "challenging" question is by construction one served on a topic the
+student is already good at. Bucketing scores by difficulty word just sorts
+weak students from strong ones. It used to read cleanly (0.60 → 0.54 → 0.34,
+averaged over seeds 1–11) only because first questions were written at
+`difficulty_band`, a difficulty independent of the student. That was the
+double-counting §6 removed, and with it gone the sweep reads 0.56 → 0.56.
+Even before, the simulator could not test the half that matters: its learner
+obeys the difficulty word by construction, so a flat result could never
+catch a generator that ignores it.
+
+What the suite pins instead is the half the engine owns:
+`test_stronger_students_are_served_harder_questions` checks that a strong
+cohort ends the run on harder questions than a struggling one (about 0.52
+vs 0.36). The real fix for the other half is for generation to report the
+difficulty it believes it wrote at, and to calibrate against the delta from
+the requested target.
+
+**Growth needs practice to show.** `difficulty_early` → `difficulty_late`
+compares a student's first third with their last third, across whatever
+topics those happened to be. On a wide course over few questions (12 topics,
+30 questions), each topic is seen two or three times, the learner barely
+improves, and the late third is mostly remediation on weak topics, so the
+curve sits flat or dips slightly. It rises once each topic gets enough
+practice: on 5 topics over 40 questions it gains at least +0.08 on every
+seed from 1 to 11. `test_growth_shows_up_as_harder_questions_not_higher_scores`
+runs that setup. Before §6's change it passed on the wide course for the
+wrong reason: cold students start on the lowest-band topics, which were
+written at their low band, so the early third was pinned low.
 
 **Spacing is opt-in.** By default every simulated attempt happens at the same
 virtual instant, matching every measurement this module has historically

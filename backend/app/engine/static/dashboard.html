@@ -50,6 +50,7 @@
     border-radius:5px; overflow:hidden; }
   .fill { position:absolute; inset:0 auto 0 0; border-radius:5px; }
   .pct { font-variant-numeric:tabular-nums; }
+  .word { color:var(--muted); font-size:11px; margin-top:3px; }
   .pill { font-size:11px; padding:2px 8px; border-radius:20px; font-weight:600; }
   .pill.seed { background:#242c38; color:var(--muted); }
   .pill.generated { background:#241f3d; color:var(--gen); }
@@ -118,25 +119,37 @@
       correct with a hint <code>0.6</code>, partial <code>0.3</code>, wrong
       <code>0.0</code>. That is <code>score_attempt</code> in
       <code>engine/accuracy.py</code>, and nothing else in the system is ever
-      scored. Every other number on this page averages those four values over
-      a topic's last 8 attempts.
+      scored. Every other number on this page except course level averages
+      those four values over a topic's last 8 attempts.
     </p>
     <p class="sub" style="margin:10px 0 0">
-      Two averages, and the gap between them is the point.
+      Two averages of those scores, and the gap between them is the point.
     </p>
     <ul class="sub" style="margin:4px 0 0">
-      <li><b>Observed score</b>. The raw mean, exactly what happened, or
+      <li><b>Observed ability</b>. The raw mean, exactly what happened, or
         <code>&mdash;</code> before the first attempt. Read it, but note that
         the engine never decides on it. Two attempts and eight attempts read
         the same here.</li>
-      <li><b>Estimated score</b>. The same mean pulled toward a 0.50
+      <li><b>Estimated ability</b>. The same mean pulled toward a 0.50
         no-evidence prior, so it always has a value and one lucky answer
         cannot swing it. <code>estimated_accuracy</code> adds 2
         pseudo-observations at 0.5, so a student's own record starts to
         outweigh the prior around their 3rd real attempt. <b>Selection acts
-        on this one.</b> It sets the difficulty served next and feeds the
-        weakness term in <code>pick_topic</code>. A wide gap from the
-        observed score means the student has few attempts, nothing more.</li>
+        on this one.</b> It feeds the weakness term in
+        <code>pick_topic</code> and sets the difficulty served next. A wide
+        gap from the observed ability means the student has few attempts,
+        nothing more.</li>
+      <li><b>The word under each bar</b> is what the question generator is
+        told for this topic's next question: <i>introductory</i> below 0.40,
+        <i>moderate</i> below 0.70, <i>challenging</i> above. The generator
+        never sees the number, only the word, and reads it relative to the
+        topic. An untried topic sits at 0.50, so its first question is
+        always <i>moderate</i>.</li>
+      <li><b>Course level</b> is how advanced the topic is within the course,
+        written by the model when it created the topic. It never changes and
+        does not set question difficulty. Its only job is ordering: on a
+        student's first question every topic ties, and the lowest course
+        level is served first.</li>
     </ul>
   </div>
   <div class="bar" id="stats" style="margin-top:18px"></div>
@@ -151,7 +164,11 @@
   </div>
   <table>
     <thead><tr>
-      <th>Topic</th><th>Origin</th><th>Estimated score</th><th>Observed score</th><th>Attempts</th><th>Diff.</th>
+      <th>Topic</th><th>Origin</th>
+      <th data-tip="What the engine believes, and what it acts on. The word underneath is the difficulty the generator is asked for on this topic's next question.">Estimated ability</th>
+      <th data-tip="Raw mean score over the last 8 attempts. Never used for a decision.">Observed ability</th>
+      <th>Attempts</th>
+      <th data-tip-right data-tip="How advanced the topic is within the course, set when the topic was created. Only orders untried topics, lowest first. Does not set question difficulty.">Course level</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
@@ -192,8 +209,8 @@
       <thead><tr>
         <th>Topic</th>
         <th data-tip="How many times anyone in the cohort was served this topic.">Served</th>
-        <th data-tip="Raw mean score over those attempts. A dash means nobody was ever served it, which is kept distinct from scoring 0.">Observed score</th>
-        <th data-tip-right data-tip="Where the engine's belief lands after the run, averaged over the cohort. A student never served the topic counts at the flat 0.50 prior, so lightly-served topics sit near 0.50 whatever happened. This is what the engine believes, never the synthetic student's hidden true ability.">Estimated score</th>
+        <th data-tip="Raw mean score over those attempts. A dash means nobody was ever served it, which is kept distinct from scoring 0.">Observed ability</th>
+        <th data-tip-right data-tip="Where the engine's belief lands after the run, averaged over the cohort. A student never served the topic counts at the flat 0.50 prior, so lightly-served topics sit near 0.50 whatever happened. This is what the engine believes, never the synthetic student's hidden true ability.">Estimated ability</th>
       </tr></thead>
       <tbody id="simSkillRows"></tbody>
     </table>
@@ -272,7 +289,7 @@ function render() {
     ['Topics', skills.length],
     ['Touched', seen.length],
     ['Coverage', skills.length ? (seen.length / skills.length * 100).toFixed(0) + '%' : '—'],
-    ['Avg observed score', avg === null ? '—' : avg.toFixed(2)],
+    ['Avg observed ability', avg === null ? '—' : avg.toFixed(2)],
   ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
 
   $('#rows').innerHTML = skills.map(s => {
@@ -280,11 +297,13 @@ function render() {
     const origin = `<span class="pill ${s.origin}">${s.origin}</span>` +
       (s.is_recent ? '<span class="badge-new" title="added in the last 15 minutes">new</span>' : '');
     // Two numbers on purpose. The API fields are `estimate` / `observed`;
-    // the page labels them "estimated score" / "observed score" so one
+    // the page labels them "estimated ability" / "observed ability" so one
     // vocabulary covers this table and the simulation report alike.
     // `estimate` is what selection acts on (the window shrunk toward the
     // prior), `observed` is the raw mean. They converge as attempts
-    // accumulate; the gap is the confidence.
+    // accumulate; the gap is the confidence. `difficulty_word` is computed
+    // server-side from the same function generation uses, so the page
+    // never restates the bucket boundaries.
     const observedText = s.observed === null ? '—' : s.observed.toFixed(2);
     const width = s.estimate * 100;
     return `<tr class="${cls.join(' ')}" data-id="${s.skill_id}">
@@ -292,7 +311,8 @@ function render() {
       <td>${origin}</td>
       <td><div style="display:flex;gap:8px;align-items:center">
         <div class="track"><div class="fill" style="width:${width.toFixed(0)}%;background:${accuracyColor(s.estimate)}"></div></div>
-        <span class="pct">${s.estimate.toFixed(2)}</span></div></td>
+        <span class="pct">${s.estimate.toFixed(2)}</span></div>
+        <div class="word">(${s.difficulty_word})</div></td>
       <td class="pct">${observedText}</td>
       <td class="pct">${s.attempts}</td>
       <td class="pct">${s.difficulty_band.toFixed(2)}</td>
@@ -338,7 +358,9 @@ async function attempt(kind) {
     session_id: 'dev-dashboard',
     problem_id: `dev_${s.skill_id}_${Date.now()}`,
     expected_skills: [s.skill_id],
-    difficulty: s.difficulty_band,
+    // What the engine would have asked for on this topic, the same value a
+    // real attempt records -- not the course level, which sets no difficulty.
+    difficulty: s.target_difficulty,
     correct: kind === 'correct',
     partial: kind === 'partial',
   };
@@ -452,12 +474,12 @@ async function runSimulation() {
     $('#simStats').innerHTML = [
       ['Coverage', (s.coverage * 100).toFixed(0) + '%',
         "Share of the course's topics the average student was served."],
-      ['Observed score', s.score_early.toFixed(2) + ' → ' + s.score_late.toFixed(2),
-        'Mean score over the first third of the run, then the last third. It should stay level rather than climb, because the difficulty served rises with the estimated score.'],
+      ['Observed ability', s.score_early.toFixed(2) + ' → ' + s.score_late.toFixed(2),
+        'Mean score over the first third of the run, then the last third. It should stay level rather than climb, because the difficulty served rises with the estimated ability.'],
       ['Difficulty', s.difficulty_early.toFixed(2) + ' → ' + s.difficulty_late.toFixed(2),
-        'The difficulty the engine asked for, 0 to 1, over the same first and last thirds.'],
+        'The difficulty the engine asked for, 0 to 1, over the same first and last thirds. Every first question on a topic is asked at 0.50, so the early third leans toward 0.50.'],
       ['Growth', (growth >= 0 ? '+' : '') + growth.toFixed(2),
-        'Late difficulty minus early. Positive means the engine pushed students harder as they improved. Level score plus positive growth is the shape you want.'],
+        'Late difficulty minus early. Positive means the engine pushed students harder as they improved. Level score plus positive growth is the shape you want. It needs repeated practice per topic to show: with many topics and few questions each one is seen two or three times and this sits near zero.'],
       ['Repeat rate', (s.repeat_rate * 100).toFixed(0) + '%',
         'Share of picks that served the same topic twice in a row.'],
     ].map(([l, n, tip]) =>

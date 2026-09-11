@@ -53,8 +53,17 @@ def test_growth_shows_up_as_harder_questions_not_higher_scores():
     estimate: the student is served harder material at a similar score,
     rather than scoring higher on the same material. Asserting the score
     climbs would be asserting the servo is broken.
+
+    Five topics over forty questions, so each topic is practised about eight
+    times -- enough for the synthetic learner to actually improve. On a wide
+    course a student sees each topic two or three times, learns little, and
+    the late third is mostly remediation on their weakest topics, so early
+    vs late compares different topics rather than one student getting
+    better. (This used to pass on a wide course only because first
+    questions were written at difficulty_band and cold students start on
+    the lowest bands, which pinned the early third low.)
     """
-    report = simulate(_course(12), students=12, questions_each=30)
+    report = simulate(_course(5), students=12, questions_each=40)
     assert report.difficulty_late > report.difficulty_early
     # And the engine is not pushing them past what they can do.
     assert report.score_late > 0.35
@@ -80,37 +89,25 @@ def test_the_engine_does_not_serve_the_same_topic_twice_in_a_row():
     assert report.repeat_rate < 0.05
 
 
-def test_harder_questions_produce_lower_scores_on_average_across_seeds():
-    """Difficulty calibration: the loop nothing used to close, measured
-    honestly instead of pinned to whichever seed happens to look clean.
+def test_stronger_students_are_served_harder_questions():
+    """The half of difficulty calibration the engine owns: the level it asks
+    for rises with ability.
 
-    `accuracy.difficulty_bucket` collapses a continuous target into three
-    words in a prompt. If the level being asked for never reaches the
-    student, this comes back flat -- but the metric is *confounded*, not
-    just noisy: difficulty is defined as the student's own estimate for the
-    topic (selection._target_difficulty), so a "challenging" question is by
-    construction one served on a topic the student is already good at. A
-    single seed asserted on its own is not a measurement of the policy; it
-    is a coin flip over which side of the confound that run landed on --
-    hand-checking seeds 1-11 here found the ordering inverted on 2 of them.
-    Averaging over the sweep does not remove the confound. It answers a
-    narrower, honest question: does the intended direction dominate on
-    average. It does, robustly, on the course this suite simulates -- see
-    docs/LEARNING_ENGINE.md and Horizon 1 of the engine review for the real
-    fix (report the difficulty generation believes it wrote at, and
-    calibrate against the delta from the target, rather than against the
-    target itself).
+    This replaced a test asserting that score falls across introductory ->
+    moderate -> challenging. That metric is fully confounded now:
+    difficulty is a pure function of the student's own estimate
+    (selection.target_difficulty), so bucketing scores by it just sorts weak
+    students from strong ones. It only ever read cleanly because first
+    questions were written at difficulty_band -- a difficulty independent of
+    the student -- and that is exactly the double-counting that was
+    removed. The other half, whether the generator honours the word it is
+    asked for, the simulator cannot test at all: its learner obeys the word
+    by construction. See docs/LEARNING_ENGINE.md §15 for the real fix
+    (generation reports the difficulty it believes it wrote at).
     """
-    names = ["introductory", "moderate", "challenging"]
-    totals: dict[str, list[float]] = {name: [] for name in names}
-    for seed in range(1, 12):
-        report = simulate(_course(15), students=14, questions_each=30, seed=seed)
-        for name, value in report.calibration.items():
-            totals[name].append(value)
-
-    averaged = [sum(totals[name]) / len(totals[name]) for name in names if totals[name]]
-    assert len(averaged) >= 2, "sweep never spanned two difficulty buckets"
-    assert averaged == sorted(averaged, reverse=True)
+    struggling = simulate(_course(15), profile="struggling", students=10, questions_each=30)
+    strong = simulate(_course(15), profile="strong", students=10, questions_each=30)
+    assert strong.difficulty_late > struggling.difficulty_late + 0.05
 
 
 def test_a_realistic_pace_lets_staleness_compete_with_coverage():
