@@ -7,6 +7,7 @@ startup logic that every other feature branch also touches.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -16,6 +17,11 @@ from app.api.dependencies import get_course_repository
 from app.engine.api.dev import router as dev_router
 from app.engine.api.learning import router as learning_router
 from app.db import init_db
+
+# uvicorn configures its own loggers but not the root one, so a module
+# logger's INFO would be dropped. Borrowing uvicorn.error puts this line
+# in the same stream, and format, as "Application startup complete".
+logger = logging.getLogger("uvicorn.error")
 
 
 def register_learning_engine(app: FastAPI) -> None:
@@ -31,4 +37,5 @@ async def learning_engine_lifespan(app: FastAPI) -> AsyncIterator[None]:
     # rather than inside it. Topics are never seeded here -- every course
     # starts with none and grows only through add_skills.
     get_course_repository()
+    logger.info("Dev dashboard: http://localhost:8000/dev/dashboard")
     yield
