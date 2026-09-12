@@ -14,6 +14,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSION = 1536
 _UPSERT_BATCH = 100
 _DELETE_BATCH = 1000
+_FETCH_BATCH = 100
 _EMBED_BATCH = 100
 
 _openai_client: OpenAI | None = None
@@ -71,6 +72,30 @@ def delete_document_vectors(document_id: str) -> int:
     return len(ids)
 
 
+def delete_course_vectors(course_id: str) -> int:
+    """Remove vectors for one course, including legacy vector-id formats."""
+    index = _get_index()
+    all_ids: list[str] = []
+    for page in index.list():
+        all_ids.extend(page)
+
+    doomed: list[str] = []
+    for start in range(0, len(all_ids), _FETCH_BATCH):
+        fetched = index.fetch(ids=all_ids[start : start + _FETCH_BATCH])
+        vectors = getattr(fetched, "vectors", None)
+        if vectors is None:
+            vectors = fetched["vectors"]
+        for vector_id, vector in vectors.items():
+            metadata = getattr(vector, "metadata", None)
+            if metadata is None:
+                metadata = vector["metadata"]
+            if (metadata or {}).get("course_id") == course_id:
+                doomed.append(vector_id)
+    for start in range(0, len(doomed), _DELETE_BATCH):
+        index.delete(ids=doomed[start : start + _DELETE_BATCH])
+    return len(doomed)
+
+
 def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
     """Embed chunks; text stays in SQLite and is never copied to metadata."""
     if not chunks:
@@ -95,19 +120,22 @@ def upsert_chunks(chunks: list[ChunkMetadata]) -> int:
 
 
 def query_similar(
-    *, query: str, course_id: str, document_id: str, top_k: int = 12
+    *, query: str, course_id: str, document_id: str | None = None, top_k: int = 12
 ) -> list[tuple[str, float]]:
-    """Return ranked chunk ids scoped to one course document."""
+    """Return ranked chunk ids scoped to a course, or one document within it.
+
+    When ``document_id`` is None the query spans the whole course; otherwise
+    it is narrowed to a single document.
+    """
     vector = embed_texts([query])[0]
+    clauses: list[dict[str, Any]] = [{"course_id": {"$eq": course_id}}]
+    if document_id is not None:
+        clauses.append({"document_id": {"$eq": document_id}})
+    metadata_filter = clauses[0] if len(clauses) == 1 else {"$and": clauses}
     results = _get_index().query(
         vector=vector,
         top_k=top_k,
-        filter={
-            "$and": [
-                {"course_id": {"$eq": course_id}},
-                {"document_id": {"$eq": document_id}},
-            ]
-        },
+        filter=metadata_filter,
         include_metadata=True,
     )
     matches = getattr(results, "matches", None)

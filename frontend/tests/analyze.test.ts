@@ -134,6 +134,25 @@ describe("what it sends", () => {
     const body = spy.mock.calls[0][1].body as FormData;
     expect(JSON.parse(body.get("prior_annotations") as string)).toHaveLength(1);
   });
+
+  it("sends the structured problem separately from the image", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    const spy = mockFetch();
+    await run(fake.editor, {
+      problem: {
+        id: "problem_1",
+        courseId: "course_demo",
+        documentId: "doc_1",
+        source: "generated",
+        prompt: "Differentiate x².",
+      },
+    });
+    const body = spy.mock.calls[0][1].body as FormData;
+    expect(JSON.parse(body.get("problem_context") as string)).toMatchObject({
+      id: "problem_1",
+      prompt: "Differentiate x².",
+    });
+  });
 });
 
 describe("when there is nothing to analyze", () => {
@@ -198,5 +217,60 @@ describe("when the backend fails", () => {
     await expect(run(fake.editor)).rejects.toThrow();
     expect(fake.created).toHaveLength(0);
     expect(fake.deleted).toHaveLength(0);
+  });
+});
+
+describe("choosing between /work and /api/tutor/analyze", () => {
+  /**
+   * Regression: a problem loaded from GET /api/spaces/{id} is a bare
+   * ProblemContext with no `skill` on it, because the backend builds it from
+   * generated_problems alone. Gating the /work route on `problem.skill` meant
+   * that after any page reload the request silently went to the grade-only
+   * endpoint, so no attempt was ever recorded and no hint was ever counted.
+   */
+  const identified = { studentId: "dev-student", sessionId: "space_1" };
+
+  it("posts an unattributed problem to /work anyway, letting the server decide", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    const spy = mockFetch({ tutor: RESPONSE, attempt: null });
+    await run(fake.editor, { mode: "mark", problem: PROBLEM, ...identified });
+
+    const url = spy.mock.calls[0][0];
+    expect(url).toContain("/api/courses/course_demo/work");
+    expect(url).toContain("student_id=dev-student");
+    const form = spy.mock.calls[0][1].body as FormData;
+    expect(form.get("problem_id")).toBe("problem_1");
+    expect(form.get("session_id")).toBe("space_1");
+  });
+
+  it("still renders the tutor's answer from the /work envelope", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    mockFetch({ tutor: RESPONSE, attempt: null });
+    await run(fake.editor, { mode: "mark", problem: PROBLEM, ...identified });
+    expect(fake.created.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to analyze when there is no problem to record against", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    const spy = mockFetch();
+    await run(fake.editor, { mode: "mark", ...identified });
+    expect(spy.mock.calls[0][0]).toContain("/api/tutor/analyze");
+  });
+
+  it("falls back to analyze when the student is not identified", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    const spy = mockFetch();
+    await run(fake.editor, { mode: "mark", problem: PROBLEM });
+    expect(spy.mock.calls[0][0]).toContain("/api/tutor/analyze");
+  });
+
+  it("sends a spoken question to analyze, which is the only route that takes one", async () => {
+    const fake = makeEditor({ shapes: [student("s1")] });
+    const spy = mockFetch();
+    await run(fake.editor, {
+      mode: "mark", problem: PROBLEM, ...identified, transcript: "why is this wrong?",
+    });
+    expect(spy.mock.calls[0][0]).toContain("/api/tutor/analyze");
+    expect((spy.mock.calls[0][1].body as FormData).get("transcript")).toBe("why is this wrong?");
   });
 });

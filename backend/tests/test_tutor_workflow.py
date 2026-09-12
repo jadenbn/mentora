@@ -263,6 +263,7 @@ def _prompt_for(*, transcript: str | None) -> str:
             problem=None,
             course_context=[],
             transcript=transcript,
+            learner=None,
             repair=False,
         )
     )

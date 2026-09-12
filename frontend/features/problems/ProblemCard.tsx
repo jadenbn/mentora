@@ -1,5 +1,5 @@
 import katex from "katex";
-import type { ProblemContext } from "@/types/domain";
+import type { ProblemContext, ProblemSkill } from "@/types/domain";
 
 export type ProblemSegment =
   | { kind: "text"; value: string }
@@ -236,6 +236,24 @@ export function ProblemBody({ prompt, className }: { prompt: string; className?:
   );
 }
 
+/** The topic this generated problem was attributed to -- surfaced so the
+ * student can see what they're practicing without the engine ever showing
+ * a mastery score. Omitted entirely when the engine couldn't tie the
+ * problem to a topic. */
+export function ProblemSkillBadge({ skill }: { skill?: ProblemSkill }) {
+  if (!skill) return null;
+  return (
+    <span className="mb-1 inline-block rounded-full bg-[#e8f2ea] px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#2f5a41]">
+      {skill.name}
+    </span>
+  );
+}
+
 export function ProblemCard({ problem }: { problem: ProblemContext }) {
-  return <ProblemBody prompt={problem.prompt} />;
+  return (
+    <>
+      <ProblemSkillBadge skill={problem.skill} />
+      <ProblemBody prompt={problem.prompt} />
+    </>
+  );
 }

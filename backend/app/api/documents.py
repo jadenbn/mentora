@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import tempfile
 import asyncio
+import tempfile
 from pathlib import Path
 
 import pymupdf
@@ -41,6 +41,7 @@ async def upload_document(
         raise HTTPException(413, "document is too large")
     if suffix == ".pdf" and not data.startswith(b"%PDF-"):
         raise HTTPException(415, "document does not contain a valid PDF signature")
+
     missing = missing_indexing_settings()
     if missing:
         raise HTTPException(
@@ -74,7 +75,7 @@ async def upload_document(
         except DocumentIndexingError as exc:
             raise HTTPException(
                 502,
-                "document saved but semantic indexing failed; retry the upload",
+                "Document text was saved, but semantic indexing failed; re-upload to retry",
             ) from exc
     finally:
         Path(tmp_path).unlink(missing_ok=True)

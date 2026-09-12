@@ -8,6 +8,14 @@ export interface Course {
   updated_at: string;
 }
 
+/** The topic this generated problem was attributed to, if any --
+ * unattributed for a problem the engine could not tie to a topic. */
+export interface ProblemSkill {
+  id: string;
+  name: string;
+  difficulty_band: number;
+}
+
 /** Generated-problem contract shared by question generation, Spaces, and tutor requests. */
 export interface ProblemContext {
   id: string;
@@ -15,6 +23,7 @@ export interface ProblemContext {
   document_id: string;
   source: "generated";
   prompt: string;
+  skill?: ProblemSkill;
 }
 
 export type DocumentType =

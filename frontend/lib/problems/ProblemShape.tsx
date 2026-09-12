@@ -7,7 +7,7 @@ import {
   useEditor,
 } from "@tldraw/editor";
 import type { RecordProps, TLShape } from "@tldraw/editor";
-import { ProblemBody } from "@/features/problems/ProblemCard";
+import { ProblemBody, ProblemSkillBadge } from "@/features/problems/ProblemCard";
 import { PROBLEM_SHAPE_TYPE } from "@/lib/problems/renderProblem";
 import type { ProblemContext } from "@/types/domain";
 
@@ -62,7 +62,10 @@ function ProblemShapeContent({ shape }: { shape: ProblemShape }) {
       style={{ width: shape.props.w }}
     >
       {problem?.id === shape.props.problemId ? (
-        <ProblemBody prompt={problem.prompt} />
+        <>
+          <ProblemSkillBadge skill={problem.skill} />
+          <ProblemBody prompt={problem.prompt} />
+        </>
       ) : (
         <p className="text-sm text-slate-500">Problem unavailable.</p>
       )}

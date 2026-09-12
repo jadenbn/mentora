@@ -13,9 +13,7 @@ from app.schemas.documents import ChunkMetadata, CourseDocument, DocumentType
 from app.schemas.problems import GeneratedProblem, GroundedProblem, GroundingChunk, ProblemContext
 from app.schemas.spaces import Space
 
-
 _QUERY_PARAM_LIMIT = 900
-
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS course_documents (
@@ -64,6 +62,15 @@ CREATE TABLE IF NOT EXISTS problem_grounding_chunks (
     UNIQUE(problem_id, ordinal)
 );
 
+-- The difficulty selection asked this problem to be written at. Recorded at
+-- generation time so grading reads it back from the server rather than
+-- trusting a client to restate it.
+CREATE TABLE IF NOT EXISTS problem_difficulty (
+    problem_id TEXT PRIMARY KEY
+        REFERENCES generated_problems(problem_id) ON DELETE CASCADE,
+    target_difficulty REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS courses (
     course_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -104,6 +111,10 @@ class CourseRepository:
         connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        # Shared file with the SQLModel engine (app/db.py); WAL + busy timeout
+        # keep the two writers from colliding on "database is locked".
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA busy_timeout = 5000")
         return connection
 
     def initialize(self) -> None:
@@ -321,6 +332,26 @@ class CourseRepository:
             problem=problem,
             chunks=[GroundingChunk.model_validate(dict(row)) for row in chunk_rows],
         )
+
+    def set_problem_difficulty(self, *, problem_id: str, target_difficulty: float) -> None:
+        """Record the difficulty this problem was asked to be written at."""
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO problem_difficulty (problem_id, target_difficulty)
+                VALUES (?, ?)
+                ON CONFLICT(problem_id) DO UPDATE SET target_difficulty = excluded.target_difficulty
+                """,
+                (problem_id, target_difficulty),
+            )
+
+    def get_problem_difficulty(self, problem_id: str) -> float | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT target_difficulty FROM problem_difficulty WHERE problem_id = ?",
+                (problem_id,),
+            ).fetchone()
+        return row["target_difficulty"] if row else None
 
     def create_course(self, *, name: str, description: str) -> Course:
         course_id = f"course_{uuid4().hex}"

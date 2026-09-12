@@ -128,7 +128,8 @@ keep the model from grading its own handwriting:
     {"type": "highlight", "target": {"x": 0.43, "y": 0.35, "width": 0.12, "height": 0.08}},
     {"type": "circle", "target": {"x": 0.2, "y": 0.35, "width": 0.2, "height": 0.1}}
   ],
-  "summary": "The setup is right; the coefficient was dropped."
+  "summary": "The setup is right; the coefficient was dropped.",
+  "error_tag": "dropped_constant"
 }
 ```
 
@@ -136,6 +137,13 @@ keep the model from grading its own handwriting:
 
 The summary is rendered as one KaTeX document in the transparent tutor navbar;
 use `$...$` delimiters for inline mathematical fragments.
+
+`error_tag` is a closed vocabulary for what went wrong -- `sign_error`,
+`dropped_constant`, `wrong_technique`, `algebra_slip`, `concept_gap`, or
+`null`. Optional even on `incorrect`/`partial` work, and always `null` on
+`correct`/`uncertain` (see The safety policy). Nothing on the frontend reads
+it yet; it is recorded on the attempt for a future per-student rollup. See
+`docs/LEARNING_ENGINE.md` §8.
 
 ### Actions
 
@@ -244,6 +252,9 @@ before it goes anywhere.
   clarification is substituted.
 - **At most 12 actions.** Over-eager plans are truncated rather than rejected,
   so one long answer does not cost a repair round trip.
+- **`error_tag` is cleared on anything but `incorrect`/`partial`.** The model
+  is asked for it only on graded mistakes; the policy enforces that rather
+  than trusting the model to leave it unset on `correct`/`uncertain`.
 
 ## Errors
 
@@ -268,9 +279,13 @@ Not built, deliberately, until the canvas loop works end to end:
   retrofitted through the UI. Grounding a request needs a *text* query and the
   canvas is a picture, so re-adding retrieval means deciding where that query
   comes from — the student, or a first vision pass.
-- **Learning events.** The tutor observes plenty worth recording; the learning
-  engine on `ren/learning-engine` wants closed-vocabulary, slug-identified,
-  float-typed facts. That adapter is a design decision, not a merge.
+
+Learning events are no longer deferred: `POST /api/courses/{course_id}/work`
+is the learning engine's own route (not this one), and it feeds the model an
+extra `<learner>` block -- one sentence describing this student's estimated
+accuracy and attempt count on the problem's primary topic, built by
+`engine/profile.get_learner_context` -- and reads `error_tag` back out onto
+the attempt. See `docs/LEARNING_ENGINE.md` §1 and §8.
 
 ## Extension points
 

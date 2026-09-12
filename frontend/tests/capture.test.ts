@@ -115,6 +115,11 @@ describe("captureCanvasForAnalysis", () => {
     expect(toImageCalls[0].ids).toEqual(["s1"]);
   });
 
+  it("returns nothing when the canvas contains only the problem", async () => {
+    const { editor } = makeEditor({ shapes: [systemShape("problem")] });
+    expect(await captureCanvasForAnalysis(editor)).toBeNull();
+  });
+
   it("returns nothing when only tutor annotations remain", async () => {
     // Nothing of the student's left to analyze, even though the page is not empty.
     const { editor } = makeEditor({ shapes: [aiShape("ai1")] });
@@ -129,6 +134,21 @@ describe("captureCanvasForAnalysis", () => {
     expect(capture!.bounds.y).toBeLessThan(300);
     expect(capture!.bounds.x + capture!.bounds.w).toBeGreaterThan(250);
     expect(capture!.bounds.y + capture!.bounds.h).toBeGreaterThan(500);
+  });
+
+  it("bounds the image to student shapes rather than system and tutor content", async () => {
+    const { editor } = makeEditor({
+      shapes: [studentShape("s1"), systemShape("problem"), aiShape("ai1")],
+      pageBounds: box(-1000, -1000, 5000, 5000),
+    });
+    const capture = await captureCanvasForAnalysis(editor);
+    // Anchored to the student shape's own bounds, not the huge page frame or
+    // the system/tutor shapes sitting elsewhere on it.
+    expect(capture!.studentBounds).toMatchObject({ x: 150, y: 300, w: 100, h: 200 });
+    expect(capture!.bounds.x).toBeGreaterThan(-1000);
+    expect(capture!.bounds.y).toBeGreaterThan(-1000);
+    expect(capture!.bounds.x + capture!.bounds.w).toBeLessThan(4000);
+    expect(capture!.bounds.y + capture!.bounds.h).toBeLessThan(4000);
   });
 
   it("scales a large canvas down to keep the upload small", async () => {

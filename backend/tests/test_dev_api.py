@@ -1,0 +1,331 @@
+"""The dev-only dashboard page and skills-import endpoint."""
+
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+from sqlmodel import Session, select
+
+from app.api.dependencies import get_course_repository
+from app.db import engine
+from app.engine.models.attempt import Attempt
+from app.main import app
+
+
+def _create_course(course_id: str = "calc1") -> None:
+    """Courses are DB-owned now, so a route behind require_course needs a
+    real row before anything else in these tests can work."""
+    repo = get_course_repository()
+    with repo.connect() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO courses (course_id, name, description, created_at, updated_at) "
+            f"VALUES ('{course_id}', 'Calculus I', '', '2024-01-01', '2024-01-01')"
+        )
+
+
+def test_dashboard_serves_html():
+    with TestClient(app) as client:
+        response = client.get("/dev/dashboard")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Dev Dashboard" in response.text
+
+
+def test_import_skills_persists_a_new_topic():
+    _create_course()
+    with TestClient(app) as client:
+        response = client.post(
+            "/dev/courses/calc1/skills/import",
+            json={
+                "skills": [
+                    {
+                        "id": "imported-skill",
+                        "name": "Imported",
+                        "description": "via dev endpoint",
+                        "difficulty_band": 0.3,
+                        "keywords": ["k1"],
+                        "question_forms": ["q1"],
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200
+        assert response.json() == {"added": ["calc1.imported-skill"], "skipped": []}
+
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "dev"}
+        ).json()
+    imported = next(
+        s for s in overview["skills"] if s["skill_id"] == "calc1.imported-skill"
+    )
+    assert imported["origin"] == "generated"
+    assert imported["is_recent"] is True
+    assert imported["keywords"] == ["k1"]
+
+
+def test_import_skills_skips_an_id_that_already_exists():
+    _create_course()
+    with TestClient(app) as client:
+        first = client.post(
+            "/dev/courses/calc1/skills/import",
+            json={
+                "skills": [
+                    {
+                        "id": "derivatives.power-rule",
+                        "name": "Power rule",
+                        "description": "d",
+                        "difficulty_band": 0.3,
+                    }
+                ]
+            },
+        )
+        assert first.status_code == 200
+
+        response = client.post(
+            "/dev/courses/calc1/skills/import",
+            json={
+                "skills": [
+                    {
+                        "id": "derivatives.power-rule",  # already imported above
+                        "name": "Overwrite attempt",
+                        "description": "x",
+                        "difficulty_band": 0.9,
+                    }
+                ]
+            },
+        )
+    assert response.status_code == 200
+    assert response.json() == {"added": [], "skipped": ["calc1.derivatives.power-rule"]}
+
+
+def test_import_skills_rejects_a_batch_that_collides_after_normalization():
+    _create_course()
+    with TestClient(app) as client:
+        response = client.post(
+            "/dev/courses/calc1/skills/import",
+            json={
+                "skills": [
+                    {"id": "same-name", "name": "A", "description": "d", "difficulty_band": 0.5},
+                    {"id": "same-name", "name": "B", "description": "d", "difficulty_band": 0.5},
+                ]
+            },
+        )
+    assert response.status_code == 400
+
+
+def test_import_skills_rejects_an_unknown_field():
+    """prereqs is gone -- topics are flat -- so a batch that still sends it
+    should fail shape validation rather than being silently accepted."""
+    _create_course()
+    with TestClient(app) as client:
+        response = client.post(
+            "/dev/courses/calc1/skills/import",
+            json={
+                "skills": [
+                    {
+                        "id": "a",
+                        "name": "A",
+                        "description": "d",
+                        "difficulty_band": 0.5,
+                        "prereqs": ["nowhere"],
+                    }
+                ]
+            },
+        )
+    assert response.status_code == 422
+
+
+def test_import_skills_is_404_for_an_unknown_course():
+    with TestClient(app) as client:
+        response = client.post(
+            "/dev/courses/nope/skills/import",
+            json={"skills": [{"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5}]},
+        )
+    assert response.status_code == 404
+
+
+def test_next_topic_previews_the_pick_without_serving_it():
+    """The dashboard's window onto selection. Read-only: looking at the
+    answer must not change it, or the dashboard would be driving the engine
+    it is there to observe."""
+    _create_course()
+    with TestClient(app) as client:
+        client.post(
+            "/dev/courses/calc1/skills/import",
+            json={"skills": [{"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5}]},
+        )
+        first = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-1"}
+        )
+        second = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-1"}
+        )
+    assert first.status_code == 200
+    assert first.json()["skill_id"] == second.json()["skill_id"]
+
+
+def test_next_topic_is_404_for_an_unknown_course():
+    with TestClient(app) as client:
+        response = client.get(
+            "/dev/courses/nope/next-topic", params={"student_id": "dev-1"}
+        )
+    assert response.status_code == 404
+
+
+def test_next_topic_is_404_for_a_course_with_no_topics():
+    _create_course()
+    with TestClient(app) as client:
+        response = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-1"}
+        )
+    assert response.status_code == 404
+
+
+def test_simulate_reports_on_the_policy_without_touching_the_database():
+    _create_course()
+    with TestClient(app) as client:
+        client.post(
+            "/dev/courses/calc1/skills/import",
+            json={"skills": [{"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5}]},
+        )
+        response = client.post(
+            "/dev/courses/calc1/simulate",
+            params={"students": 3, "questions_each": 6},
+        )
+        assert response.status_code == 200
+        report = response.json()
+        assert 0.0 < report["coverage"] <= 1.0
+        assert report["students"] == 3
+
+        # No synthetic student reached the real student model.
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "sim-0"}
+        ).json()
+        assert all(s["attempts"] == 0 for s in overview["skills"])
+
+
+def test_a_synthetic_attempt_also_marks_the_topic_served():
+    """The dashboard has to show selection behaving as it does in production.
+
+    On the real path a topic is served by generation before it is ever
+    marked, so the recency penalty fires. A dev attempt that recorded
+    without serving would let the dashboard hand back the same topic
+    forever, which is not what a student would see.
+    """
+    _create_course()
+    with TestClient(app) as client:
+        client.post(
+            "/dev/courses/calc1/skills/import",
+            json={
+                "skills": [
+                    {"id": "a", "name": "A", "description": "d", "difficulty_band": 0.5},
+                    {"id": "b", "name": "B", "description": "d", "difficulty_band": 0.5},
+                ]
+            },
+        )
+        first = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-2"}
+        ).json()["skill_id"]
+        client.post(
+            "/dev/courses/calc1/attempts",
+            json={
+                "student_id": "dev-2", "session_id": "dev", "problem_id": "d1",
+                "expected_skills": [first], "difficulty": 0.5, "correct": False,
+            },
+        )
+        second = client.get(
+            "/dev/courses/calc1/next-topic", params={"student_id": "dev-2"}
+        ).json()["skill_id"]
+    assert second != first
+
+
+def _import_one(client, skill_id="a", name="A"):
+    return client.post(
+        "/dev/courses/calc1/skills/import",
+        json={"skills": [
+            {"id": skill_id, "name": name, "description": "d", "difficulty_band": 0.5},
+        ]},
+    )
+
+
+def test_delete_skill_removes_it_from_the_course():
+    _create_course()
+    with TestClient(app) as client:
+        _import_one(client)
+        response = client.delete("/dev/courses/calc1/skills/calc1.a")
+        assert response.status_code == 200
+        assert response.json()["deleted"] == "calc1.a"
+
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "dev"}
+        ).json()
+    assert [s["skill_id"] for s in overview["skills"]] == []
+
+
+def test_delete_skill_takes_the_students_state_with_it():
+    """SkillState has no foreign key to skill.id, so the route deletes it by
+    hand. Skill ids are deterministic, so a leaked row would be silently
+    adopted by the next topic imported under the same name."""
+    _create_course()
+    with TestClient(app) as client:
+        _import_one(client)
+        client.post(
+            "/dev/courses/calc1/attempts",
+            json={"student_id": "stu1", "session_id": "dev", "problem_id": "p1",
+                  "expected_skills": ["calc1.a"], "difficulty": 0.5, "correct": True},
+        )
+        deleted = client.delete("/dev/courses/calc1/skills/calc1.a").json()
+        assert deleted["skill_states_removed"] == 1
+
+        # Re-import the same name: it must come back untouched, not inherit
+        # the attempt history of the topic that was deleted.
+        _import_one(client)
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "stu1"}
+        ).json()
+    revived = next(s for s in overview["skills"] if s["skill_id"] == "calc1.a")
+    assert revived["attempts"] == 0
+    assert revived["observed"] is None
+
+
+def test_delete_skill_leaves_the_attempt_ledger_alone():
+    """The ledger is immutable and carries its own resolved skill list."""
+    _create_course()
+    with TestClient(app) as client:
+        _import_one(client)
+        client.post(
+            "/dev/courses/calc1/attempts",
+            json={"student_id": "stu1", "session_id": "dev", "problem_id": "p1",
+                  "expected_skills": ["calc1.a"], "difficulty": 0.5, "correct": True},
+        )
+        client.delete("/dev/courses/calc1/skills/calc1.a")
+
+    with Session(engine) as session:
+        attempts = session.exec(select(Attempt)).all()
+    assert len(attempts) == 1
+    assert attempts[0].expected_skills == ["calc1.a"]
+
+
+def test_delete_skill_is_404_for_an_unknown_topic():
+    _create_course()
+    with TestClient(app) as client:
+        assert client.delete("/dev/courses/calc1/skills/calc1.nope").status_code == 404
+
+
+def test_delete_skill_will_not_cross_courses():
+    """A topic belongs to exactly one course, and the id carries the course
+    prefix -- deleting it from a different course must not work."""
+    _create_course()
+    _create_course("other")
+    with TestClient(app) as client:
+        _import_one(client)
+        response = client.delete("/dev/courses/other/skills/calc1.a")
+        assert response.status_code == 404
+        overview = client.get(
+            "/api/courses/calc1/skills-overview", params={"student_id": "dev"}
+        ).json()
+    assert [s["skill_id"] for s in overview["skills"]] == ["calc1.a"]
+
+
+def test_delete_skill_is_404_for_an_unknown_course():
+    with TestClient(app) as client:
+        assert client.delete("/dev/courses/nope/skills/nope.a").status_code == 404

@@ -20,6 +20,7 @@ from app.schemas.tutor import (
     TutorResponse,
 )
 from app.schemas.problems import GroundedProblem, GroundingChunk, ProblemContext
+from app.engine import LearnerContext
 from app.services.tutor_policy import apply_safety_policy
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class TutorWorkflow(Protocol):
         problem: ProblemContext | None,
         course_context: list[GroundingChunk],
         transcript: str | None,
+        learner: LearnerContext | None = None,
     ) -> TutorPlan: ...
 
 
@@ -65,6 +67,7 @@ class TutorService:
         prior_annotations: list[NormalizedBounds],
         problem_context: ProblemContext | None = None,
         transcript: str | None = None,
+        learner: LearnerContext | None = None,
     ) -> TutorResponse:
         problem = problem_context
         course_context: list[GroundingChunk] = []
@@ -89,6 +92,7 @@ class TutorService:
             problem=problem,
             course_context=course_context,
             transcript=transcript,
+            learner=learner,
         )
         safe = apply_safety_policy(plan)
         return TutorResponse(

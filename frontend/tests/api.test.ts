@@ -12,9 +12,13 @@ import {
   createCourse,
   deleteCourseById,
   deleteSpaceById,
+  generateCourseQuestion,
   getCourseById,
+  listCourseDocuments,
+  submitWork,
   transcribeSpeech,
   TutorApiError,
+  uploadCourseDocument,
 } from "@/lib/api/api";
 import type { ProblemContext } from "@/types/domain";
 
@@ -147,6 +151,129 @@ describe("successful responses", () => {
   it("returns the parsed tutor response", async () => {
     mockFetch(ok({ interaction_id: "i9", status: "correct", canvas_actions: [], summary: "Nice." }));
     await expect(call()).resolves.toMatchObject({ interaction_id: "i9", status: "correct" });
+  });
+});
+
+describe("course material APIs", () => {
+  it("lists documents for one course", async () => {
+    const spy = mockFetch(ok([]));
+    await listCourseDocuments("course_demo");
+    expect(spy.mock.calls[0][0]).toContain("/api/courses/course_demo/documents");
+  });
+
+  it("uploads the selected file and document type", async () => {
+    const body = {
+      document_id: "doc_1",
+      course_id: "course_demo",
+      filename: "notes.txt",
+      document_type: "lecture",
+      total_chunks: 1,
+      total_pages: 1,
+      extracted_characters: 10,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const spy = mockFetch(ok(body));
+    await uploadCourseDocument({
+      courseId: "course_demo",
+      file: new File(["notes"], "notes.txt", { type: "text/plain" }),
+      documentType: "lecture",
+    });
+    const form = spy.mock.calls[0][1].body as FormData;
+    expect(form.get("document_type")).toBe("lecture");
+    expect(form.get("file")).toBeInstanceOf(File);
+  });
+
+  it("maps a generated backend problem into the frontend domain", async () => {
+    const spy = mockFetch(ok({
+      problem: {
+        id: "problem_1",
+        course_id: "course_demo",
+        document_id: "doc_1",
+        source: "generated",
+        prompt: "Differentiate x squared.",
+      },
+      skills: [
+        { id: "course_demo.power-rule", name: "Power rule", difficulty_band: 0.4 },
+      ],
+    }));
+    await expect(
+      generateCourseQuestion("course_demo", "stu_1", "doc_1", "  A conceptual question  "),
+    ).resolves.toEqual({
+      id: "problem_1",
+      course_id: "course_demo",
+      document_id: "doc_1",
+      source: "generated",
+      prompt: "Differentiate x squared.",
+      skill: { id: "course_demo.power-rule", name: "Power rule", difficulty_band: 0.4 },
+    });
+    expect(spy.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(spy.mock.calls[0][1].body as string)).toEqual({
+      student_id: "stu_1",
+      document_id: "doc_1",
+      question_request: "A conceptual question",
+    });
+  });
+
+  it("posts a skill-attributed attempt to the engine's /work route", async () => {
+    const spy = mockFetch(ok({
+      tutor: { interaction_id: "i2", status: "correct", canvas_actions: [], summary: "Nice." },
+      attempt: null,
+    }));
+    const response = await submitWork({
+      courseId: "course_demo",
+      studentId: "stu_1",
+      sessionId: "sess_1",
+      problemId: "problem_1",
+      mode: "mark",
+      canvasImage: IMAGE,
+      priorAnnotations: [],
+    });
+    expect(response).toEqual({ interaction_id: "i2", status: "correct", canvas_actions: [], summary: "Nice." });
+    const [url, init] = spy.mock.calls[0];
+    expect(url).toContain("/api/courses/course_demo/work");
+    expect(url).toContain("student_id=stu_1");
+    const form = init.body as FormData;
+    expect(form.get("session_id")).toBe("sess_1");
+    expect(form.get("problem_id")).toBe("problem_1");
+    expect(form.get("mode")).toBe("mark");
+  });
+
+  it("leaves skill undefined when the server attributed nothing", async () => {
+    mockFetch(ok({
+      problem: {
+        id: "problem_2",
+        course_id: "course_demo",
+        document_id: "doc_1",
+        source: "generated",
+        prompt: "Differentiate x squared.",
+      },
+      skills: [],
+    }));
+    const result = await generateCourseQuestion("course_demo", "stu_1", "doc_1", "Conceptual");
+    expect(result.skill).toBeUndefined();
+  });
+
+  it("lets an empty request through -- the engine picks the topic itself", async () => {
+    const spy = mockFetch(ok({
+      problem: {
+        id: "problem_3",
+        course_id: "course_demo",
+        document_id: "doc_1",
+        source: "generated",
+        prompt: "Differentiate x squared.",
+      },
+      skills: [],
+    }));
+    await generateCourseQuestion("course_demo", "stu_1", "doc_1", "");
+    expect(JSON.parse(spy.mock.calls[0][1].body as string)).toEqual({
+      student_id: "stu_1",
+      document_id: "doc_1",
+      question_request: "",
+    });
   });
 });
 

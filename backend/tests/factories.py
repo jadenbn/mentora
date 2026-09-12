@@ -89,6 +89,7 @@ def plan(
     actions: list[dict] | None = None,
     summary: str = "A restrained power-rule hint.",
     uncertainties: list[dict] | None = None,
+    error_tag: str | None = None,
 ) -> TutorPlan:
     """A model-produced plan, already validated."""
     return TutorPlan.model_validate(
@@ -97,6 +98,7 @@ def plan(
             "canvas_actions": [circle_action()] if actions is None else actions,
             "summary": summary,
             "uncertainties": uncertainties or [],
+            "error_tag": error_tag,
         }
     )
 

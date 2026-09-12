@@ -1,4 +1,11 @@
-"""Direct Gemini adapter for one validated, source-grounded question."""
+"""Direct Gemini adapter for one validated, source-grounded question.
+
+Also attributes the question to the skill(s) it exercises, in the same call
+— no second round trip. A skill entry either names an existing course skill
+by id or names a new one; either way, app.services.question_service resolves
+it against the course's topic list (existing, name-similarity match, or
+newly appended) -- see QuestionService._attribute_skills.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +21,7 @@ from app.agents.gemini import as_thinking_level, create_client, response_object
 from app.agents.workflow_errors import QuestionWorkflowError, QuestionWorkflowTimeout
 from app.prompts.question_generation import QUESTION_INSTRUCTION
 from app.schemas.problems import GroundingChunk, QuestionPlan
+from app.schemas.taxonomy import SKILL_ENTRY_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +33,12 @@ QUESTION_PLAN_RESPONSE_SCHEMA = {
             "type": "array",
             "items": {"type": "string"},
         },
+        "skills": {
+            "type": "array",
+            "items": SKILL_ENTRY_SCHEMA,
+        },
     },
-    "required": ["prompt", "grounding_chunk_ids"],
+    "required": ["prompt", "grounding_chunk_ids", "skills"],
 }
 
 
@@ -49,7 +61,10 @@ class GeminiQuestionWorkflow:
             system_instruction=QUESTION_INSTRUCTION,
             response_mime_type="application/json",
             response_schema=QUESTION_PLAN_RESPONSE_SCHEMA,
-            max_output_tokens=2_048,
+            # One skill entry, not four. The prompt itself can still run to
+            # 8,000 chars, so this stays well above what a question plus one
+            # skill needs rather than dropping back to main's 2,048.
+            max_output_tokens=4_096,
             temperature=0.7,
             thinking_config=types.ThinkingConfig(
                 thinking_level=as_thinking_level(self.thinking_level)
@@ -57,10 +72,23 @@ class GeminiQuestionWorkflow:
         )
 
     async def run(
-        self, *, chunks: list[GroundingChunk], question_request: str
+        self,
+        *,
+        chunks: list[GroundingChunk],
+        question_request: str,
+        difficulty_word: str | None = None,
+        existing_skills: list[dict[str, str]] | None = None,
     ) -> QuestionPlan:
+        """difficulty_word: the engine's preferred level, sent in its own
+        block rather than inside the request, so the model can tell a
+        preference from the instruction it must honour.
+
+        existing_skills: [{"id": ..., "name": ...}, ...] already in the
+        course, offered as skill-attribution targets so the model reuses an
+        id instead of proposing a near-duplicate."""
         allowed = {chunk.chunk_id for chunk in chunks}
         malformed: Exception | None = None
+        previous_error: str | None = None
         try:
             async with create_client(self.api_key).aio as client:
                 for attempt in range(2):
@@ -69,7 +97,9 @@ class GeminiQuestionWorkflow:
                             client=client,
                             chunks=chunks,
                             question_request=question_request,
-                            repair=attempt == 1,
+                            difficulty_word=difficulty_word,
+                            existing_skills=existing_skills or [],
+                            previous_error=previous_error,
                         )
                         plan = QuestionPlan.model_validate(raw)
                         if len(set(plan.grounding_chunk_ids)) != len(
@@ -84,6 +114,7 @@ class GeminiQuestionWorkflow:
                         return plan
                     except (ValidationError, ValueError, KeyError, TypeError) as exc:
                         malformed = exc
+                        previous_error = str(exc)
                         logger.warning(
                             "question output failed validation (attempt %d): %s",
                             attempt + 1,
@@ -104,9 +135,29 @@ class GeminiQuestionWorkflow:
         client: Any,
         chunks: list[GroundingChunk],
         question_request: str,
-        repair: bool,
+        difficulty_word: str | None,
+        existing_skills: list[dict[str, str]],
+        previous_error: str | None,
     ) -> dict:
-        prefix = "Repair attempt: use only the exact chunk IDs below.\n\n" if repair else ""
+        # Echo back exactly what failed, not a generic reminder — a canned
+        # "use only the exact chunk IDs below" hint is useless when the real
+        # problem was e.g. a duplicate skill id or an out-of-range
+        # difficulty_band; the model needs the actual validation error.
+        prefix = (
+            f"Repair attempt: the previous response was rejected with this "
+            f"error — fix it exactly: {previous_error}\n\n"
+            if previous_error
+            else ""
+        )
+        known = "\n".join(f"- {s['id']}: {s['name']}" for s in existing_skills)
+        known_block = (
+            f"<existing-skills>\n{known}\n</existing-skills>\n\n" if known else ""
+        )
+        difficulty_block = (
+            f"<preferred-difficulty>{difficulty_word}</preferred-difficulty>\n\n"
+            if difficulty_word
+            else ""
+        )
         excerpts = "\n\n".join(
             f"<course-excerpt id=\"{chunk.chunk_id}\" page=\"{chunk.page}\">\n"
             f"{chunk.text}\n</course-excerpt>"
@@ -119,7 +170,8 @@ class GeminiQuestionWorkflow:
                     text=(
                         f"{prefix}<question-request-json>\n"
                         f"{json.dumps(question_request)}\n"
-                        f"</question-request-json>\n\n{excerpts}"
+                        f"</question-request-json>\n\n"
+                        f"{difficulty_block}{known_block}{excerpts}"
                     )
                 )
             ],

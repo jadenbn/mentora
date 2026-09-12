@@ -33,6 +33,7 @@ import {
   type FeedbackHistory,
   type FeedbackLayer,
 } from "@/lib/tutor/feedbackHistory";
+import { getStudentId } from "@/lib/student/identity";
 import type { ProblemContext } from "@/types/domain";
 import type { CanvasAction, TutorMode, TutorResponse } from "@/types/tutor";
 
@@ -247,6 +248,10 @@ export function useWhiteboardSession({
           courseId,
           problem,
           transcript,
+          // Without these two the request routes to /api/tutor/analyze, which
+          // grades but records nothing -- no attempt, no hint count.
+          studentId: getStudentId(),
+          sessionId: spaceId,
           renderActions: renderTutorActions,
           onResponse: (response, context, snapshot) =>
             handleTutorResponse(mode, response, context, snapshot),

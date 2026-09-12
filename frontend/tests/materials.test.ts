@@ -16,6 +16,7 @@ vi.mock("@/lib/api/api", () => ({
   listCourseDocuments: mocks.list,
   uploadCourseDocument: vi.fn(),
 }));
+vi.mock("@/lib/student/identity", () => ({ getStudentId: () => "stu_1" }));
 
 import { CourseMaterials } from "@/features/materials/CourseMaterials";
 
@@ -62,12 +63,22 @@ describe("course-material question request", () => {
     vi.clearAllMocks();
   });
 
-  it("requires and forwards the requested question type", async () => {
+  it("lets a blank request through, so the engine can pick a topic itself", async () => {
+    const button = container.querySelector("button[type=button]") as HTMLButtonElement;
+    // Empty is a valid request -- there is no separate "practice next
+    // topic" button, this is that feature, implicit.
+    expect(button.disabled).toBe(false);
+
+    await act(async () => button.click());
+    expect(mocks.generate).toHaveBeenCalledWith("course_1", "stu_1", "doc_1", "");
+    expect(mocks.push).toHaveBeenCalledWith("/spaces/space_1");
+  });
+
+  it("forwards a typed question request alongside the student id", async () => {
     const button = container.querySelector("button[type=button]") as HTMLButtonElement;
     const input = container.querySelector(
       'input[aria-label="Question request for lecture.pdf"]',
     ) as HTMLInputElement;
-    expect(button.disabled).toBe(true);
 
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(
@@ -77,11 +88,11 @@ describe("course-material question request", () => {
       setValue?.call(input, "A difficult conceptual question");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(button.disabled).toBe(false);
 
     await act(async () => button.click());
     expect(mocks.generate).toHaveBeenCalledWith(
       "course_1",
+      "stu_1",
       "doc_1",
       "A difficult conceptual question",
     );

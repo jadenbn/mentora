@@ -22,6 +22,11 @@ _COMPLETE = "This looks complete."
 #: Verdicts. Withheld when the canvas could not be read.
 _GRADING_ACTIONS = {"check", "cross"}
 
+#: Where a tag is meaningful. On a correct or unreadable answer it is model
+#: noise -- there is nothing to have gotten wrong -- so the policy is the
+#: one place that can't be routed around to keep it out of the record.
+_TAGGABLE_STATUSES = {WorkStatus.incorrect, WorkStatus.partial}
+
 
 def _clarification_summary(uncertainties: list[Uncertainty]) -> str:
     """Ask about the specific symbol when one is named, not the whole canvas."""
@@ -53,10 +58,13 @@ def apply_safety_policy(plan: TutorPlan) -> TutorPlan:
         actions = checks
         summary = summary or _COMPLETE
 
+    error_tag = plan.error_tag if plan.status in _TAGGABLE_STATUSES else None
+
     return plan.model_copy(
         update={
             "status": status,
             "summary": summary,
             "canvas_actions": actions[:MAX_ACTIONS],
+            "error_tag": error_tag,
         }
     )

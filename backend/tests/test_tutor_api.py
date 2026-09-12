@@ -38,7 +38,9 @@ def post(client, *, image=f.PNG, mime="image/png", **over):
     problem = over.pop("problem_context", None)
     data.update({k: v for k, v in over.items() if v is not None})
     if problem is not None:
-        data["problem_context"] = json.dumps(problem)
+        # A caller may hand over an already-serialized (or deliberately
+        # malformed) string; only a raw dict needs encoding here.
+        data["problem_context"] = problem if isinstance(problem, str) else json.dumps(problem)
     files = {"canvas_image": ("canvas.png", image, mime)} if image is not None else {}
     return client.post("/api/tutor/analyze", data=data, files=files)
 
@@ -48,7 +50,9 @@ class TestHappyPath:
         response = post(client)
         assert response.status_code == 200
         body = response.json()
-        assert set(body) == {"interaction_id", "status", "canvas_actions", "summary"}
+        assert set(body) == {
+            "interaction_id", "status", "canvas_actions", "summary", "error_tag",
+        }
 
     def test_the_mode_is_forwarded_to_the_workflow(self, client, workflow):
         post(client, mode="explain")
@@ -62,6 +66,17 @@ class TestHappyPath:
     def test_prior_annotations_default_to_empty(self, client, workflow):
         post(client)
         assert workflow.last_call["prior_annotations"] == []
+
+    def test_problem_context_is_parsed_and_forwarded(self, client, workflow):
+        problem = {
+            "id": "problem_1",
+            "course_id": "course_demo",
+            "document_id": "doc_1",
+            "source": "generated",
+            "prompt": "Differentiate x squared.",
+        }
+        post(client, problem_context=json.dumps(problem))
+        assert workflow.last_call["problem"].id == "problem_1"
 
     @pytest.mark.parametrize("image,mime", [(f.PNG, "image/png"), (f.JPEG, "image/jpeg"), (f.WEBP, "image/webp")])
     def test_every_supported_image_format_is_accepted(self, client, image, mime):
@@ -112,6 +127,19 @@ class TestRequestValidation:
     def test_prior_annotations_outside_the_canvas_are_rejected(self, client):
         off_canvas = json.dumps([{"x": 0.9, "y": 0.1, "width": 0.5, "height": 0.1}])
         assert post(client, prior_annotations=off_canvas).status_code == 422
+
+    def test_malformed_problem_context_is_rejected(self, client):
+        assert post(client, problem_context="not json").status_code == 422
+
+    def test_problem_context_must_belong_to_the_requested_course(self, client):
+        problem = {
+            "id": "problem_1",
+            "course_id": "course_linear",
+            "document_id": "doc_1",
+            "source": "generated",
+            "prompt": "Question",
+        }
+        assert post(client, problem_context=json.dumps(problem)).status_code == 422
 
 
 class TestSpokenContext:

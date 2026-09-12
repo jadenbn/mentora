@@ -14,6 +14,10 @@ from app.services.embeddings import delete_document_vectors, upsert_chunks
 _HASH_BLOCK = 1024 * 1024
 
 
+class DocumentIndexingError(RuntimeError):
+    """SQLite succeeded but vector indexing needs an idempotent retry."""
+
+
 def compute_document_id(file_path: str | Path, course_id: str) -> str:
     """Deterministic id from course + file contents.
 
@@ -73,12 +77,12 @@ def ingest_document(
         chunks=chunks,
     )
     try:
+        # Remove first because a changed chunker may produce fewer chunks than
+        # an earlier ingest, leaving a stale deterministic tail otherwise.
         delete_document_vectors(document_id)
         upsert_chunks(chunks)
     except Exception as exc:
+        # SQLite is canonical and remains usable. Re-uploading the same content
+        # retries this step without duplicating rows or vectors.
         raise DocumentIndexingError(document_id) from exc
     return IngestionResult(**document.model_dump(), replaced_existing=replaced)
-
-
-class DocumentIndexingError(RuntimeError):
-    """SQLite is canonical; vector indexing can be retried idempotently."""

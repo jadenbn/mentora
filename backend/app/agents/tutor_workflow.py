@@ -1,4 +1,4 @@
-"""Gemini adapter.
+"""Direct Gemini adapter.
 
 The only module allowed to import a provider SDK. Everything here is about
 surviving Gemini rather than about tutoring: schema dialect quirks, malformed
@@ -20,7 +20,8 @@ from app.agents.gemini import as_thinking_level, create_client, response_object
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
 from app.schemas.problems import GroundingChunk, ProblemContext
-from app.schemas.tutor import NormalizedBounds, TutorMode, TutorPlan
+from app.schemas.tutor import ErrorTag, NormalizedBounds, TutorMode, TutorPlan
+from app.engine import LearnerContext
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +69,28 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
             },
         },
         "summary": {"type": "string"},
+        "error_tag": {"type": "string", "enum": [t.value for t in ErrorTag], "nullable": True},
     },
-    "required": ["status", "canvas_actions", "uncertainties", "summary"],
+    "required": ["status", "canvas_actions", "uncertainties", "summary", "error_tag"],
 }
+
+
+def _render_learner(learner: LearnerContext | None) -> str:
+    """The one sentence of student-model context the tutor gets.
+
+    Never a bare number: the prompt in prompts/tutor.py tells the model not
+    to quote this back, and rendering it as a sentence rather than a field
+    named "estimate" is a second layer of the same discipline.
+    """
+    if learner is None:
+        return "No student history is available for this topic."
+    if learner.attempts == 0:
+        return f"This is the student's first attempt on {learner.skill_name}."
+    return (
+        f"On {learner.skill_name}, this student's estimated accuracy is "
+        f"{learner.estimate:.2f} over {learner.attempts} attempt(s). "
+        f"They have taken {learner.hints_on_this_problem} hint(s) on this problem so far."
+    )
 
 
 #: The fields each action actually carries. The provider schema is flat, so a
@@ -171,6 +191,7 @@ class GeminiTutorWorkflow:
         problem: ProblemContext | None = None,
         course_context: list[GroundingChunk] | None = None,
         transcript: str | None = None,
+        learner: LearnerContext | None = None,
     ) -> TutorPlan:
         malformed: Exception | None = None
         # One repair attempt. Transient HTTP retries belong to the SDK; this
@@ -188,6 +209,7 @@ class GeminiTutorWorkflow:
                             problem=problem,
                             course_context=course_context or [],
                             transcript=transcript,
+                            learner=learner,
                             repair=attempt == 1,
                         )
                         return TutorPlan.model_validate(normalize_provider_output(raw))
@@ -232,6 +254,7 @@ class GeminiTutorWorkflow:
         problem: ProblemContext | None,
         course_context: list[GroundingChunk],
         transcript: str | None,
+        learner: LearnerContext | None,
         repair: bool,
     ) -> dict:
         """One provider round trip, returning raw structured output."""
@@ -252,7 +275,11 @@ class GeminiTutorWorkflow:
         prompt += (
             problem.prompt if problem is not None else "No structured problem was supplied."
         )
-        prompt += "\n</current-problem>\n\n<course-reference-data>\n"
+        prompt += "\n</current-problem>"
+        prompt += "\n\n<learner>\n"
+        prompt += _render_learner(learner)
+        prompt += "\n</learner>"
+        prompt += "\n\n<course-reference-data>\n"
         if course_context:
             prompt += "\n\n".join(
                 f"[source {chunk.chunk_id}, page {chunk.page}]\n{chunk.text}"
@@ -266,7 +293,7 @@ class GeminiTutorWorkflow:
         if canvas_image is not None:
             if canvas_mime_type is None:
                 raise ValueError("canvas_mime_type is required with canvas_image")
-            parts.insert(0, types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type))
+            parts.append(types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type))
         message = types.Content(role="user", parts=parts)
         if os.getenv("TUTOR_DEBUG_LOG_REQUESTS") == "1":
             request_log = {

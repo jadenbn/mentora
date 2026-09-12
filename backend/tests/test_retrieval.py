@@ -47,3 +47,27 @@ def test_ranked_ids_hydrate_from_sqlite_and_stale_ids_are_skipped(tmp_path, monk
         "chunk_doc_1_00000",
     ]
     assert [chunk.text for chunk in results] == ["second", "first"]
+
+
+def _seed_document(repo, *, course_id, document_id, texts):
+    chunks = [
+        ChunkMetadata(
+            chunk_id=f"chunk_{document_id}_{index:05d}",
+            course_id=course_id,
+            document_id=document_id,
+            chunk_index=index,
+            filename=f"{document_id}.pdf",
+            page=index + 1,
+            document_type=DocumentType.lecture,
+            text=text,
+        )
+        for index, text in enumerate(texts)
+    ]
+    repo.replace_document(
+        document_id=document_id,
+        course_id=course_id,
+        filename=f"{document_id}.pdf",
+        document_type=DocumentType.lecture,
+        total_pages=len(texts),
+        chunks=chunks,
+    )

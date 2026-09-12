@@ -65,6 +65,16 @@ function messageForStatus(status: number, detail: unknown): string {
   }
 }
 
+async function tutorApiError(response: Response): Promise<TutorApiError> {
+  let detail: unknown = null;
+  try {
+    detail = (await response.json())?.detail ?? null;
+  } catch {
+    // Non-JSON error body; the status alone has to carry the meaning.
+  }
+  return new TutorApiError(messageForStatus(response.status, detail), response.status, detail);
+}
+
 /**
  * POST /api/tutor/analyze
  *
@@ -103,20 +113,56 @@ export async function analyzeCanvas(args: {
   });
 
   if (!response.ok) {
-    let detail: unknown = null;
-    try {
-      detail = (await response.json())?.detail ?? null;
-    } catch {
-      // Non-JSON error body; the status alone has to carry the meaning.
-    }
-    throw new TutorApiError(
-      messageForStatus(response.status, detail),
-      response.status,
-      detail,
-    );
+    throw await tutorApiError(response);
   }
 
   return response.json();
+}
+
+/**
+ * POST /api/courses/{course_id}/work
+ *
+ * Submit the canvas for a graded check-in. The tutor's own reading of the
+ * work decides the outcome and the server records the attempt in the same
+ * round trip; the difficulty comes from what generation asked for at
+ * question-creation time. Nothing the browser sends scores the student's
+ * work — it used to send `correct`, which meant anyone could set their own
+ * mastery, and `hints_used`, which was worth 0.4 of the score. The server
+ * counts hints itself now, on the hint requests it already serves.
+ *
+ * The server also returns what it recorded (or null, if nothing was), but
+ * the engine has no UI, so only the tutor's response is surfaced here.
+ */
+export async function submitWork(args: {
+  courseId: string;
+  studentId: string;
+  sessionId: string;
+  problemId: string;
+  mode: TutorMode;
+  canvasImage: Blob;
+  priorAnnotations: NormalizedBounds[];
+  signal?: AbortSignal;
+}): Promise<TutorResponse> {
+  const form = new FormData();
+  form.append("session_id", args.sessionId);
+  form.append("mode", args.mode);
+  form.append("problem_id", args.problemId);
+  form.append("canvas_image", args.canvasImage, "canvas.png");
+  form.append("prior_annotations", JSON.stringify(args.priorAnnotations));
+
+  const url =
+    `${apiBaseUrl()}/api/courses/${args.courseId}/work` +
+    `?student_id=${encodeURIComponent(args.studentId)}`;
+  const response = await fetch(url, { method: "POST", body: form, signal: args.signal });
+
+  if (!response.ok) {
+    throw await tutorApiError(response);
+  }
+
+  // The server also returns `attempt` (what it recorded, or null); the
+  // engine has no UI, so the caller only needs the tutor's response.
+  const data = (await response.json()) as { tutor: TutorResponse };
+  return data.tutor;
 }
 
 /** Maps the transcribe endpoint's failures onto something a student can read. */
@@ -233,8 +279,24 @@ export async function uploadCourseDocument(args: {
   return courseResponse<CourseDocument>(response, "Uploading the document");
 }
 
+interface GeneratedProblemResponse {
+  problem: ProblemContext;
+  skills: { id: string; name: string; difficulty_band: number }[];
+}
+
+/**
+ * POST /api/courses/{course_id}/questions/generate
+ *
+ * questionRequest may be empty: the engine then picks a topic itself (an
+ * implicit "practice next topic") instead of grounding the student's own
+ * description. Either way the server attributes the generated problem to
+ * the topic(s) it exercises -- existing or newly identified from the
+ * question itself -- and returns the primary one so marking this problem
+ * correct can record an attempt.
+ */
 export async function generateCourseQuestion(
   courseId: string,
+  studentId: string,
   documentId: string,
   questionRequest: string,
 ): Promise<ProblemContext> {
@@ -244,12 +306,17 @@ export async function generateCourseQuestion(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        student_id: studentId,
         document_id: documentId,
         question_request: questionRequest.trim(),
       }),
     },
   );
-  return courseResponse<ProblemContext>(response, "Generating a question");
+  const data = await courseResponse<GeneratedProblemResponse>(
+    response,
+    "Generating a question",
+  );
+  return { ...data.problem, skill: data.skills[0] };
 }
 
 export async function listCourses(): Promise<Course[]> {

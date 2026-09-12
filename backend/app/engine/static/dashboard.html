@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learning Engine · Dev Dashboard</title>
+<style>
+  :root {
+    --bg:#0f1319; --panel:#171d26; --panel2:#1e2733; --ink:#e6ebf1;
+    --muted:#8fa0b3; --line:#28313d; --accent:#4cb6bc; --good:#3fb27f;
+    --warn:#d5a749; --bad:#e0715b;
+    --gen:#a48cf2; --new:#e8b84b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  header { padding:18px 22px; border-bottom:1px solid var(--line);
+    display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.02em; }
+  h2 { font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+  header .sub { color:var(--muted); font-size:12px; }
+  .controls { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  input, select, button { font:inherit; }
+  input, select { background:var(--panel2); color:var(--ink);
+    border:1px solid var(--line); border-radius:6px; padding:6px 9px; }
+  button { background:var(--accent); color:#04191b; border:0;
+    border-radius:6px; padding:7px 12px; cursor:pointer; font-weight:600; }
+  button.ghost { background:var(--panel2); color:var(--ink); border:1px solid var(--line); }
+  button.good { background:var(--good); color:#05130d; }
+  button.warn { background:var(--warn); color:#1a1305; }
+  button.bad { background:var(--bad); color:#1c0a06; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  main { padding:22px; max-width:1100px; margin:0 auto; }
+  .bar { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:12px 16px; min-width:120px; }
+  .stat .n { font-size:22px; font-weight:700; }
+  .stat .l { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  table { width:100%; border-collapse:collapse; background:var(--panel);
+    border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; }
+  tr:last-child td { border-bottom:0; }
+  tr.skill { cursor:pointer; }
+  tr.skill:hover { background:var(--panel2); }
+  tr.sel { background:#12303199; box-shadow:inset 3px 0 0 var(--accent); }
+  .name { font-weight:600; }
+  .id { color:var(--muted); font-size:11px; font-family:ui-monospace,monospace; }
+  .track { position:relative; height:8px; width:130px; background:var(--panel2);
+    border-radius:5px; overflow:hidden; }
+  .fill { position:absolute; inset:0 auto 0 0; border-radius:5px; }
+  .pct { font-variant-numeric:tabular-nums; }
+  .word { color:var(--muted); font-size:11px; margin-top:3px; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:20px; font-weight:600; }
+  .pill.seed { background:#242c38; color:var(--muted); }
+  .pill.generated { background:#241f3d; color:var(--gen); }
+  .pill.new { background:#0d3134; color:var(--accent); border:1px solid var(--accent); }
+  .badge-new { display:inline-block; margin-left:5px; font-size:10px; font-weight:700;
+    color:var(--new); background:#312a12; border-radius:20px; padding:1px 6px;
+    letter-spacing:.03em; vertical-align:middle; }
+  .panel { margin-top:18px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:16px; }
+  .panel .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .panel p.sub { color:var(--muted); font-size:12px; }
+  #log, #importLog { margin-top:12px; font-family:ui-monospace,monospace; font-size:12px;
+    color:var(--muted); white-space:pre-wrap; max-height:180px; overflow:auto; }
+  .err { color:var(--bad); }
+  .ok { color:var(--good); }
+  /* Hover help. Everything explaining the simulation lives in these rather
+     than in paragraphs above the controls. */
+  [data-tip] { position:relative; cursor:help; }
+  [data-tip]:hover::after {
+    content:attr(data-tip); position:absolute; left:0; top:calc(100% + 6px);
+    z-index:30; width:max-content; max-width:250px;
+    background:var(--panel2); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:7px 9px;
+    font-size:11px; line-height:1.45; font-weight:400;
+    text-transform:none; letter-spacing:normal; white-space:normal;
+    box-shadow:0 6px 20px rgba(0,0,0,.5);
+  }
+  /* The table clips its own overflow for the rounded corners, so a tooltip
+     on the last column has to open leftward to stay inside it. */
+  [data-tip][data-tip-right]:hover::after { left:auto; right:0; }
+  .hint { border-bottom:1px dotted var(--muted); }
+  .whatis { display:inline-flex; align-items:center; justify-content:center;
+    width:15px; height:15px; margin-left:7px; border-radius:50%;
+    border:1px solid var(--line); background:var(--panel2);
+    color:var(--muted); font-size:10px; font-weight:700;
+    text-transform:none; letter-spacing:normal; vertical-align:middle; }
+  dl.show { display:grid; grid-template-columns:max-content 1fr; gap:6px 14px;
+    margin:14px 0 0; font-size:13px; }
+  dl dt { color:var(--muted); }
+  dl dd { margin:0; }
+  .chip { display:inline-block; background:var(--panel2); border:1px solid var(--line);
+    border-radius:20px; padding:2px 9px; margin:0 6px 6px 0; font-size:12px; }
+  code { background:var(--panel2); border-radius:4px; padding:1px 5px; font-size:12px; }
+  textarea { width:100%; min-height:180px; background:var(--panel2); color:var(--ink);
+    border:1px solid var(--line); border-radius:6px; padding:9px; font-family:ui-monospace,monospace;
+    font-size:12px; resize:vertical; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Learning Engine · Dev Dashboard</h1>
+  </div>
+  <div class="controls">
+    <label class="sub">course <input id="course" value="course_demo" size="12"></label>
+    <label class="sub">student <input id="student" value="dev-student" size="12"></label>
+    <button id="reload" class="ghost">Reload</button>
+  </div>
+</header>
+<main>
+  <div class="panel" style="margin-top:0">
+    <h2>How to read every number on this page</h2>
+    <p class="sub" style="margin:6px 0 0">
+      One scale runs through the whole engine. A <b>score</b> rates one
+      answered question from 0 to 1. Correct unassisted <code>1.0</code>,
+      correct with a hint <code>0.6</code>, partial <code>0.3</code>, wrong
+      <code>0.0</code>. That is <code>score_attempt</code> in
+      <code>engine/accuracy.py</code>, and nothing else in the system is ever
+      scored. Every other number on this page except course level averages
+      those four values over a topic's last 8 attempts.
+    </p>
+    <p class="sub" style="margin:10px 0 0">
+      Two averages of those scores, and the gap between them is the point.
+    </p>
+    <ul class="sub" style="margin:4px 0 0">
+      <li><b>Observed ability</b>. The raw mean, exactly what happened, or
+        <code>&mdash;</code> before the first attempt. Read it, but note that
+        the engine never decides on it. Two attempts and eight attempts read
+        the same here.</li>
+      <li><b>Estimated ability</b>. The same mean pulled toward a 0.50
+        no-evidence prior, so it always has a value and one lucky answer
+        cannot swing it. <code>estimated_accuracy</code> adds 2
+        pseudo-observations at 0.5, so a student's own record starts to
+        outweigh the prior around their 3rd real attempt. <b>Selection acts
+        on this one.</b> It feeds the weakness term in
+        <code>pick_topic</code> and sets the difficulty served next. A wide
+        gap from the observed ability means the student has few attempts,
+        nothing more.</li>
+      <li><b>The word under each bar</b> is what the question generator is
+        told for this topic's next question: <i>introductory</i> below 0.40,
+        <i>moderate</i> below 0.70, <i>challenging</i> above. The generator
+        never sees the number, only the word, and reads it relative to the
+        topic. An untried topic sits at 0.50, so its first question is
+        always <i>moderate</i>.</li>
+      <li><b>Course level</b> is how advanced the topic is within the course,
+        written by the model when it created the topic. It never changes and
+        does not set question difficulty. Its only job is ordering: on a
+        student's first question every topic ties, and the lowest course
+        level is served first.</li>
+    </ul>
+  </div>
+  <div class="bar" id="stats" style="margin-top:18px"></div>
+  <div class="panel" style="margin-top:0">
+    <h2>What the engine would serve next</h2>
+    <p class="sub" style="margin:6px 0 10px">
+      Read-only preview of <code>pick_topic</code>, the same call question
+      generation makes. Looking does not stamp <code>last_served</code>.
+    </p>
+    <div class="row"><button id="bNext" class="ghost">Preview next topic</button>
+      <span id="nextOut" class="sub">—</span></div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Topic</th><th>Origin</th>
+      <th data-tip="What the engine believes, and what it acts on. The word underneath is the difficulty the generator is asked for on this topic's next question.">Estimated ability</th>
+      <th data-tip="Raw mean score over the last 8 attempts. Never used for a decision.">Observed ability</th>
+      <th>Attempts</th>
+      <th data-tip-right data-tip="How advanced the topic is within the course, set when the topic was created. Only orders untried topics, lowest first. Does not set question difficulty.">Course level</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="panel">
+    <h2>Insert synthetic attempt</h2>
+    <div class="row">
+      <span id="selName" class="sub">Selected: <b>none</b> (click a topic)</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="good" id="bCorrect" disabled>✓ Correct</button>
+      <button class="warn" id="bPartial" disabled>◑ Partial</button>
+      <button class="bad" id="bIncorrect" disabled>✗ Incorrect</button>
+      <button class="bad" id="bDelete" style="margin-left:auto" disabled>🗑 Delete topic</button>
+    </div>
+    <dl id="detail"></dl>
+    <div id="log"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Measure the <b>Selection</b> policy with a simulation<span class="whatis"
+      data-tip="Replays pick_topic, mark_served and record_attempt against synthetic students in a throwaway in-memory database. Never touches mentora.db. Answers whether selection covers the course, holds difficulty steady, and avoids serving the same topic twice in a row.">?</span></h2>
+    <div class="row">
+      <label class="sub"><span class="hint" data-tip="Student archetype. Sets two numbers: the ability range their true skill is drawn from, and how fast they learn.">profile</span>
+        <select id="simProfile">
+          <option value="mixed">mixed cohort</option>
+          <option value="strong">strong students</option>
+          <option value="struggling">struggling students</option>
+          <option value="fast_learner">fast learners</option>
+        </select>
+      </label>
+      <label class="sub"><span class="hint" data-tip="How many synthetic students to run. More narrows the noise, it does not test anything new.">students</span> <input id="simStudents" value="12" size="4"></label>
+      <label class="sub"><span class="hint" data-tip="Questions each student answers, in order, one topic pick per question.">questions each</span> <input id="simQuestions" value="24" size="4"></label>
+      <button id="bSimulate">Run simulation</button>
+    </div>
+    <div class="bar" id="simStats" style="margin-top:14px"></div>
+    <table id="simSkillsTable" style="margin-top:4px">
+      <thead><tr>
+        <th>Topic</th>
+        <th data-tip="How many times anyone in the cohort was served this topic.">Served</th>
+        <th data-tip="Raw mean score over those attempts. A dash means nobody was ever served it, which is kept distinct from scoring 0.">Observed ability</th>
+        <th data-tip-right data-tip="Where the engine's belief lands after the run, averaged over the cohort. A student never served the topic counts at the flat 0.50 prior, so lightly-served topics sit near 0.50 whatever happened. This is what the engine believes, never the synthetic student's hidden true ability.">Estimated ability</th>
+      </tr></thead>
+      <tbody id="simSkillRows"></tbody>
+    </table>
+    <div id="simLog"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Import topics (dev)</h2>
+    <p class="sub" style="margin-bottom:8px">
+      Paste a raw topic batch and post it straight into the selected course,
+      the same build_taxonomy → add_skills path the piggyback in question
+      generation uses, no model call. Shape:
+      <code>{"skills":[{"id","name","description","difficulty_band","keywords","question_forms"}]}</code>.
+    </p>
+    <textarea id="importText" spellcheck="false">{
+  "skills": [
+    {
+      "id": "example-topic",
+      "name": "Example topic",
+      "description": "Replace with a real one.",
+      "difficulty_band": 0.4,
+      "keywords": [],
+      "question_forms": []
+    }
+  ]
+}</textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="bImport">Import into course</button>
+    </div>
+    <div id="importLog"></div>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let data = null, selected = null;
+
+function api(path) {
+  const c = encodeURIComponent($('#course').value.trim());
+  const s = encodeURIComponent($('#student').value.trim());
+  return `/api/courses/${c}/${path}${path.includes('?') ? '&' : '?'}student_id=${s}`;
+}
+function devApi(path) {
+  const c = encodeURIComponent($('#course').value.trim());
+  return `/dev/courses/${c}/${path}`;
+}
+function log(msg, isErr, target) {
+  const el = $(target || '#log');
+  const line = document.createElement('div');
+  if (isErr) line.className = 'err'; else if (isErr === false) line.className = 'ok';
+  line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  el.prepend(line);
+}
+function accuracyColor(a) {
+  if (a === null) return 'var(--muted)';
+  if (a >= 0.85) return 'var(--good)';
+  if (a >= 0.6) return 'var(--accent)';
+  if (a >= 0.4) return 'var(--warn)';
+  return 'var(--bad)';
+}
+
+async function load() {
+  selected = null; renderSelected();
+  try {
+    const r = await fetch(api('skills-overview'), { cache: 'no-store' });
+    if (!r.ok) throw new Error(await r.text());
+    data = await r.json();
+  } catch (e) { log('load failed: ' + e.message, true); return; }
+  render();
+}
+
+function render() {
+  const skills = data.skills;
+  const seen = skills.filter(s => s.attempts > 0);
+  const avg = seen.length ? seen.reduce((a, s) => a + s.observed, 0) / seen.length : null;
+  $('#stats').innerHTML = [
+    ['Topics', skills.length],
+    ['Touched', seen.length],
+    ['Coverage', skills.length ? (seen.length / skills.length * 100).toFixed(0) + '%' : '—'],
+    ['Avg observed ability', avg === null ? '—' : avg.toFixed(2)],
+  ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+  $('#rows').innerHTML = skills.map(s => {
+    const cls = ['skill']; if (selected === s.skill_id) cls.push('sel');
+    const origin = `<span class="pill ${s.origin}">${s.origin}</span>` +
+      (s.is_recent ? '<span class="badge-new" title="added in the last 15 minutes">new</span>' : '');
+    // Two numbers on purpose. The API fields are `estimate` / `observed`;
+    // the page labels them "estimated ability" / "observed ability" so one
+    // vocabulary covers this table and the simulation report alike.
+    // `estimate` is what selection acts on (the window shrunk toward the
+    // prior), `observed` is the raw mean. They converge as attempts
+    // accumulate; the gap is the confidence. `difficulty_word` is computed
+    // server-side from the same function generation uses, so the page
+    // never restates the bucket boundaries.
+    const observedText = s.observed === null ? '—' : s.observed.toFixed(2);
+    const width = s.estimate * 100;
+    return `<tr class="${cls.join(' ')}" data-id="${s.skill_id}">
+      <td><div class="name">${s.skill_name}</div><div class="id">${s.skill_id}</div></td>
+      <td>${origin}</td>
+      <td><div style="display:flex;gap:8px;align-items:center">
+        <div class="track"><div class="fill" style="width:${width.toFixed(0)}%;background:${accuracyColor(s.estimate)}"></div></div>
+        <span class="pct">${s.estimate.toFixed(2)}</span></div>
+        <div class="word">(${s.difficulty_word})</div></td>
+      <td class="pct">${observedText}</td>
+      <td class="pct">${s.attempts}</td>
+      <td class="pct">${s.difficulty_band.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+
+  document.querySelectorAll('tr.skill').forEach(tr => {
+    tr.onclick = () => { selected = tr.dataset.id; render(); renderSelected(); };
+  });
+}
+
+function chips(items) {
+  return items.length ? items.map(i => `<span class="chip">${i}</span>`).join('') : '<span class="sub">none</span>';
+}
+
+function renderSelected() {
+  const s = data && selected ? data.skills.find(x => x.skill_id === selected) : null;
+  $('#selName').innerHTML = 'Selected: <b>' + (s ? s.skill_name + ' <span class="id">' + s.skill_id + '</span>' : 'none') + '</b>';
+  for (const id of ['#bCorrect', '#bPartial', '#bIncorrect', '#bDelete']) $(id).disabled = !s;
+  // Deleting is two clicks, and selecting anything else disarms it -- there
+  // is no undo, and add_skills only ever inserts.
+  resetDeleteButton();
+
+  const detail = $('#detail');
+  if (!s) { detail.classList.remove('show'); detail.innerHTML = ''; return; }
+  detail.classList.add('show');
+  detail.innerHTML = `
+    <dt>Description</dt><dd>${s.description}</dd>
+    <dt>Origin</dt><dd><span class="pill ${s.origin}">${s.origin}</span>
+      ${s.is_recent ? '<span class="badge-new">new</span>' : ''}
+      <span class="sub" style="margin-left:6px">${new Date(s.created_at).toLocaleString()}</span></dd>
+    <dt>Keywords</dt><dd>${chips(s.keywords)}</dd>
+    <dt>Question forms</dt><dd>${chips(s.question_forms)}</dd>
+    <dt>Last served</dt><dd>${s.last_served ? new Date(s.last_served).toLocaleString() : '<span class="sub">never</span>'}</dd>
+  `;
+}
+
+async function attempt(kind) {
+  const s = data.skills.find(x => x.skill_id === selected);
+  if (!s) return;
+  const body = {
+    student_id: $('#student').value.trim(),
+    session_id: 'dev-dashboard',
+    problem_id: `dev_${s.skill_id}_${Date.now()}`,
+    expected_skills: [s.skill_id],
+    // What the engine would have asked for on this topic, the same value a
+    // real attempt records -- not the course level, which sets no difficulty.
+    difficulty: s.target_difficulty,
+    correct: kind === 'correct',
+    partial: kind === 'partial',
+  };
+  try {
+    const r = await fetch(devApi('attempts'), {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    const deltas = Object.entries(res.updated_skills).map(([k, v]) => `${k.split('.').pop()}→${v.toFixed(2)}`).join('  ');
+    log(`${kind} on ${s.skill_id}: ${deltas}`);
+  } catch (e) { log('attempt failed: ' + e.message, true); return; }
+  await load();
+  selected = s.skill_id; render(); renderSelected();
+}
+
+let deleteArmed = false;
+
+function resetDeleteButton() {
+  deleteArmed = false;
+  const b = $('#bDelete');
+  if (b) b.textContent = '🗑 Delete topic';
+}
+
+async function deleteSkill() {
+  const s = data && selected ? data.skills.find(x => x.skill_id === selected) : null;
+  if (!s) return;
+
+  // First click arms, second click commits. Cheaper than a modal and it
+  // cannot block the page the way a native confirm() can.
+  if (!deleteArmed) {
+    deleteArmed = true;
+    $('#bDelete').textContent = '🗑 Really delete? Click again';
+    return;
+  }
+
+  try {
+    const c = encodeURIComponent($('#course').value.trim());
+    const r = await fetch(`/dev/courses/${c}/skills/${encodeURIComponent(s.skill_id)}`, {
+      method: 'DELETE',
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    log(
+      `deleted ${res.deleted} (${res.skill_states_removed} student state row(s), ` +
+      `${res.problem_attributions_removed} problem attribution(s); attempts kept)`,
+      false,
+    );
+  } catch (e) {
+    log('delete failed: ' + e.message, true);
+    resetDeleteButton();
+    return;
+  }
+  selected = null;
+  await load();
+  render();
+  renderSelected();
+}
+
+async function importSkills() {
+  const course = encodeURIComponent($('#course').value.trim());
+  let payload;
+  try {
+    payload = JSON.parse($('#importText').value);
+  } catch (e) {
+    log('invalid JSON: ' + e.message, true, '#importLog');
+    return;
+  }
+  try {
+    const r = await fetch(`/dev/courses/${course}/skills/import`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    const parts = [];
+    if (res.added.length) parts.push(`+${res.added.length} added: ${res.added.join(', ')}`);
+    if (res.skipped.length) parts.push(`${res.skipped.length} skipped (already exists): ${res.skipped.join(', ')}`);
+    log(parts.length ? parts.join(' · ') : 'nothing changed', false, '#importLog');
+  } catch (e) {
+    log('import failed: ' + e.message, true, '#importLog');
+    return;
+  }
+  await load();
+}
+
+async function previewNext() {
+  const c = encodeURIComponent($('#course').value.trim());
+  const s = encodeURIComponent($('#student').value.trim());
+  try {
+    const r = await fetch(`/dev/courses/${c}/next-topic?student_id=${s}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    $('#nextOut').innerHTML = `<b>${res.skill_id}</b> at difficulty ${res.target_difficulty.toFixed(2)}`;
+  } catch (e) { $('#nextOut').textContent = 'failed: ' + e.message; }
+}
+
+async function runSimulation() {
+  const c = encodeURIComponent($('#course').value.trim());
+  const profile = encodeURIComponent($('#simProfile').value);
+  const students = encodeURIComponent($('#simStudents').value.trim());
+  const questions = encodeURIComponent($('#simQuestions').value.trim());
+  $('#bSimulate').disabled = true;
+  log('running…', null, '#simLog');
+  try {
+    const r = await fetch(
+      `/dev/courses/${c}/simulate?profile=${profile}&students=${students}&questions_each=${questions}`,
+      { method: 'POST' });
+    if (!r.ok) throw new Error(await r.text());
+    const s = await r.json();
+    const growth = s.difficulty_late - s.difficulty_early;
+    $('#simStats').innerHTML = [
+      ['Coverage', (s.coverage * 100).toFixed(0) + '%',
+        "Share of the course's topics the average student was served."],
+      ['Observed ability', s.score_early.toFixed(2) + ' → ' + s.score_late.toFixed(2),
+        'Mean score over the first third of the run, then the last third. It should stay level rather than climb, because the difficulty served rises with the estimated ability.'],
+      ['Difficulty', s.difficulty_early.toFixed(2) + ' → ' + s.difficulty_late.toFixed(2),
+        'The difficulty the engine asked for, 0 to 1, over the same first and last thirds. Every first question on a topic is asked at 0.50, so the early third leans toward 0.50.'],
+      ['Growth', (growth >= 0 ? '+' : '') + growth.toFixed(2),
+        'Late difficulty minus early. Positive means the engine pushed students harder as they improved. Level score plus positive growth is the shape you want. It needs repeated practice per topic to show: with many topics and few questions each one is seen two or three times and this sits near zero.'],
+      ['Repeat rate', (s.repeat_rate * 100).toFixed(0) + '%',
+        'Share of picks that served the same topic twice in a row.'],
+    ].map(([l, n, tip]) =>
+      `<div class="stat"><div class="n">${n}</div><div class="l" data-tip="${tip}">${l}</div></div>`
+    ).join('');
+    $('#simSkillRows').innerHTML = s.per_skill.map(sk => `<tr>
+        <td class="name">${sk.skill_name}</td>
+        <td>${sk.times_served}</td>
+        <td>${sk.mean_score === null ? '—' : sk.mean_score.toFixed(2)}</td>
+        <td>${sk.final_estimate.toFixed(2)}</td>
+      </tr>`).join('');
+    const cal = Object.entries(s.calibration)
+      .map(([k, v]) => `${k} ${v.toFixed(2)}`).join('  ·  ');
+    log(`${s.students} "${s.profile}" students × ${s.questions_each} questions over ${s.topics} topics. Calibration: ${cal || 'n/a'}`,
+        false, '#simLog');
+  } catch (e) {
+    log('simulation failed: ' + e.message, true, '#simLog');
+  } finally {
+    $('#bSimulate').disabled = false;
+  }
+}
+
+$('#reload').onclick = load;
+$('#bNext').onclick = previewNext;
+$('#bSimulate').onclick = runSimulation;
+$('#course').onchange = load;
+$('#student').onchange = load;
+$('#bCorrect').onclick = () => attempt('correct');
+$('#bPartial').onclick = () => attempt('partial');
+$('#bIncorrect').onclick = () => attempt('incorrect');
+$('#bDelete').onclick = () => deleteSkill();
+$('#bImport').onclick = importSkills;
+load();
+</script>
+</body>
+</html>

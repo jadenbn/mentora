@@ -4,7 +4,7 @@
  */
 
 import type { Editor } from "tldraw";
-import { analyzeCanvas } from "@/lib/api/api";
+import { analyzeCanvas, submitWork } from "@/lib/api/api";
 import {
   captureCanvasForAnalysis,
   collectPriorAnnotations,
@@ -49,6 +49,9 @@ export interface TutorAnalysisOptions {
   /** What the student asked out loud, when they used the microphone. */
   transcript?: string;
   signal?: AbortSignal;
+  /** Supplied for a skill-attributed problem, so the server can record. */
+  studentId?: string;
+  sessionId?: string;
   /** Whiteboard supplies the progressive renderer; tests and other callers may render immediately. */
   renderActions?: (
     editor: Editor,
@@ -66,7 +69,7 @@ export interface TutorAnalysisOptions {
 export async function runTutorAnalysis(
   options: TutorAnalysisOptions,
 ): Promise<TutorResponse> {
-  const { editor } = options;
+  const { editor, problem, studentId, sessionId } = options;
   const renderActions = options.renderActions ?? renderCanvasActions;
   const snapshot = editor.getSnapshot().document;
 
@@ -74,18 +77,19 @@ export async function runTutorAnalysis(
   // student's left to analyze, even though the page is not empty.
   const capture = await captureCanvasForAnalysis(editor);
   if (!capture) {
-    if (options.mode !== "stuck" || !options.problem || hasStudentWork(editor)) {
+    if (options.mode !== "stuck" || !problem || hasStudentWork(editor)) {
       throw new EmptyCanvasError();
     }
 
     // A problem-only stuck request has no student image by design. Send the
-    // structured problem without fabricating a provider image.
+    // structured problem without fabricating a provider image. /work always
+    // requires an image, so this path never records an attempt either way.
     const bounds = editor.getCurrentPageBounds() ?? editor.getViewportPageBounds();
     const response = await analyzeCanvas({
       mode: options.mode,
       courseId: options.courseId,
       priorAnnotations: collectPriorAnnotations(editor, bounds),
-      problem: options.problem,
+      problem,
       transcript: options.transcript,
       signal: options.signal,
     });
@@ -99,15 +103,44 @@ export async function runTutorAnalysis(
   }
 
   logSentImage(capture.blob);
-  const response = await analyzeCanvas({
-    courseId: options.courseId,
-    mode: options.mode,
-    canvasImage: capture.blob,
-    priorAnnotations: collectPriorAnnotations(editor, capture.bounds),
-    problem: options.problem,
-    transcript: options.transcript,
-    signal: options.signal,
-  });
+  const priorAnnotations = collectPriorAnnotations(editor, capture.bounds);
+
+  // Any generated problem goes through /work: the tutor grades and the server
+  // records the attempt in one round trip. The browser deciding `correct` for
+  // itself was the reason mastery could be forged. What the server recorded is
+  // not surfaced here -- the engine has no UI.
+  //
+  // Deliberately not gated on problem.skill. The server resolves the skills
+  // from ProblemSkill and records nothing when there are none, so asking the
+  // client whether a problem is attributed is both redundant and the same
+  // client-authority mistake in a smaller form. It also cannot work: a space
+  // loaded from GET /api/spaces/{id} carries a bare ProblemContext with no
+  // skill on it, so this used to silently fall through to analyzeCanvas on
+  // every reload and nothing was ever recorded.
+  //
+  // Voice input has no server-recording counterpart yet, so it still goes
+  // through analyzeCanvas.
+  const response =
+    problem && studentId && sessionId && !options.transcript
+      ? await submitWork({
+          courseId: options.courseId,
+          studentId,
+          sessionId,
+          problemId: problem.id,
+          mode: options.mode,
+          canvasImage: capture.blob,
+          priorAnnotations,
+          signal: options.signal,
+        })
+      : await analyzeCanvas({
+          courseId: options.courseId,
+          mode: options.mode,
+          canvasImage: capture.blob,
+          priorAnnotations,
+          problem,
+          transcript: options.transcript,
+          signal: options.signal,
+        });
 
   const context = {
     bounds: capture.bounds,

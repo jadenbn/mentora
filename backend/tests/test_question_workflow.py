@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("google.genai", reason="provider adapter requires google-genai")
 
-from app.agents.question_workflow import GeminiQuestionWorkflow  # noqa: E402
+from app.agents.question_workflow import (  # noqa: E402
+    QUESTION_PLAN_RESPONSE_SCHEMA,
+    GeminiQuestionWorkflow,
+)
 from app.agents.workflow_errors import QuestionWorkflowError  # noqa: E402
 from app.schemas.problems import GroundingChunk  # noqa: E402
 from google.genai import types  # noqa: E402
@@ -14,6 +18,15 @@ from google.genai import types  # noqa: E402
 pytestmark = pytest.mark.provider
 
 CHUNKS = [GroundingChunk(chunk_id="chunk_1", page=1, text="The chain rule applies.")]
+
+VALID_SKILL = {
+    "id": "chain-rule",
+    "name": "Chain rule",
+    "description": "Differentiate a composite function.",
+    "difficulty_band": 0.5,
+    "keywords": ["composite function"],
+    "question_forms": ["differentiate a nested expression"],
+}
 
 
 def test_thinking_level_reaches_question_generation_config():
@@ -39,8 +52,8 @@ class Harness(GeminiQuestionWorkflow):
 
 def test_an_invented_chunk_id_gets_one_repair_attempt():
     workflow = Harness([
-        {"prompt": "Question", "grounding_chunk_ids": ["invented"]},
-        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"]},
+        {"prompt": "Question", "grounding_chunk_ids": ["invented"], "skills": [VALID_SKILL]},
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [VALID_SKILL]},
     ])
     result = asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
     assert result.grounding_chunk_ids == ["chunk_1"]
@@ -49,9 +62,82 @@ def test_an_invented_chunk_id_gets_one_repair_attempt():
 
 def test_persistently_invalid_source_ids_fail_closed():
     workflow = Harness([
-        {"prompt": "Question", "grounding_chunk_ids": ["invented"]},
-        {"prompt": "Question", "grounding_chunk_ids": ["still_invented"]},
+        {"prompt": "Question", "grounding_chunk_ids": ["invented"], "skills": [VALID_SKILL]},
+        {"prompt": "Question", "grounding_chunk_ids": ["still_invented"], "skills": [VALID_SKILL]},
     ])
     with pytest.raises(QuestionWorkflowError):
         asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
     assert workflow.attempts == 2
+
+
+def test_more_than_one_skill_is_rejected():
+    """record_attempt scores expected_skills[0] and nothing else, so a second
+    skill costs output tokens and moves no estimate. Capped on the wire schema
+    rather than trimmed after parsing, so an over-eager response spends the
+    repair attempt instead of being silently truncated to whichever skill the
+    model happened to list first."""
+    two = [VALID_SKILL, {**VALID_SKILL, "id": "second", "name": "Second"}]
+    workflow = Harness([
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": two},
+        {"prompt": "Question", "grounding_chunk_ids": ["chunk_1"], "skills": [VALID_SKILL]},
+    ])
+    result = asyncio.run(workflow.run(chunks=CHUNKS, question_request="Conceptual"))
+    assert len(result.skills) == 1
+    assert workflow.attempts == 2
+
+
+def test_direct_request_sends_grounding_and_schema_configuration(monkeypatch):
+    calls: list[dict] = []
+
+    class Models:
+        async def generate_content(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                parsed={
+                    "prompt": "Differentiate $x^2$.",
+                    "grounding_chunk_ids": ["chunk_1"],
+                    "skills": [VALID_SKILL],
+                },
+                text=None,
+            )
+
+    class AsyncClient:
+        models = Models()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        "app.agents.question_workflow.create_client",
+        lambda _api_key: SimpleNamespace(aio=AsyncClient()),
+    )
+    workflow = GeminiQuestionWorkflow(
+        api_key="test-key",
+        model="test-model",
+        timeout_seconds=1,
+    )
+    asyncio.run(
+        workflow.run(
+            chunks=CHUNKS,
+            question_request="Conceptual chain rule",
+            difficulty_word="moderate",
+            existing_skills=[{"id": "calc1.a", "name": "A"}],
+        )
+    )
+
+    call = calls[0]
+    prompt = call["contents"].parts[0].text
+    assert "Conceptual chain rule" in prompt
+    assert "chunk_1" in prompt
+    assert "calc1.a" in prompt
+    # The engine's level sits in its own block, outside the quoted request,
+    # so the model can tell a preference from the instruction it must honour.
+    assert "<preferred-difficulty>moderate</preferred-difficulty>" in prompt
+    request_block = prompt.split("</question-request-json>")[0]
+    assert "moderate" not in request_block
+    assert call["config"].response_schema == QUESTION_PLAN_RESPONSE_SCHEMA
+    assert "Wrap inline mathematics" in call["config"].system_instruction
+    assert "identify the single skill it mainly exercises" in call["config"].system_instruction

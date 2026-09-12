@@ -1,13 +1,9 @@
-"""Environment-backed configuration.
-
-One required credential. Course retrieval is deferred, so Pinecone and OpenAI
-are no longer needed to run the tutor.
-"""
+"""Environment-backed configuration for Gemini, SQLite, and browser access."""
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REQUIRED_SETTINGS = ("GEMINI_API_KEY",)
@@ -28,18 +24,12 @@ def missing_indexing_settings() -> list[str]:
 
 
 def question_full_context_max_chars() -> int:
+    """Serialized context size below which retrieval is unnecessary."""
     raw = os.getenv("QUESTION_FULL_CONTEXT_MAX_CHARS") or "40000"
     value = int(raw)
     if value <= 0:
         raise ValueError("QUESTION_FULL_CONTEXT_MAX_CHARS must be positive")
     return value
-
-
-def database_path() -> Path:
-    configured = os.getenv("MENTORA_DB_PATH")
-    if configured:
-        return Path(configured).expanduser()
-    return Path(__file__).resolve().parents[1] / "mentora.db"
 
 
 def cors_allow_origins() -> list[str]:
@@ -55,9 +45,32 @@ def cors_allow_origins() -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+def api_key() -> str | None:
+    """Shared secret required on /api requests, or None to leave the API open.
+
+    Set MENTORA_API_KEY on any deployment reachable by anything but you. This
+    API spends provider quota on every generation and grading call, and it
+    writes to the student model.
+
+    Scope, stated plainly: a shared key authenticates the *caller*, not the
+    student. `student_id` is still whatever the request says it is, so any
+    holder of the key can read or write any student's model. Per-student
+    identity needs a real user system and per-user tokens; this closes the
+    open-to-the-internet hole, not that one.
+    """
+    return os.getenv("MENTORA_API_KEY") or None
+
+
+def database_path() -> Path:
+    configured = os.getenv("MENTORA_DB_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    return Path(__file__).resolve().parents[1] / "mentora.db"
+
+
 @dataclass(frozen=True)
 class TutorSettings:
-    gemini_api_key: str
+    gemini_api_key: str = field(repr=False)
     gemini_model: str
     gemini_thinking_level: str
     request_timeout_seconds: float

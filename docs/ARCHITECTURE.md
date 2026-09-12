@@ -136,8 +136,13 @@ Conceptual representation:
 
 ## 7. Whiteboard Session
 A session is a persistent working document. Called a **space** in the UI and in
-the frontend code. Its metadata and problem association are stored on the server;
-the canvas and tutor checkpoints remain in browser localStorage for now.
+the frontend code. Its metadata and problem association are stored on the
+server (`courses` and `spaces` tables in `backend/app/database.py`); the
+canvas and tutor checkpoints remain in browser localStorage for now. A
+generated problem is rendered in a pinned, typeset card above the infinite
+canvas; its canonical grounding record lives in SQLite. Older locked problem
+notes are removed on restore only when they match that space's current
+structured problem.
 Conceptual representation:
 ```json
 {
@@ -155,7 +160,9 @@ The canvas must be restorable. Preview images are not canonical state.
 
 ## 8. Canvas State
 Use supported tldraw serialization/persistence mechanisms where practical.
-Preserve student strokes, system/problem shapes, AI shapes, positions, styles, and useful metadata.
+Preserve student strokes, remaining system/imported shapes, AI shapes,
+positions, styles, and useful metadata. The generated problem is canonical on
+the space record rather than duplicated inside the tldraw snapshot.
 Camera/viewport state may also be stored.
 Avoid inventing a parallel graphics document model unless necessary.
 
@@ -179,6 +186,7 @@ Potential metadata:
 ```ts
 type ShapeOwner = "system" | "student" | "ai";
 ```
+The frontend's authoritative constants live in `lib/canvas/ownership.ts`.
 Shapes the tutor draws carry `owner: "ai"` and the `interaction_id` that
 produced them. Each response is also stored as a per-Space tutor checkpoint in
 browser storage, including a document-only tldraw snapshot captured when the
@@ -250,7 +258,10 @@ GET  /health                                  implemented
 POST /api/tutor/analyze                       implemented
 POST /api/voice/transcribe                    implemented
 POST /api/courses/{course_id}/documents       implemented
+GET  /api/courses/{course_id}/documents       implemented
 POST /api/courses/{course_id}/questions/generate implemented
+POST /api/courses/{course_id}/work            implemented
+GET  /api/courses/{course_id}/skills-overview implemented
 GET  /api/courses/{course_id}/search          implemented
 GET  /api/courses                                implemented
 POST /api/courses                                implemented
@@ -273,7 +284,8 @@ GET  /api/courses/{course_id}/student-model
 The implemented course routes support course CRUD, document upload/listing,
 grounded question generation, and Space CRUD. Space metadata lives on the
 server; the canvas document and tutor checkpoints remain in browser
-localStorage for now.
+localStorage for now. The engine's own routes (`/work`, `/skills-overview`,
+and the `/dev/*` surface) are documented separately in `LEARNING_ENGINE.md`.
 Prefer domain operations over one endpoint per prompt.
 
 ## 14. Shared Schemas
@@ -290,7 +302,7 @@ When changing a shared schema:
 `POST /api/tutor/analyze` is multipart form data:
 
 ```text
-course_id          retrieval scope (carried; retrieval is deferred)
+course_id          course and grounded-problem scope
 mode               mark | hint | explain | stuck
 canvas_image       optional PNG/JPEG/WebP; maximum 10 MB when present
 prior_annotations  JSON array of normalized bounds; defaults to []
@@ -300,8 +312,10 @@ transcript         optional spoken instruction; trimmed, max 1000 chars
 
 Six fields at most, no JSON request body. Normal work-analysis requests send
 an image, three scalars, and optionally the exact structured problem separately
-from the image. An `stuck` request with `problem_context` may omit the image;
-the tutor then reasons from the structured question and course grounding alone.
+from the image. The backend loads recorded document excerpts by problem id, so
+course material never crosses the browser tutor boundary. A `stuck` request
+with `problem_context` may omit the image; the tutor then reasons from the
+structured question and course grounding alone.
 
 Tutor-authored shapes are excluded from the exported image and their positions
 are sent as `prior_annotations` instead, so the model cannot read its own
@@ -426,11 +440,9 @@ structured tutor response
 Dedicated OCR is optional and should be added only if experiments show clear value.
 
 ## 23. Course Ingestion
-Initial pipeline:
+Implemented pipeline:
 ```text
 upload
-  ↓
-store document
   ↓
 extract content
   ↓
@@ -438,11 +450,9 @@ chunk / structure
   ↓
 attach metadata
   ↓
-store canonical text in SQLite
+transactional SQLite document/chunk storage
   ↓
-index vector IDs and scope metadata in Pinecone
-  ↓
-retrieve
+synchronous OpenAI embedding + Pinecone upsert
 ```
 Useful metadata:
 ```text
@@ -465,12 +475,21 @@ formula_sheet
 other
 ```
 
-## 24. Retrieval
-SQLite is canonical for documents, chunks, generated problems, and
-problem-to-chunk grounding. Pinecone stores vector IDs and scope metadata;
-retrieval joins ranked IDs back to SQLite text. Small documents use full
-context, while larger documents use semantic retrieval. Extraction, indexing,
-and semantic search run in worker threads so FastAPI's event loop stays free.
+## 24. Recorded Context
+
+SQLite is the source of truth for document metadata and exact chunk text.
+Pinecone stores `text-embedding-3-small` vectors with `course_id`, `document_id`,
+and `chunk_id` metadata, but never chunk text. Small documents send full
+context; larger ones retrieve semantically — filtered by both course and
+selected document, ranking chunk ids in Pinecone and hydrating their exact
+text from SQLite. Generated problems still record the one to eight chunks the
+model actually used, so later tutor interactions reuse exact grounding without
+another semantic search.
+
+The Pinecone index is provisioned outside the application with 1,536 dimensions
+and cosine similarity. Upload indexing and semantic search both run in worker
+threads so FastAPI's event loop stays free; re-uploading a content-addressed
+document is the repair path after a provider failure.
 
 ## 25. Course Style Model
 Style may include:
@@ -487,30 +506,42 @@ For the hackathon, style can be inferred on demand, summarized during ingestion,
 Choose the simplest approach that produces convincing results.
 
 ## 26. Question Generation
-Inputs may include:
-```text
-course_id
-topic
-difficulty
-user overrides
-retrieved examples
-course style profile
-covered-topic constraints
+Implemented input is a course id, one document id, and a required 1–1,000
+character question request describing topic, style, format, or difficulty.
+Documents whose serialized context is at most 40,000 characters (configurable
+with `QUESTION_FULL_CONTEXT_MAX_CHARS`) send every SQLite chunk to Gemini.
+Larger documents use the request to retrieve 12 Pinecone-ranked chunk ids and
+hydrate their text from SQLite. Structured provider output supplies the visible
+prompt plus validated source chunk ids. Generated prompts use plain text with
+`$...$` inline and `$$...$$` display LaTeX so the pinned problem card can render
+readable mathematical notation without accepting arbitrary HTML. Request:
+```json
+{
+  "document_id": "doc_123",
+  "question_request": "Create a difficult conceptual chain-rule question"
+}
 ```
 Current endpoint: `POST /api/courses/{course_id}/questions/generate` accepts a
-document ID and short question request. The direct `google-genai` workflow
-returns a validated plan, checks grounding IDs against retrieved chunks, and
-persists the generated problem and its grounding in SQLite.
+document ID and an optional question request — blank lets the learning engine
+pick the topic and difficulty (see `LEARNING_ENGINE.md`). The direct
+`google-genai` workflow returns a validated plan, checks grounding IDs against
+retrieved chunks, identifies the skill(s) the question exercises, and persists
+the generated problem, its grounding, and its skill attribution in SQLite.
 
 Response:
 ```json
 {
-  "id": "problem_123",
-  "topic": "integration-by-parts",
-  "difficulty": "medium",
-  "prompt": "Evaluate ...",
-  "expected_skills": ["integration-by-parts"],
-  "source": "generated"
+  "problem": {
+    "id": "problem_123",
+    "course_id": "course_demo",
+    "document_id": "doc_123",
+    "source": "generated",
+    "prompt": "Evaluate ...",
+    "created_at": "..."
+  },
+  "skills": [
+    {"id": "calc1.chain-rule", "name": "Chain rule", "difficulty_band": 0.5}
+  ]
 }
 ```
 Do not couple generation to one canvas representation.
@@ -537,10 +568,13 @@ Conceptual representation:
   "metadata": {}
 }
 ```
-Imported-problem reconstruction is not built. Generated problems render
-directly on the canvas as locked system-owned tldraw shapes using KaTeX, with a
-readable fallback for malformed LaTeX. Capture excludes system shapes while
-`problem_context` preserves the complete question for Gemini.
+Imported-problem reconstruction is not built. Generated problems already use a
+structured record, rendered directly on the canvas as locked system-owned
+tldraw shapes using KaTeX, with a readable fallback for malformed LaTeX.
+Capture excludes system shapes from the analysis image while `problem_context`
+preserves the complete question for Gemini; an eventual imported problem must
+join that same boundary rather than making the tutor infer it from student
+pixels.
 The key boundary is: recognize first, render cleanly second.
 
 ## 28. Persistence
@@ -551,6 +585,8 @@ session metadata
 canvas document state
 problem association
 timestamps
+course documents and ordered extracted chunks
+generated problems and ordered grounding-chunk links
 ```
 Optionally:
 ```text
@@ -699,10 +735,12 @@ timestamp
 ```
 Do not make the core tutor loop depend on a sophisticated model.
 
-Learning events are not emitted yet. The tutor observes plenty worth
-recording, but the learning engine wants closed-vocabulary, slug-identified,
-float-typed facts and the tutor produces prose. That adapter is a design
-decision rather than a merge, and it waits until the canvas loop works.
+The tutor observes plenty worth recording, but the learning engine wants
+closed-vocabulary, slug-identified, float-typed facts and the tutor produces
+prose. That adapter now exists: `app/services/attempt_grading.py` turns a
+graded `WorkStatus` (correct / incorrect / partial / uncertain) into the
+per-skill `AttemptGrading` that `record_attempt` ingests. See §47 for the
+full closed loop and its remaining granularity gap.
 
 ## 34. Built-In Course
 Support at least one built-in demo course, likely Calculus I.
@@ -720,10 +758,11 @@ AI SDK
 ```
 Centralize timeouts, retries, and structured-output handling without building an enterprise abstraction framework.
 
-The tutor is one direct Gemini call through the `google-genai` SDK:
+The tutor is one direct asynchronous Gemini call through the `google-genai` SDK:
 
 ```text
-canvas image + mode + prior annotations
+student-only canvas image + mode + problem + recorded excerpts
+                         + prior annotation bounds
         ↓
 Gemini multimodal generation (TutorPlan response schema)
         ↓ independent Pydantic validation and safety policy
@@ -736,10 +775,11 @@ responsiveness is the product.
 
 The SDK performs up to three bounded transient HTTP attempts for 408 and
 5xx responses. The application makes one additional request only when
-structured output is malformed. The model defaults to
-`gemini-3.5-flash-lite` and is replaceable through `GEMINI_MODEL`; thinking
-defaults to `low` and is replaceable through `GEMINI_THINKING_LEVEL`. These
-settings are shared by tutoring and grounded question generation.
+structured output is malformed. The same direct boundary powers grounded
+question generation. The model defaults to `gemini-3.5-flash-lite` and is
+replaceable through `GEMINI_MODEL`; thinking defaults to `low` and is
+replaceable through `GEMINI_THINKING_LEVEL`. These settings are shared by
+tutoring and grounded question generation.
 
 ## 36. Prompt Organization
 Possible layout:
@@ -773,9 +813,9 @@ Potential response:
 ```
 The algorithm can be approximate for the hackathon.
 
-Not implemented. The check needs to know what the course has covered, which
-means course retrieval, which is deferred — so a boundary decision today would
-be the model guessing. It returns with retrieval.
+Not implemented. Recorded excerpts ground one generated problem, but they are
+not yet a course-wide coverage model, so a boundary decision today would still
+be the model guessing.
 
 ## 38. Error Handling
 Plan for:
@@ -814,11 +854,13 @@ Treat model output as untrusted.
 Do not execute arbitrary model instructions.
 Avoid logging sensitive course content unnecessarily.
 
-Tutor readiness — and voice with it — requires `GEMINI_API_KEY` and nothing
-else. `/health` and
-configuration errors report missing variable names only. Image and audio types are
-verified from file signatures rather than trusting multipart headers. Recorded
-audio is never written to disk or persisted.
+Tutor and question-generation readiness — and voice with it — require
+`GEMINI_API_KEY` and nothing else. Course indexing and large-document
+retrieval additionally require `OPENAI_API_KEY`, `PINECONE_API_KEY`, and
+`PINECONE_INDEX_NAME`. `/health` reports these readiness groups separately
+and configuration errors expose missing variable names only. Image and audio
+types are verified from file signatures rather than trusting multipart
+headers. Recorded audio is never written to disk or persisted.
 
 ## 42. Testing
 Prioritize deterministic tests for:
@@ -911,3 +953,161 @@ Persistent AI feedback on canvas
 Student-model signal
 ```
 If the architecture supports this cleanly, it is serving the product.
+
+## 47. Integrated Learning Engine
+
+The backend is the merge of two halves: the **tutor product** (Gemini
+whiteboard tutor, grounded question generation, Pinecone retrieval, document
+repository, course and space CRUD — everything above) and the **learning
+engine**, which has no surface of its own. It is the tutor's brain: a
+per-course topic list and a per-student read of how they're doing on each
+one, consulted implicitly during question generation. There is no
+student-facing "next problem" screen and no mastery score shown anywhere —
+see `docs/LEARNING_ENGINE.md` for the full design, this section is only how
+the two halves connect.
+
+### 47.1 Two persistence layers, one file
+
+Two ORMs open the same `backend/mentora.db`:
+
+```text
+app/db.py        SQLModel engine   -> skill, skill_state, attempt,
+                                       hint_usage, problem_skill
+app/database.py  raw sqlite3       -> courses, spaces, course_documents,
+                 CourseRepository     document_chunks, generated_problems,
+                                       problem_grounding_chunks,
+                                       problem_difficulty
+```
+
+`courses` and `spaces` are DB-owned, not engine tables: `courses` is the
+single source of truth for which course ids exist, seeded with two demo rows
+(`course_demo`, `course_linear`) and otherwise grown by `POST /api/courses`,
+which mints `course_{uuid4().hex}` ids. The engine's tables carry `course_id`
+as a plain string with no foreign key back to `courses` -- the two ORMs never
+join across the file -- so every engine route that takes a `course_id`
+validates it against `courses` at the boundary (`api.dependencies.
+require_course`) before touching a skill or an attempt. See 47.4 for what a
+freshly created course's topic list looks like.
+
+`ProblemSkill` -- which skill(s) a generated problem counts toward -- lives in
+the SQLModel layer specifically so `skill_id` can carry a real foreign key to
+`skill.id`; that guarantee is worth a dedicated table and is why this table
+moved out of the raw layer. Documents, chunks, and generated problems stay
+raw: content-addressed blob storage, not something either the topic list or
+attempts logic ever join against directly.
+
+Two rules keep the split safe:
+
+- **One source of truth for the path.** Both resolve `MENTORA_DB_PATH` through
+  `app.config.database_path()`.
+- **Survive two writers.** Each layer enables `PRAGMA journal_mode=WAL` and
+  `PRAGMA busy_timeout=5000`; the SQLModel engine also enables
+  `PRAGMA foreign_keys=ON` (off by default in SQLite, which would make
+  `ProblemSkill`'s FK a comment rather than a constraint).
+
+### 47.2 The loop
+
+There is one generation route, `POST /api/courses/{course_id}/questions/generate`,
+and the engine is consulted inside it rather than through a route of its own:
+
+```text
+student types a request, or leaves it blank
+        |
+        +-- blank -> selection.pick_topic()   picks a topic + difficulty from
+        |                                       this student's per-topic accuracy
+        +-- typed -> profile.get_profile()    contributes a difficulty level
+        |                                       from overall accuracy; the
+        |                                       student's own topic wins
+        v
+QuestionService.generate()      a grounded problem; the model also names the
+                                  skill(s) it thinks the question exercises
+        |
+        +-- names an existing topic  -> attributed to it
+        +-- names something new      -> inserted as a new topic (the
+        |                                piggyback)
+        v
+attribution.set_problem_skills() + repository.set_problem_difficulty()
+        |
+        v
+POST /work        the student's canvas; the tutor grades it server-side and
+                    record_attempt() updates the topic's rolling accuracy window
+```
+
+**The client never scores its own work.** `POST /work` replaced an earlier
+`POST /attempts` that took `correct` straight from the browser; the tutor's own
+reading of the canvas decides the outcome now, and difficulty is read back from
+`problem_difficulty` rather than restated by the client. `POST
+/dev/courses/{id}/attempts` still takes a stated outcome, and its docstring
+says why that is fine there and nowhere else: it drives the dashboard without a
+canvas or a model call.
+
+### 47.3 Topics are flat, and can only grow through the piggyback
+
+There is no prerequisite graph and no unlock gate. An earlier gated design
+(mastery estimate + a fixed unlock threshold) starved a real demo course — an
+average student's estimate correctly settled at their true ability, which sat
+below the gate, so they never reached most of the material. A flat pool scored
+by weakness and staleness (`services/selection.py`) doesn't have that failure
+mode.
+
+**A topic can only be added by `QuestionService._attribute_skills`.** Every
+question the model generates also names the topic(s) it exercises. Each name
+resolves three ways, in order: an exact normalized-id match; a
+name-similarity match (`taxonomy.canonical_key` — same significant words,
+any order, case, or article, so "the chain rule" and "chain rule" collapse to
+one topic without an embedding call); or, if neither matches, a genuinely new
+topic. New topics go through `build_taxonomy` — the same normalizer and
+validator every topic source uses — and then `taxonomy.add_skills`, which
+inserts it. The database is the sole source of truth; there is no seed file
+anywhere, so a freshly created course starts with zero topics and grows
+entirely through this path (see 47.4). The one other writer is
+`POST /dev/courses/{id}/skills/import`, which runs a pasted batch through the
+same `build_taxonomy` → `add_skills` call — useful for testing a topic list
+without a model call, but otherwise equivalent to the piggyback.
+
+A malformed batch (e.g. two entries that collide after normalization) raises
+`TaxonomyError` inside `_attribute_skills`; it is caught and logged there, and
+the student still gets their problem, attributed only to whatever topic
+selection required.
+
+### 47.4 Cold start
+
+A brand-new course has no topics and nothing to select. `pick_topic` returns
+`None` in that case, and the route falls back to "write a question grounded
+in this material" with no required topic — the model's own read of the
+document seeds the first one or two topics through the ordinary piggyback
+path. Every generation after that has topics to select from. There is no
+separate bootstrap call, and this applies uniformly to every course:
+`course_demo` and `course_linear` (the two rows `CourseRepository` seeds) cold
+start exactly like a course a user just created through `POST /api/courses`.
+
+One visible cost of that uniformity: `normalize_slug` prefixes every skill id
+with its course id, so a topic on a UUID-named course reads as
+`course_a1b2c3....chain-rule` rather than something short like
+`calc1.chain-rule`. Functional, and never surfaced to a student, but worth
+knowing when reading the dev dashboard or `/dev` responses.
+
+### 47.5 What was cut, and why
+
+An earlier version of this engine was a small adaptive-learning platform: an
+Elo/IRT mastery estimator with read-time decay and a confidence function, a
+skill DAG with unlock gating and prerequisite bleed, a forced-review floor, a
+dedicated LLM taxonomy-generation path, and a proposal-and-review queue for
+new skills (observation counts, embedding-based deduplication, a promotion
+step). All of it is gone. Two reasons converged:
+
+- **It had a user interface, and it should not have one.** A "practice next
+  skill" button and a mastery readout on the whiteboard made the engine a
+  feature the student interacted with, when it should be invisible
+  infrastructure the tutor consults.
+- **It was over-built for what the product actually asks for.** `PRODUCT.md`
+  §23 asks the MVP to track attempts, correct/incorrect, hints used, and
+  difficulty — counters, not a fitted ability model — and §24 explicitly
+  prefers qualitative insight over "one opaque mastery score."
+
+What replaced it: a rolling window of recent outcomes per topic
+(`services/accuracy.py`), a flat priority formula with no gate
+(`services/selection.py`), and a student profile derived on read from the
+attempt ledger rather than stored (`services/profile.py`). `GET
+.../skills-overview` (dev dashboard only) now shows `accuracy`/`attempts`
+instead of `mastery`/`confidence`/`unlocked`.

@@ -5,10 +5,13 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.hypothesis/
 .venv/
 venv/
 .idea/
 .vscode/
 test_data/
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
