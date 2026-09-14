@@ -293,7 +293,7 @@ class GeminiTutorWorkflow:
         if canvas_image is not None:
             if canvas_mime_type is None:
                 raise ValueError("canvas_mime_type is required with canvas_image")
-            parts.append(types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type))
+            parts.insert(0, types.Part.from_bytes(data=canvas_image, mime_type=canvas_mime_type))
         message = types.Content(role="user", parts=parts)
         if os.getenv("TUTOR_DEBUG_LOG_REQUESTS") == "1":
             request_log = {
