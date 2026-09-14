@@ -24,7 +24,6 @@ VALID_SKILL = {
     "name": "Chain rule",
     "description": "Differentiate a composite function.",
     "difficulty_band": 0.5,
-    "keywords": ["composite function"],
     "question_forms": ["differentiate a nested expression"],
 }
 

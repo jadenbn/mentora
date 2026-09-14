@@ -58,7 +58,6 @@ def test_import_skills_persists_a_new_topic():
                         "name": "Imported",
                         "description": "via dev endpoint",
                         "difficulty_band": 0.3,
-                        "keywords": ["k1"],
                         "question_forms": ["q1"],
                     }
                 ]
@@ -74,7 +73,7 @@ def test_import_skills_persists_a_new_topic():
         s for s in overview["skills"] if s["skill_id"] == "calc1.imported-skill"
     )
     assert imported["is_recent"] is True
-    assert imported["keywords"] == ["k1"]
+    assert imported["question_forms"] == ["q1"]
 
 
 def test_import_skills_skips_an_id_that_already_exists():

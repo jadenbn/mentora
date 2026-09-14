@@ -17,9 +17,8 @@ class Skill(SQLModel, table=True):
     name: str
     description: str
     difficulty_band: float = Field(ge=0.0, le=1.0)
-    # Retrieval vocabulary (words a textbook uses that the name does not) and
-    # the question shapes this skill can take. Both optional in course JSON.
-    keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    # The question shapes this skill can take; selection feeds them back into
+    # the next prompt on the topic so questions vary. Optional.
     question_forms: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     # Never rewritten once set -- add_skills only inserts, it never
     # updates an existing row -- so this stays the moment the skill first

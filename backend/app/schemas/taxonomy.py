@@ -33,7 +33,6 @@ class RawSkillEntry(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=500)
     difficulty_band: float = Field(ge=0.0, le=1.0)
-    keywords: list[_ShortEntry] = Field(default_factory=list, max_length=12)
     question_forms: list[_ShortEntry] = Field(default_factory=list, max_length=12)
 
 
@@ -52,10 +51,6 @@ SKILL_ENTRY_SCHEMA = {
         "name": {"type": "string"},
         "description": {"type": "string"},
         "difficulty_band": {"type": "number", "minimum": 0, "maximum": 1},
-        "keywords": {
-            "type": "array",
-            "items": {"type": "string", "maxLength": _MAX_ENTRY_CHARS},
-        },
         "question_forms": {
             "type": "array",
             "items": {"type": "string", "maxLength": _MAX_ENTRY_CHARS},

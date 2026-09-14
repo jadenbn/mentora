@@ -35,9 +35,8 @@ one it is really testing.
   near-duplicate of a skill that already exists.
 - If no existing skill fits, propose a new one: a short lowercase hyphenated
   id local to this response (do not prefix it with a course id), a plain-
-  language name and description, difficulty_band in [0, 1], 3-12 keywords a
-  textbook would use for it, and 1-3 question_forms describing the shapes a
-  question on it typically takes (e.g. "evaluate a one-sided limit"), so a
-  later question on the same skill can be varied instead of repeating this
-  one's setup.
+  language name and description, difficulty_band in [0, 1], and 1-3
+  question_forms describing the shapes a question on it typically takes
+  (e.g. "evaluate a one-sided limit"), so a later question on the same skill
+  can be varied instead of repeating this one's setup.
 """.strip()

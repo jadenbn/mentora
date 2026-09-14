@@ -165,8 +165,8 @@ five; the taxonomy and attribution own the rest.
 **`Skill`** (`models/skill.py`) — one topic in a course's flat list. Id is
 course-prefixed and normalized (`calc1.derivatives.chain-rule`, or
 `course_a1b2c3....chain-rule` for a UUID-named course — see ARCHITECTURE.md
-§47.4). No prerequisite field — topics are flat. Carries `keywords`
-(retrieval vocabulary), `question_forms` (§5), and `difficulty_band`.
+§47.4). No prerequisite field — topics are flat. Carries `question_forms`
+(§5) and `difficulty_band`.
 Despite its name, `difficulty_band` is how advanced the topic is within the
 course, not a question difficulty. Its only use is ordering untried topics
 (§6), and the dashboard labels it "course level". Every topic is
@@ -283,8 +283,8 @@ ways, in `QuestionService._attribute_skills`:
    truth; nothing is written back to a file.
 
 **Everything about a new topic is model-authored.** The generation prompt
-asks for an id, name, description, `difficulty_band`, 3–12 `keywords`, and
-1–3 `question_forms` — the shapes a question on this topic typically takes,
+asks for an id, name, description, `difficulty_band`, and 1–3
+`question_forms` — the shapes a question on this topic typically takes,
 e.g. "evaluate a one-sided limit". `question_forms` feeds straight back into
 the next prompt on that topic (§6), which is what stops the generator
 reusing one worked example forever. Nothing in a taxonomy needs a human to

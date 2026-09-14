@@ -76,7 +76,7 @@ def canonical_key(name: str) -> str:
 
 
 def _validate_string_list(skill_id: str, field: str, values: list[str]) -> None:
-    """Guard the free-form keyword / question_form lists: non-empty strings,
+    """Guard a free-form list such as question_forms: non-empty strings,
     at most 12 entries, each <= 80 chars."""
     if len(values) > _MAX_LIST_ENTRIES:
         raise TaxonomyError(
@@ -109,7 +109,6 @@ def validate_taxonomy(skills: list[Skill]) -> None:
             raise TaxonomyError(
                 f"{skill.id}: difficulty_band {skill.difficulty_band} out of [0, 1]"
             )
-        _validate_string_list(skill.id, "keywords", skill.keywords)
         _validate_string_list(skill.id, "question_forms", skill.question_forms)
 
 
@@ -127,7 +126,6 @@ def build_taxonomy(course_id: str, raw_skills: list[dict]) -> list[Skill]:
             name=entry["name"],
             description=entry["description"],
             difficulty_band=entry["difficulty_band"],
-            keywords=list(entry.get("keywords", [])),
             question_forms=list(entry.get("question_forms", [])),
         )
         for entry in raw_skills

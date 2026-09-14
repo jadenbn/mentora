@@ -79,14 +79,13 @@ def test_overview_reports_what_generation_would_be_asked_for(session):
     assert practised.difficulty_word == "challenging"
 
 
-def test_overview_exposes_keywords_and_recency(session):
+def test_overview_exposes_question_forms_and_recency(session):
     now = datetime.now(timezone.utc)
     session.add(Skill(id="calc1.old", course_id="calc1", name="Old", description="d",
                       difficulty_band=0.3,
                       created_at=now - timedelta(days=30)))
     session.add(Skill(id="calc1.new", course_id="calc1", name="New", description="d",
-                      difficulty_band=0.4, keywords=["k1"],
-                      question_forms=["solve for x"],
+                      difficulty_band=0.4, question_forms=["solve for x"],
                       created_at=now))
     session.commit()
 
@@ -97,5 +96,4 @@ def test_overview_exposes_keywords_and_recency(session):
 
     fresh = by_id["calc1.new"]
     assert fresh.is_recent is True
-    assert fresh.keywords == ["k1"]
     assert fresh.question_forms == ["solve for x"]

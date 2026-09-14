@@ -201,7 +201,6 @@ def get_skills_overview(
                 skill_name=skill.name,
                 description=skill.description,
                 difficulty_band=skill.difficulty_band,
-                keywords=list(skill.keywords),
                 question_forms=list(skill.question_forms),
                 created_at=created_at,
                 is_recent=(now - created_at) <= RECENT_SKILL_WINDOW,

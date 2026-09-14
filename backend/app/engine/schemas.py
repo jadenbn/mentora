@@ -43,7 +43,6 @@ class SkillOverviewOut(StrictModel):
     skill_name: str
     description: str
     difficulty_band: float
-    keywords: list[str]
     question_forms: list[str]
     created_at: datetime
     is_recent: bool

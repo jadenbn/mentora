@@ -221,7 +221,7 @@
       Paste a raw topic batch and post it straight into the selected course,
       the same build_taxonomy → add_skills path the piggyback in question
       generation uses, no model call. Shape:
-      <code>{"skills":[{"id","name","description","difficulty_band","keywords","question_forms"}]}</code>.
+      <code>{"skills":[{"id","name","description","difficulty_band","question_forms"}]}</code>.
     </p>
     <textarea id="importText" spellcheck="false">{
   "skills": [
@@ -230,7 +230,6 @@
       "name": "Example topic",
       "description": "Replace with a real one.",
       "difficulty_band": 0.4,
-      "keywords": [],
       "question_forms": []
     }
   ]
@@ -338,7 +337,6 @@ function renderSelected() {
   detail.innerHTML = `
     <dt>Description</dt><dd>${s.description}</dd>
     <dt>Added</dt><dd>${s.is_recent ? '<span class="badge-new">new</span> ' : ''}<span class="sub">${new Date(s.created_at).toLocaleString()}</span></dd>
-    <dt>Keywords</dt><dd>${chips(s.keywords)}</dd>
     <dt>Question forms</dt><dd>${chips(s.question_forms)}</dd>
     <dt>Last served</dt><dd>${s.last_served ? new Date(s.last_served).toLocaleString() : '<span class="sub">never</span>'}</dd>
   `;

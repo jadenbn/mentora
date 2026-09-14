@@ -26,12 +26,12 @@ def session():
 
 
 class TestValidation:
-    def test_rejects_overlong_keyword_list(self) -> None:
+    def test_rejects_overlong_question_form_list(self) -> None:
         skills = [
             Skill(id="calc1.a", course_id="calc1", name="A", description="d",
-                  difficulty_band=0.5, keywords=[f"k{i}" for i in range(13)]),
+                  difficulty_band=0.5, question_forms=[f"q{i}" for i in range(13)]),
         ]
-        with pytest.raises(TaxonomyError, match="keywords"):
+        with pytest.raises(TaxonomyError, match="question_forms"):
             validate_taxonomy(skills)
 
     def test_rejects_empty_and_overlong_entries(self) -> None:
@@ -41,7 +41,7 @@ class TestValidation:
             validate_taxonomy(blank)
 
         huge = [Skill(id="calc1.b", course_id="calc1", name="B", description="d",
-                      difficulty_band=0.5, keywords=["x" * 81])]
+                      difficulty_band=0.5, question_forms=["x" * 81])]
         with pytest.raises(TaxonomyError, match="chars"):
             validate_taxonomy(huge)
 
@@ -137,7 +137,7 @@ class TestBuildTaxonomy:
         raw = [
             {"id": "root", "name": "Root", "description": "d", "difficulty_band": 0.2},
             {"id": "child", "name": "Child", "description": "d", "difficulty_band": 0.5,
-             "keywords": ["k1"], "question_forms": ["solve for x"]},
+             "question_forms": ["solve for x"]},
         ]
         built = build_taxonomy("calc1", raw)
         assert [s.id for s in built] == ["calc1.root", "calc1.child"]

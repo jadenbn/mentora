@@ -89,7 +89,6 @@ async def test_pick_generate_tag_grade_record_moves_the_selected_topic(
             name="Chain rule",
             description="Differentiating a composition f(g(x)).",
             difficulty_band=0.5,
-            keywords=["composite function", "outer derivative"],
             question_forms=["differentiate a nested expression"],
         )
     )
