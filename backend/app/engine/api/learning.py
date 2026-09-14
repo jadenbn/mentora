@@ -48,7 +48,6 @@ def get_skills_overview(
 async def submit_work(
     course_id: str,
     student_id: str,
-    session_id: Annotated[str, Form(min_length=1)],
     mode: Annotated[TutorMode, Form()],
     canvas_image: Annotated[UploadFile, File()],
     problem_id: Annotated[str, Form(min_length=1)],
@@ -122,7 +121,6 @@ async def submit_work(
                     course_id,
                     AttemptCreate(
                         student_id=student_id,
-                        session_id=session_id,
                         problem_id=problem_id,
                         expected_skills=skills,
                         correct=response.status == WorkStatus.correct,

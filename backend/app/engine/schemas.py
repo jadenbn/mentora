@@ -24,7 +24,6 @@ class StrictModel(BaseModel):
 
 class AttemptCreate(StrictModel):
     student_id: str
-    session_id: str
     problem_id: str
     expected_skills: list[str]
     correct: bool

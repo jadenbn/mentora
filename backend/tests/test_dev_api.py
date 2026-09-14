@@ -244,7 +244,7 @@ def test_a_synthetic_attempt_also_marks_the_topic_served():
         client.post(
             "/dev/courses/calc1/attempts",
             json={
-                "student_id": "dev-2", "session_id": "dev", "problem_id": "d1",
+                "student_id": "dev-2", "problem_id": "d1",
                 "expected_skills": [first], "correct": False,
             },
         )
@@ -286,7 +286,7 @@ def test_delete_skill_takes_the_students_state_with_it():
         _import_one(client)
         client.post(
             "/dev/courses/calc1/attempts",
-            json={"student_id": "stu1", "session_id": "dev", "problem_id": "p1",
+            json={"student_id": "stu1", "problem_id": "p1",
                   "expected_skills": ["calc1.a"], "correct": True},
         )
         deleted = client.delete("/dev/courses/calc1/skills/calc1.a").json()
@@ -310,7 +310,7 @@ def test_delete_skill_leaves_the_attempt_ledger_alone():
         _import_one(client)
         client.post(
             "/dev/courses/calc1/attempts",
-            json={"student_id": "stu1", "session_id": "dev", "problem_id": "p1",
+            json={"student_id": "stu1", "problem_id": "p1",
                   "expected_skills": ["calc1.a"], "correct": True},
         )
         client.delete("/dev/courses/calc1/skills/calc1.a")

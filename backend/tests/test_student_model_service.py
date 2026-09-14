@@ -40,7 +40,7 @@ def _skill(session, id_, course_id="calc1", name=None):
 def test_record_attempt_scores_a_correct_unassisted_attempt_at_1(session):
     _skill(session, "calc1.a")
     payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
+        student_id="stu1", problem_id="p1",
         expected_skills=["calc1.a"], correct=True, hints_used=0,
     )
     result = svc.record_attempt(session, "calc1", payload)
@@ -57,7 +57,7 @@ def test_record_attempt_scores_a_correct_unassisted_attempt_at_1(session):
 def test_record_attempt_scores_a_hinted_correct_attempt_lower(session):
     _skill(session, "calc1.a")
     payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
+        student_id="stu1", problem_id="p1",
         expected_skills=["calc1.a"], correct=True, hints_used=1,
     )
     result = svc.record_attempt(session, "calc1", payload)
@@ -70,7 +70,7 @@ def test_record_attempt_scores_a_hinted_correct_attempt_lower(session):
 def test_record_attempt_scores_incorrect_at_0(session):
     _skill(session, "calc1.a")
     payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
+        student_id="stu1", problem_id="p1",
         expected_skills=["calc1.a"], correct=False,
     )
     result = svc.record_attempt(session, "calc1", payload)
@@ -88,7 +88,7 @@ def test_accuracy_is_the_mean_of_the_recent_window(session):
         return svc.record_attempt(
             session, "calc1",
             AttemptCreate(
-                student_id="stu1", session_id="sess1", problem_id=problem_id,
+                student_id="stu1", problem_id=problem_id,
                 expected_skills=["calc1.a"], correct=correct,
             ),
         )
@@ -108,7 +108,7 @@ def test_the_window_caps_at_eight_outcomes(session):
         svc.record_attempt(
             session, "calc1",
             AttemptCreate(
-                student_id="stu1", session_id="sess1", problem_id=f"p{i}",
+                student_id="stu1", problem_id=f"p{i}",
                 expected_skills=["calc1.a"], correct=True,
             ),
         )
@@ -120,7 +120,7 @@ def test_the_window_caps_at_eight_outcomes(session):
 def test_unknown_skill_raises(session):
     _skill(session, "calc1.a")
     payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
+        student_id="stu1", problem_id="p1",
         expected_skills=["calc1.does-not-exist"], correct=True,
     )
     with pytest.raises(svc.UnknownSkillError):
@@ -135,7 +135,7 @@ def test_reposting_the_same_problem_does_not_move_accuracy_again(session):
     """
     _skill(session, "calc1.a")
     payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
+        student_id="stu1", problem_id="p1",
         expected_skills=["calc1.a"], correct=True,
     )
     first = svc.record_attempt(session, "calc1", payload)
@@ -154,7 +154,7 @@ def test_a_different_problem_is_still_a_new_attempt(session):
         return svc.record_attempt(
             session, "calc1",
             AttemptCreate(
-                student_id="stu1", session_id="sess1", problem_id=problem_id,
+                student_id="stu1", problem_id=problem_id,
                 expected_skills=["calc1.a"], correct=True,
             ),
         )
@@ -172,7 +172,7 @@ def test_skills_overview_includes_untouched_topics(session):
     svc.record_attempt(
         session, "calc1",
         AttemptCreate(
-            student_id="stu1", session_id="sess1", problem_id="p1",
+            student_id="stu1", problem_id="p1",
             expected_skills=["calc1.a"], correct=True,
         ),
     )
@@ -213,7 +213,7 @@ def test_only_the_primary_skill_takes_the_outcome(session):
     _skill(session, "calc1.chain-rule")
     _skill(session, "calc1.arithmetic")
     payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
+        student_id="stu1", problem_id="p1",
         expected_skills=["calc1.chain-rule", "calc1.arithmetic"], correct=False,
     )
     result = svc.record_attempt(session, "calc1", payload)
@@ -232,7 +232,7 @@ def test_an_explicit_clock_is_used_for_last_seen_and_created_at(session):
     _skill(session, "calc1.a")
     stamp = datetime(2020, 1, 1, tzinfo=timezone.utc)
     payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
+        student_id="stu1", problem_id="p1",
         expected_skills=["calc1.a"], correct=True,
     )
     svc.record_attempt(session, "calc1", payload, now=stamp)

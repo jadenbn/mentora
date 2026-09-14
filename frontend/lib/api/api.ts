@@ -136,7 +136,6 @@ export async function analyzeCanvas(args: {
 export async function submitWork(args: {
   courseId: string;
   studentId: string;
-  sessionId: string;
   problemId: string;
   mode: TutorMode;
   canvasImage: Blob;
@@ -144,7 +143,6 @@ export async function submitWork(args: {
   signal?: AbortSignal;
 }): Promise<TutorResponse> {
   const form = new FormData();
-  form.append("session_id", args.sessionId);
   form.append("mode", args.mode);
   form.append("problem_id", args.problemId);
   form.append("canvas_image", args.canvasImage, "canvas.png");

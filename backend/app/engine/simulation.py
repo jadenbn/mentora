@@ -238,7 +238,6 @@ def simulate(
                     course_id,
                     AttemptCreate(
                         student_id=student_id,
-                        session_id="sim",
                         problem_id=f"{student_id}-{question}",
                         expected_skills=[pick.skill_id],
                         correct=correct,

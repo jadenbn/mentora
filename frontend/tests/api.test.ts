@@ -226,7 +226,6 @@ describe("course material APIs", () => {
     const response = await submitWork({
       courseId: "course_demo",
       studentId: "stu_1",
-      sessionId: "sess_1",
       problemId: "problem_1",
       mode: "mark",
       canvasImage: IMAGE,
@@ -237,7 +236,6 @@ describe("course material APIs", () => {
     expect(url).toContain("/api/courses/course_demo/work");
     expect(url).toContain("student_id=stu_1");
     const form = init.body as FormData;
-    expect(form.get("session_id")).toBe("sess_1");
     expect(form.get("problem_id")).toBe("problem_1");
     expect(form.get("mode")).toBe("mark");
   });

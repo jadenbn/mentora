@@ -25,7 +25,6 @@ class Attempt(SQLModel, table=True):
     id: str = Field(default_factory=_new_id, primary_key=True)
     student_id: str = Field(index=True)
     course_id: str = Field(index=True)
-    session_id: str
     problem_id: str
     expected_skills: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     correct: bool

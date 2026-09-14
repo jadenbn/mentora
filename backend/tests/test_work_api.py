@@ -74,7 +74,7 @@ def seeded():
 
 def _post(client, **overrides):
     form = {
-        "session_id": "sess1", "mode": "mark", "problem_id": "p1",
+        "mode": "mark", "problem_id": "p1",
     }
     form.update(overrides)
     return client.post(
@@ -162,7 +162,7 @@ def test_the_product_api_no_longer_accepts_a_client_stated_grade():
     with TestClient(app) as client:
         response = client.post(
             "/api/courses/calc1/attempts",
-            json={"student_id": "stu1", "session_id": "s", "problem_id": "p",
+            json={"student_id": "stu1", "problem_id": "p",
                   "expected_skills": ["calc1.derivatives.chain-rule"],
                   "correct": True},
         )
@@ -182,7 +182,7 @@ def test_a_hint_is_counted_by_the_server_and_lowers_the_later_score(seeded):
         client.post(
             "/api/courses/calc1/work",
             params={"student_id": "stu1"},
-            data={"session_id": "sess1", "mode": "hint", "problem_id": "p1"},
+            data={"mode": "hint", "problem_id": "p1"},
             files={"canvas_image": ("c.png", io.BytesIO(PNG), "image/png")},
         )
         body = _post(client).json()

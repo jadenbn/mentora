@@ -131,7 +131,6 @@ async def test_pick_generate_tag_grade_record_moves_the_selected_topic(
     #    the server must ignore that and use the server-side attribution.
     payload = AttemptCreate(
         student_id="stu1",
-        session_id="sess1",
         problem_id=problem.id,
         expected_skills=["calc1.some.other.skill"],  # a lie
         correct=True,

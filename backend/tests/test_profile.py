@@ -24,7 +24,7 @@ def session():
 def _attempt(session, problem_id, *, correct, partial=False, hints_used=0):
     session.add(
         Attempt(
-            student_id="stu1", course_id="calc1", session_id="s",
+            student_id="stu1", course_id="calc1",
             problem_id=problem_id, expected_skills=["calc1.a"],
             correct=correct, partial=partial, hints_used=hints_used,
         )

@@ -355,7 +355,6 @@ async function attempt(kind) {
   if (!s) return;
   const body = {
     student_id: $('#student').value.trim(),
-    session_id: 'dev-dashboard',
     problem_id: `dev_${s.skill_id}_${Date.now()}`,
     expected_skills: [s.skill_id],
     correct: kind === 'correct',

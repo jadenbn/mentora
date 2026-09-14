@@ -228,7 +228,7 @@ describe("choosing between /work and /api/tutor/analyze", () => {
    * that after any page reload the request silently went to the grade-only
    * endpoint, so no attempt was ever recorded and no hint was ever counted.
    */
-  const identified = { studentId: "dev-student", sessionId: "space_1" };
+  const identified = { studentId: "dev-student" };
 
   it("posts an unattributed problem to /work anyway, letting the server decide", async () => {
     const fake = makeEditor({ shapes: [student("s1")] });
@@ -240,7 +240,6 @@ describe("choosing between /work and /api/tutor/analyze", () => {
     expect(url).toContain("student_id=dev-student");
     const form = spy.mock.calls[0][1].body as FormData;
     expect(form.get("problem_id")).toBe("problem_1");
-    expect(form.get("session_id")).toBe("space_1");
   });
 
   it("still renders the tutor's answer from the /work envelope", async () => {

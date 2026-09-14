@@ -49,9 +49,8 @@ export interface TutorAnalysisOptions {
   /** What the student asked out loud, when they used the microphone. */
   transcript?: string;
   signal?: AbortSignal;
-  /** Supplied for a skill-attributed problem, so the server can record. */
+  /** Supplied for a generated problem, so the server can record the attempt. */
   studentId?: string;
-  sessionId?: string;
   /** Whiteboard supplies the progressive renderer; tests and other callers may render immediately. */
   renderActions?: (
     editor: Editor,
@@ -69,7 +68,7 @@ export interface TutorAnalysisOptions {
 export async function runTutorAnalysis(
   options: TutorAnalysisOptions,
 ): Promise<TutorResponse> {
-  const { editor, problem, studentId, sessionId } = options;
+  const { editor, problem, studentId } = options;
   const renderActions = options.renderActions ?? renderCanvasActions;
   const snapshot = editor.getSnapshot().document;
 
@@ -121,11 +120,10 @@ export async function runTutorAnalysis(
   // Voice input has no server-recording counterpart yet, so it still goes
   // through analyzeCanvas.
   const response =
-    problem && studentId && sessionId && !options.transcript
+    problem && studentId && !options.transcript
       ? await submitWork({
           courseId: options.courseId,
           studentId,
-          sessionId,
           problemId: problem.id,
           mode: options.mode,
           canvasImage: capture.blob,

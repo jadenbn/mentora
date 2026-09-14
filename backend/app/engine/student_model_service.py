@@ -152,7 +152,6 @@ def record_attempt(
     attempt = Attempt(
         student_id=payload.student_id,
         course_id=course_id,
-        session_id=payload.session_id,
         problem_id=payload.problem_id,
         expected_skills=expected_skills,
         correct=payload.correct,
