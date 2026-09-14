@@ -144,7 +144,7 @@ Full contract in `docs/TUTOR_AGENT.md`.
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest -q -m "not live"    # 389, no provider calls
+cd backend  && .venv/bin/python -m pytest -q -m "not live"    # 388, no provider calls
 cd frontend && bun run test
 ```
 
