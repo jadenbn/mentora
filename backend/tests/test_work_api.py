@@ -15,7 +15,6 @@ from app.main import app
 from app.engine.models.skill_state import SkillState
 from app.engine.accuracy import observed_accuracy
 from app.services import attribution
-from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import ProblemContext
@@ -65,7 +64,6 @@ def seeded():
         s.add(Skill(
             id="calc1.derivatives.chain-rule", course_id="calc1", name="Chain rule",
             description="Differentiating a composite function.", difficulty_band=0.5,
-            origin=SkillOrigin.SEED,
         ))
         s.commit()
         attribution.set_problem_skills(s, problem.id, ["calc1.derivatives.chain-rule"])

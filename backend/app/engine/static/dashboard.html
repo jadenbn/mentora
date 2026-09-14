@@ -52,8 +52,6 @@
   .pct { font-variant-numeric:tabular-nums; }
   .word { color:var(--muted); font-size:11px; margin-top:3px; }
   .pill { font-size:11px; padding:2px 8px; border-radius:20px; font-weight:600; }
-  .pill.seed { background:#242c38; color:var(--muted); }
-  .pill.generated { background:#241f3d; color:var(--gen); }
   .pill.new { background:#0d3134; color:var(--accent); border:1px solid var(--accent); }
   .badge-new { display:inline-block; margin-left:5px; font-size:10px; font-weight:700;
     color:var(--new); background:#312a12; border-radius:20px; padding:1px 6px;
@@ -164,7 +162,7 @@
   </div>
   <table>
     <thead><tr>
-      <th>Topic</th><th>Origin</th>
+      <th>Topic</th>
       <th data-tip="What the engine believes, and what it acts on. The word underneath is the difficulty the generator is asked for on this topic's next question.">Estimated ability</th>
       <th data-tip="Raw mean score over the last 8 attempts. Never used for a decision.">Observed ability</th>
       <th>Attempts</th>
@@ -294,8 +292,7 @@ function render() {
 
   $('#rows').innerHTML = skills.map(s => {
     const cls = ['skill']; if (selected === s.skill_id) cls.push('sel');
-    const origin = `<span class="pill ${s.origin}">${s.origin}</span>` +
-      (s.is_recent ? '<span class="badge-new" title="added in the last 15 minutes">new</span>' : '');
+    const fresh = s.is_recent ? '<span class="badge-new" title="added in the last 15 minutes">new</span>' : '';
     // Two numbers on purpose. The API fields are `estimate` / `observed`;
     // the page labels them "estimated ability" / "observed ability" so one
     // vocabulary covers this table and the simulation report alike.
@@ -307,8 +304,7 @@ function render() {
     const observedText = s.observed === null ? '—' : s.observed.toFixed(2);
     const width = s.estimate * 100;
     return `<tr class="${cls.join(' ')}" data-id="${s.skill_id}">
-      <td><div class="name">${s.skill_name}</div><div class="id">${s.skill_id}</div></td>
-      <td>${origin}</td>
+      <td><div class="name">${s.skill_name}${fresh}</div><div class="id">${s.skill_id}</div></td>
       <td><div style="display:flex;gap:8px;align-items:center">
         <div class="track"><div class="fill" style="width:${width.toFixed(0)}%;background:${accuracyColor(s.estimate)}"></div></div>
         <span class="pct">${s.estimate.toFixed(2)}</span></div>
@@ -341,9 +337,7 @@ function renderSelected() {
   detail.classList.add('show');
   detail.innerHTML = `
     <dt>Description</dt><dd>${s.description}</dd>
-    <dt>Origin</dt><dd><span class="pill ${s.origin}">${s.origin}</span>
-      ${s.is_recent ? '<span class="badge-new">new</span>' : ''}
-      <span class="sub" style="margin-left:6px">${new Date(s.created_at).toLocaleString()}</span></dd>
+    <dt>Added</dt><dd>${s.is_recent ? '<span class="badge-new">new</span> ' : ''}<span class="sub">${new Date(s.created_at).toLocaleString()}</span></dd>
     <dt>Keywords</dt><dd>${chips(s.keywords)}</dd>
     <dt>Question forms</dt><dd>${chips(s.question_forms)}</dd>
     <dt>Last served</dt><dd>${s.last_served ? new Date(s.last_served).toLocaleString() : '<span class="sub">never</span>'}</dd>

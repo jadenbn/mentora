@@ -27,7 +27,7 @@ class StrictModel(BaseModel):
 
 
 class RawSkillEntry(StrictModel):
-    """One skill as the provider emits it -- pre-normalization, pre-origin."""
+    """One skill as the provider emits it -- pre-normalization."""
 
     id: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)

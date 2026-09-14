@@ -6,7 +6,6 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.database import CourseRepository
-from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import GroundingChunk, QuestionPlan
@@ -183,7 +182,7 @@ def test_generation_rejects_a_document_from_another_course(tmp_path, session):
 def _existing_skill(session, skill_id, name="Existing"):
     session.add(
         Skill(id=skill_id, course_id="course_1", name=name, description="d",
-              difficulty_band=0.5, origin=SkillOrigin.GENERATED)
+              difficulty_band=0.5)
     )
     session.commit()
 
@@ -218,7 +217,6 @@ def test_generation_identifies_a_new_topic_via_the_piggyback(tmp_path, session):
 
     created = session.get(Skill, "course_1.chain-rule")
     assert created is not None
-    assert created.origin == SkillOrigin.GENERATED
     assert attribution.get_problem_skills(session, generated.id) == ["course_1.chain-rule"]
 
 
@@ -303,7 +301,7 @@ def test_generation_offers_existing_skills_to_the_workflow(tmp_path, session):
     repo = seeded_repo(tmp_path)
     session.add(
         Skill(id="course_1.root", course_id="course_1", name="Root", description="d",
-              difficulty_band=0.2, origin=SkillOrigin.SEED)
+              difficulty_band=0.2)
     )
     session.commit()
     workflow = StubQuestionWorkflow()
@@ -317,11 +315,11 @@ def test_generation_offers_existing_skills_to_the_workflow(tmp_path, session):
     assert {"id": "course_1.root", "name": "Root"} in workflow.calls[0]["existing_skills"]
 
 
-def test_generation_never_overwrites_a_seed_skill(tmp_path, session):
+def test_generation_never_overwrites_an_existing_skill(tmp_path, session):
     repo = seeded_repo(tmp_path)
     session.add(
         Skill(id="course_1.chain-rule", course_id="course_1", name="Authored",
-              description="seeded", difficulty_band=0.3, origin=SkillOrigin.SEED)
+              description="seeded", difficulty_band=0.3)
     )
     session.commit()
     workflow = StubQuestionWorkflow(skills=[VALID_SKILL])  # same id, different content
@@ -332,12 +330,11 @@ def test_generation_never_overwrites_a_seed_skill(tmp_path, session):
             question_request="Conceptual",
         )
     )
-    # The problem is still attributed to the id, but the seed skill's own
-    # fields are untouched.
+    # The problem is still attributed to the id, but the existing skill's
+    # own fields are untouched.
     assert "course_1.chain-rule" in attribution.get_problem_skills(session, generated.id)
     untouched = session.get(Skill, "course_1.chain-rule")
     assert untouched.name == "Authored"
-    assert untouched.origin == SkillOrigin.SEED
 
 
 def test_a_malformed_skill_batch_does_not_fail_the_problem_request(tmp_path, session):

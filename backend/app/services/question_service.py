@@ -12,7 +12,6 @@ from uuid import uuid4
 from sqlmodel import Session, select
 
 from app.database import CourseRepository
-from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.schemas.problems import GeneratedProblem, GroundingChunk, ProblemContext, QuestionPlan
 from app.schemas.taxonomy import RawSkillEntry
@@ -221,7 +220,6 @@ class QuestionService:
                 produced = build_taxonomy(
                     course_id,
                     [e.model_dump() for e in to_create],
-                    SkillOrigin.GENERATED,
                 )
                 # Capped after validation, not before: truncating first would
                 # let a malformed batch slip through by dropping the entry it

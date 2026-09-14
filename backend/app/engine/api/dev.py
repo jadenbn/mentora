@@ -17,7 +17,6 @@ from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
 from app.api.dependencies import get_session, require_course
-from app.models.enums import SkillOrigin
 from app.models.problem_skill import ProblemSkill
 from app.models.skill import Skill
 from app.engine.models.skill_state import SkillState
@@ -48,7 +47,7 @@ def import_skills(
     """
     raw = [entry.model_dump() for entry in payload.skills]
     try:
-        produced = build_taxonomy(course_id, raw, SkillOrigin.GENERATED)
+        produced = build_taxonomy(course_id, raw)
         added = add_skills(session, course_id, produced)
     except TaxonomyError as exc:
         raise HTTPException(400, str(exc)) from exc

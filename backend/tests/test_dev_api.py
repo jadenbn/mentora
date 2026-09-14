@@ -73,7 +73,6 @@ def test_import_skills_persists_a_new_topic():
     imported = next(
         s for s in overview["skills"] if s["skill_id"] == "calc1.imported-skill"
     )
-    assert imported["origin"] == "generated"
     assert imported["is_recent"] is True
     assert imported["keywords"] == ["k1"]
 

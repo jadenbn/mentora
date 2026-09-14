@@ -6,7 +6,6 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.services.taxonomy import (
     TaxonomyError,
@@ -140,19 +139,13 @@ class TestBuildTaxonomy:
             {"id": "child", "name": "Child", "description": "d", "difficulty_band": 0.5,
              "keywords": ["k1"], "question_forms": ["solve for x"]},
         ]
-        built = build_taxonomy("calc1", raw, SkillOrigin.SEED)
+        built = build_taxonomy("calc1", raw)
         assert [s.id for s in built] == ["calc1.root", "calc1.child"]
-        assert all(s.origin == SkillOrigin.SEED for s in built)
-
-    def test_tags_generated_origin(self) -> None:
-        raw = [{"id": "x", "name": "X", "description": "d", "difficulty_band": 0.3}]
-        built = build_taxonomy("calc1", raw, SkillOrigin.GENERATED)
-        assert built[0].origin == SkillOrigin.GENERATED
 
     def test_enforces_the_same_validation_as_validate_taxonomy(self) -> None:
         bad = [{"id": "a", "name": "A", "description": "d", "difficulty_band": 4.2}]
         with pytest.raises(TaxonomyError, match=r"out of \[0, 1\]"):
-            build_taxonomy("calc1", bad, SkillOrigin.GENERATED)
+            build_taxonomy("calc1", bad)
 
 
 class TestAddSkills:
@@ -160,7 +153,6 @@ class TestAddSkills:
         produced = build_taxonomy(
             "calc1",
             [{"id": "new-topic", "name": "New topic", "description": "d", "difficulty_band": 0.3}],
-            SkillOrigin.GENERATED,
         )
         assert add_skills(session, "calc1", produced) == ["calc1.new-topic"]
         assert session.get(Skill, "calc1.new-topic") is not None
@@ -173,7 +165,6 @@ class TestAddSkills:
         produced = build_taxonomy(
             "calc1",
             [{"id": "root", "name": "Overwrite attempt", "description": "x", "difficulty_band": 0.9}],
-            SkillOrigin.GENERATED,
         )
         assert add_skills(session, "calc1", produced) == []
         assert session.get(Skill, "calc1.root").name == "Root"
@@ -186,7 +177,6 @@ class TestAddSkills:
         produced = build_taxonomy(
             "calc1",
             [{"id": "new", "name": "New", "description": "d", "difficulty_band": 0.4}],
-            SkillOrigin.GENERATED,
         )
         add_skills(session, "calc1", produced)
 

@@ -12,7 +12,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import SkillOrigin
 from app.schemas.tutor import TutorResponse
 
 
@@ -46,7 +45,6 @@ class SkillOverviewOut(StrictModel):
     difficulty_band: float
     keywords: list[str]
     question_forms: list[str]
-    origin: SkillOrigin
     created_at: datetime
     is_recent: bool
     #: What happened: the mean of the recent window, null when untouched.

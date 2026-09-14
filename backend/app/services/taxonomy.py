@@ -17,7 +17,6 @@ import re
 
 from sqlmodel import Session, select
 
-from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 
 logger = logging.getLogger(__name__)
@@ -114,9 +113,7 @@ def validate_taxonomy(skills: list[Skill]) -> None:
         _validate_string_list(skill.id, "question_forms", skill.question_forms)
 
 
-def build_taxonomy(
-    course_id: str, raw_skills: list[dict], origin: SkillOrigin
-) -> list[Skill]:
+def build_taxonomy(course_id: str, raw_skills: list[dict]) -> list[Skill]:
     """Turn a list of raw skill dicts into validated Skill objects.
 
     The single builder for every topic source -- bootstrap course JSON and
@@ -132,7 +129,6 @@ def build_taxonomy(
             difficulty_band=entry["difficulty_band"],
             keywords=list(entry.get("keywords", [])),
             question_forms=list(entry.get("question_forms", [])),
-            origin=origin,
         )
         for entry in raw_skills
     ]

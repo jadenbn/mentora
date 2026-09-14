@@ -38,7 +38,7 @@ no "next problem" route to test because there is no such route.
 | `test_taxonomy.py` | normalization, validation, `canonical_key`, seeding, `add_skills` | — |
 | `test_selection.py` | topic priority: coverage vs weakness, recency, difficulty | — |
 | `test_student_model_service.py` | the rolling accuracy window, idempotency, the overview query | — |
-| `test_skills_overview.py` | the dashboard view: every topic, origin, recency | — |
+| `test_skills_overview.py` | the dashboard view: every topic, recency | — |
 | `test_attribution.py` | which skills a problem counts toward; unknown ids dropped | — |
 | `test_question_service.py` | the piggyback: attribution, new-topic creation, name-similarity match | pydantic |
 | `test_questions_api.py` | the one generation route: implicit topic pick, HTTP contract | fastapi |
@@ -117,8 +117,7 @@ Each builds the smallest graph that isolates one rule and asserts on it:
   existing id; seeding skips a course that already has topics rather than
   overwriting what the model added.
 - **`test_skills_overview.py`** — untouched topics appear with `accuracy:
-  None` rather than being omitted; origin and recency are exposed for the
-  dashboard.
+  None` rather than being omitted; recency is exposed for the dashboard.
 
 ### Does the piggyback actually create topics safely? — `test_question_service.py`
 
@@ -159,7 +158,7 @@ implicit-topic case.
 With `MENTORA_DEV_ROUTES=1` in `.env`, start the server and open
 **`http://localhost:8000/dev/dashboard`**.
 
-Every topic in the course, with an accuracy bar, origin, and buttons to fire
+Every topic in the course, with an accuracy bar and buttons to fire
 synthetic correct/partial/incorrect attempts against a selected topic. It
 hits the same JSON APIs a real client would.
 

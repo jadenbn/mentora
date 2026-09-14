@@ -1,4 +1,4 @@
-"""The dev dashboard's overview query: every topic, accuracy, origin, recency."""
+"""The dev dashboard's overview query: every topic, accuracy, recency."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.engine.accuracy import PRIOR_ACCURACY, difficulty_bucket
 from app.engine.schemas import AttemptCreate
@@ -80,25 +79,23 @@ def test_overview_reports_what_generation_would_be_asked_for(session):
     assert practised.difficulty_word == "challenging"
 
 
-def test_overview_exposes_origin_keywords_and_recency(session):
+def test_overview_exposes_keywords_and_recency(session):
     now = datetime.now(timezone.utc)
     session.add(Skill(id="calc1.old", course_id="calc1", name="Old", description="d",
-                      difficulty_band=0.3, origin=SkillOrigin.SEED,
+                      difficulty_band=0.3,
                       created_at=now - timedelta(days=30)))
     session.add(Skill(id="calc1.new", course_id="calc1", name="New", description="d",
                       difficulty_band=0.4, keywords=["k1"],
-                      question_forms=["solve for x"], origin=SkillOrigin.GENERATED,
+                      question_forms=["solve for x"],
                       created_at=now))
     session.commit()
 
     ov = student_model_service.get_skills_overview(session, "calc1", "stu1")
     by_id = {s.skill_id: s for s in ov.skills}
 
-    assert by_id["calc1.old"].origin == SkillOrigin.SEED
     assert by_id["calc1.old"].is_recent is False
 
     fresh = by_id["calc1.new"]
-    assert fresh.origin == SkillOrigin.GENERATED
     assert fresh.is_recent is True
     assert fresh.keywords == ["k1"]
     assert fresh.question_forms == ["solve for x"]

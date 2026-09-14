@@ -9,7 +9,6 @@ from app.api.dependencies import get_course_repository
 from app.api.questions import get_question_service
 from app.db import engine
 from app.main import app
-from app.models.enums import SkillOrigin
 from app.models.skill import Skill
 from app.schemas.documents import ChunkMetadata, DocumentType
 from app.schemas.problems import ProblemContext
@@ -146,7 +145,6 @@ def test_generation_response_includes_the_attributed_skills():
                     name="Chain rule",
                     description="d",
                     difficulty_band=0.6,
-                    origin=SkillOrigin.GENERATED,
                 )
             )
             session.commit()

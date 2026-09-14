@@ -166,13 +166,12 @@ five; the taxonomy and attribution own the rest.
 course-prefixed and normalized (`calc1.derivatives.chain-rule`, or
 `course_a1b2c3....chain-rule` for a UUID-named course — see ARCHITECTURE.md
 §47.4). No prerequisite field — topics are flat. Carries `keywords`
-(retrieval vocabulary), `question_forms` (§5), `difficulty_band`, and
-`origin`. Despite its name, `difficulty_band` is how advanced the topic is
-within the course, not a question difficulty. Its only use is ordering
-untried topics (§6), and the dashboard labels it "course level". `origin` defaults to `seed` on the model, but every topic actually
-created today goes through the piggyback or the dev import route, both of
-which stamp `generated` explicitly — there is no seed file left to produce a
-`seed`-origin row.
+(retrieval vocabulary), `question_forms` (§5), and `difficulty_band`.
+Despite its name, `difficulty_band` is how advanced the topic is within the
+course, not a question difficulty. Its only use is ordering untried topics
+(§6), and the dashboard labels it "course level". Every topic is
+model-identified — through the piggyback or the dev import route — so there
+is no origin column to distinguish seeded from generated rows.
 
 **`SkillState`** (`engine/models/skill_state.py`) — one student's rolling
 window for one topic, keyed `(student_id, skill_id)`. `recent_outcomes`: the
@@ -507,7 +506,7 @@ deployment):
 
 | Route | Does |
 | --- | --- |
-| `GET /dev/dashboard` | Every topic, estimate, observed accuracy, origin, and synthetic attempts. |
+| `GET /dev/dashboard` | Every topic, estimate, observed accuracy, and synthetic attempts. |
 | `GET /dev/courses/{id}/next-topic` | What `pick_topic` would choose right now. Read-only — does not stamp `last_served`. |
 | `POST /dev/courses/{id}/simulate` | Replay the policy against synthetic students (§15). |
 | `POST /dev/courses/{id}/attempts` | Record an attempt from a stated outcome, and stamp `last_served` — on the real path a topic is always served before it is marked. |
