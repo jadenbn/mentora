@@ -6,6 +6,8 @@ question out loud. The backend sends the canvas, and any spoken question, to a
 multimodal Gemini agent and returns validated spatial actions for the
 whiteboard renderer to draw.
 
+test
+
 ## Repository
 
 - `frontend/`: Next.js, React, and tldraw whiteboard UI.
