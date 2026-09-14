@@ -13,7 +13,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import SkillOrigin
-from app.schemas.tutor import ErrorTag, TutorResponse
+from app.schemas.tutor import TutorResponse
 
 
 class StrictModel(BaseModel):
@@ -34,9 +34,6 @@ class AttemptCreate(StrictModel):
     #: route lets a caller state it, which is one of the reasons that route
     #: is not on the product API.
     hints_used: int = Field(default=0, ge=0)
-    #: Set from the tutor's own reading (schemas.tutor.TutorPlan), never
-    #: client-supplied on the product path. See models.Attempt.error_tag.
-    error_tag: ErrorTag | None = None
 
 
 class AttemptResult(StrictModel):

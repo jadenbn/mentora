@@ -132,7 +132,6 @@ async def submit_work(
                         correct=response.status == WorkStatus.correct,
                         partial=response.status == WorkStatus.partial,
                         hints_used=hints.hints_taken(session, student_id, problem_id),
-                        error_tag=response.error_tag,
                     ),
                 )
             except UnknownSkillError:

@@ -159,7 +159,6 @@ def record_attempt(
         correct=payload.correct,
         partial=payload.partial,
         hints_used=payload.hints_used,
-        error_tag=payload.error_tag,
         created_at=now,
     )
     session.add(attempt)

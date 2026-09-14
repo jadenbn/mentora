@@ -20,7 +20,7 @@ from app.agents.gemini import as_thinking_level, create_client, response_object
 from app.agents.workflow_errors import TutorWorkflowError, TutorWorkflowTimeout
 from app.prompts.tutor import ALLOWED_ACTIONS, tutor_instruction
 from app.schemas.problems import GroundingChunk, ProblemContext
-from app.schemas.tutor import ErrorTag, NormalizedBounds, TutorMode, TutorPlan
+from app.schemas.tutor import NormalizedBounds, TutorMode, TutorPlan
 from app.engine import LearnerContext
 
 logger = logging.getLogger(__name__)
@@ -69,9 +69,8 @@ TUTOR_PLAN_RESPONSE_SCHEMA = {
             },
         },
         "summary": {"type": "string"},
-        "error_tag": {"type": "string", "enum": [t.value for t in ErrorTag], "nullable": True},
     },
-    "required": ["status", "canvas_actions", "uncertainties", "summary", "error_tag"],
+    "required": ["status", "canvas_actions", "uncertainties", "summary"],
 }
 
 

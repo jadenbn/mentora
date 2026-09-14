@@ -72,7 +72,7 @@ get_learner_context()   the primary topic's estimate, attempt count, and
         |                  calls the tutor; the client never says whether
         v                  the work was right
 apply_safety_policy() -> record_attempt()
-        push the outcome (and any error tag) into the primary topic's window
+        push the outcome into the primary topic's window
 ```
 
 **There is no "next problem" route.** Topic selection happens inside
@@ -185,8 +185,7 @@ moves `last_served` and nothing else.
 
 **`Attempt`** (`engine/models/attempt.py`) — immutable. The ledger.
 `engine/profile.py` derives the student profile from this alone. Unique on
-`(student_id, problem_id)`: one problem, one attempt. Carries `error_tag`
-(§8), nullable, written from the tutor's own reading and never by a client.
+`(student_id, problem_id)`: one problem, one attempt.
 
 **`ProblemSkill`** (`models/problem_skill.py`) — which topics a problem
 exercises, in declared order, `skill_id` a real foreign key to `skill.id`.
@@ -457,21 +456,6 @@ never to quote the number or the attempt count back to the student. That last
 clause is what keeps the engine invisible — it shapes how the tutor talks,
 and never becomes a score on the canvas (`PRODUCT.md` §24).
 
-**Error tags.** `TutorPlan` carries an optional `error_tag` from a closed
-five-value vocabulary in `schemas/tutor.py`: `sign_error`,
-`dropped_constant`, `wrong_technique`, `algebra_slip`, `concept_gap`. The
-vocabulary is deliberately small — a large one would be vaguer and would
-never accumulate enough of any single tag to say anything.
-
-`apply_safety_policy` clears the tag unless the status is `incorrect` or
-`partial`. A tag on a correct answer, or on a canvas the tutor could not
-read, is model noise, and the policy is the one place that cannot be routed
-around. What survives is stored on `Attempt.error_tag`.
-
-**Nothing reads the tags yet, and that is deliberate.** A per-student rollup
-only becomes useful after weeks of real grading, so the signal has to start
-accumulating before the feature that consumes it can exist. See §16.
-
 ---
 
 ## 9. Attempt ingestion
@@ -493,8 +477,8 @@ accumulating before the feature that consumes it can exist. See §16.
    the problem *and* inflated the attempt counts confidence is built from, so
    a student who nailed the chain rule and fumbled the arithmetic had both
    topics marked wrong.
-4. **Ledger** — one immutable `Attempt`, recording every declared skill and
-   any surviving `error_tag`. Single commit.
+4. **Ledger** — one immutable `Attempt`, recording every declared skill.
+   Single commit.
 
 `updated_skills` in the response reports the primary's **estimate** after the
 attempt — what selection will act on next — not the raw score.
@@ -563,9 +547,6 @@ work in §2.
 | The tutor is told the student's standing on the primary topic | `test_work_api.py::test_the_tutor_receives_a_learner_context_for_an_attributed_problem` |
 | The anonymous tutor route is told nothing about the student | `test_tutor_service.py::test_no_learner_context_reaches_the_workflow_by_default` |
 | The learner context reaches the prompt, or says it is absent | `test_tutor_workflow.py::test_a_learner_context_reaches_the_prompt`, `::test_with_no_learner_context_the_prompt_says_so` |
-| An error tag survives only on incorrect or partial work | `test_tutor_policy.py::TestErrorTag` (5 cases) |
-| The error-tag vocabulary stays closed | `test_tutor_schemas.py::test_error_tag_is_a_small_closed_vocabulary` |
-| A tag the tutor set is stored on the attempt | `test_work_api.py::test_the_tutors_error_tag_is_stored_on_the_attempt` |
 | Looking at the next pick does not change it | `test_dev_api.py::test_next_topic_previews_the_pick_without_serving_it` |
 | The simulator never writes to the real database | `test_simulation.py::test_the_simulation_never_writes_to_the_real_database` |
 | A model's new column reaches a database that predates it | `test_db_schema.py::test_a_column_added_to_a_model_is_added_to_an_existing_table` |
@@ -791,9 +772,11 @@ stays visible, and retuning the weights for spaced practice is open work.
   student-facing "this question is wrong" affordance, which converts the
   worst case — the student is right, the tutor is wrong, the engine records a
   weakness — from silent corruption into labelled data.
-- **Nothing reads the error tags yet.** §8 stores them; no per-student rollup
-  exists, so "sign again — that's the third time this week" is not possible
-  yet. Deliberate, but it is a gap until something consumes it.
+- **No record of *what* went wrong.** The ledger stores correct, partial, or
+  incorrect and nothing finer, so "sign error again — that's the third time
+  this week" is not possible. A closed error-tag vocabulary was prototyped
+  and cut: nothing read it, and it added a required field to every tutor
+  response. Bring it back with its reader.
 - **No qualitative observations feed (`PRODUCT.md` §24).** The rolling
   window and the derived profile are the substrate for "you've improved on
   substitution across your last 8 attempts"-style sentences, but nothing

@@ -227,31 +227,6 @@ def test_only_the_primary_skill_takes_the_outcome(session):
     assert attempt.expected_skills == ["calc1.chain-rule", "calc1.arithmetic"]
 
 
-def test_error_tag_is_stored_on_the_attempt(session):
-    _skill(session, "calc1.a")
-    payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
-        expected_skills=["calc1.a"], difficulty=0.5, correct=False,
-        error_tag="sign_error",
-    )
-    svc.record_attempt(session, "calc1", payload)
-
-    attempt = session.exec(select(Attempt)).one()
-    assert attempt.error_tag == "sign_error"
-
-
-def test_error_tag_defaults_to_none(session):
-    _skill(session, "calc1.a")
-    payload = AttemptCreate(
-        student_id="stu1", session_id="sess1", problem_id="p1",
-        expected_skills=["calc1.a"], difficulty=0.5, correct=True,
-    )
-    svc.record_attempt(session, "calc1", payload)
-
-    attempt = session.exec(select(Attempt)).one()
-    assert attempt.error_tag is None
-
-
 def test_an_explicit_clock_is_used_for_last_seen_and_created_at(session):
     """`now` exists for the simulator's virtual clock; every production
     caller leaves it unset and gets the real wall clock instead."""

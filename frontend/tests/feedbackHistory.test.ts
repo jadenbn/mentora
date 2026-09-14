@@ -21,7 +21,6 @@ const layer = (id: string): FeedbackLayer => ({
     status: "partial",
     summary: `Hint ${id}`,
     canvas_actions: [],
-    error_tag: null,
   },
 });
 

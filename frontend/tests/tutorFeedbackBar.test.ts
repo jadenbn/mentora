@@ -15,7 +15,6 @@ const layer: FeedbackLayer = {
     status: "partial",
     summary: "Look at the inner function.",
     canvas_actions: [],
-    error_tag: null,
   },
 };
 

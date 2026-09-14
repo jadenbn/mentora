@@ -26,16 +26,14 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 
 class StubTutor:
-    def __init__(self, status, error_tag=None):
+    def __init__(self, status):
         self.status = status
-        self.error_tag = error_tag
         self.calls = []
 
     async def analyze(self, **kwargs):
         self.calls.append(kwargs)
         return TutorResponse(
             interaction_id="i1", status=self.status, summary="s", canvas_actions=[],
-            error_tag=self.error_tag,
         )
 
 
@@ -88,8 +86,8 @@ def _post(client, **overrides):
     )
 
 
-def _with_tutor(status, error_tag=None):
-    stub = StubTutor(status, error_tag=error_tag)
+def _with_tutor(status):
+    stub = StubTutor(status)
     app.dependency_overrides[get_tutor_service] = lambda: stub
     return stub
 
@@ -210,19 +208,6 @@ def test_the_product_api_rejects_a_client_stated_hint_count(seeded):
     with Session(engine) as s:
         state = s.get(SkillState, ("stu1", "calc1.derivatives.chain-rule"))
         assert state.recent_outcomes == [pytest.approx(1.0)]
-
-
-def test_the_tutors_error_tag_is_stored_on_the_attempt(seeded):
-    _with_tutor(WorkStatus.incorrect, error_tag="sign_error")
-    with TestClient(app) as client:
-        body = _post(client).json()
-
-    assert body["tutor"]["error_tag"] == "sign_error"
-    from app.engine.models.attempt import Attempt
-    from sqlmodel import select
-    with Session(engine) as s:
-        attempt = s.exec(select(Attempt)).one()
-        assert attempt.error_tag == "sign_error"
 
 
 def test_the_tutor_receives_a_learner_context_for_an_attributed_problem(seeded):
