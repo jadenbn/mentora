@@ -155,7 +155,6 @@ def record_attempt(
         session_id=payload.session_id,
         problem_id=payload.problem_id,
         expected_skills=expected_skills,
-        difficulty=payload.difficulty,
         correct=payload.correct,
         partial=payload.partial,
         hints_used=payload.hints_used,

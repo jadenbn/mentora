@@ -358,9 +358,6 @@ async function attempt(kind) {
     session_id: 'dev-dashboard',
     problem_id: `dev_${s.skill_id}_${Date.now()}`,
     expected_skills: [s.skill_id],
-    // What the engine would have asked for on this topic, the same value a
-    // real attempt records -- not the course level, which sets no difficulty.
-    difficulty: s.target_difficulty,
     correct: kind === 'correct',
     partial: kind === 'partial',
   };

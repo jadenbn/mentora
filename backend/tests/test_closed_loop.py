@@ -134,7 +134,6 @@ async def test_pick_generate_tag_grade_record_moves_the_selected_topic(
         session_id="sess1",
         problem_id=problem.id,
         expected_skills=["calc1.some.other.skill"],  # a lie
-        difficulty=topic.target_difficulty,
         correct=True,
     )
     result = student_model_service.record_attempt(session, "calc1", payload)

@@ -67,10 +67,8 @@ async def submit_work(
     one-line curl could set any student's accuracy to the ceiling.
 
     Every input to the score is the server's now. The tutor's own reading of
-    the canvas decides the outcome; the difficulty comes from what
-    generation asked for at question-creation time (app.api.questions); and
-    hints are counted here, on the way past, rather than reported by the
-    browser at marking time. The client supplies the canvas and nothing that
+    the canvas decides the outcome, and hints are counted here, on the way
+    past, rather than reported by the browser at marking time. The client supplies the canvas and nothing that
     scores it.
 
     Only mode="mark" records an attempt. A hint request is not a graded
@@ -117,8 +115,7 @@ async def submit_work(
 
     attempt = None
     if mode == TutorMode.mark and response.status != WorkStatus.uncertain:
-        difficulty = repository.get_problem_difficulty(problem_id)
-        if skills and difficulty is not None:
+        if skills:
             try:
                 attempt = student_model_service.record_attempt(
                     session,
@@ -128,7 +125,6 @@ async def submit_work(
                         session_id=session_id,
                         problem_id=problem_id,
                         expected_skills=skills,
-                        difficulty=difficulty,
                         correct=response.status == WorkStatus.correct,
                         partial=response.status == WorkStatus.partial,
                         hints_used=hints.hints_taken(session, student_id, problem_id),
@@ -140,9 +136,6 @@ async def submit_work(
                 # accuracy update is lost.
                 logger.exception("could not record attempt for problem %s", problem_id)
         else:
-            logger.info(
-                "problem %s has no skills or no recorded difficulty; graded but not recorded",
-                problem_id,
-            )
+            logger.info("problem %s has no skills; graded but not recorded", problem_id)
 
     return WorkResponse(tutor=response, attempt=attempt)

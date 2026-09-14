@@ -975,8 +975,7 @@ app/db.py        SQLModel engine   -> skill, skill_state, attempt,
                                        hint_usage, problem_skill
 app/database.py  raw sqlite3       -> courses, spaces, course_documents,
                  CourseRepository     document_chunks, generated_problems,
-                                       problem_grounding_chunks,
-                                       problem_difficulty
+                                       problem_grounding_chunks
 ```
 
 `courses` and `spaces` are DB-owned, not engine tables: `courses` is the
@@ -1026,7 +1025,7 @@ QuestionService.generate()      a grounded problem; the model also names the
         +-- names something new      -> inserted as a new topic (the
         |                                piggyback)
         v
-attribution.set_problem_skills() + repository.set_problem_difficulty()
+attribution.set_problem_skills()
         |
         v
 POST /work        the student's canvas; the tutor grades it server-side and
@@ -1035,8 +1034,7 @@ POST /work        the student's canvas; the tutor grades it server-side and
 
 **The client never scores its own work.** `POST /work` replaced an earlier
 `POST /attempts` that took `correct` straight from the browser; the tutor's own
-reading of the canvas decides the outcome now, and difficulty is read back from
-`problem_difficulty` rather than restated by the client. `POST
+reading of the canvas decides the outcome now. `POST
 /dev/courses/{id}/attempts` still takes a stated outcome, and its docstring
 says why that is fine there and nowhere else: it drives the dashboard without a
 canvas or a model call.

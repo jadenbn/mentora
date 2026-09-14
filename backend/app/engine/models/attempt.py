@@ -28,7 +28,6 @@ class Attempt(SQLModel, table=True):
     session_id: str
     problem_id: str
     expected_skills: list[str] = Field(default_factory=list, sa_column=Column(JSON))
-    difficulty: float
     correct: bool
     partial: bool = Field(default=False)
     hints_used: int = Field(default=0)

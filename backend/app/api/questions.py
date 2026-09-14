@@ -96,7 +96,6 @@ class _Ask:
     #: applies only where the request does not state a difficulty itself.
     difficulty_word: str
     required_skill_id: str | None
-    target_difficulty: float
 
 
 def _build_ask(session: Session, course_id: str, request: GenerateQuestionRequest) -> _Ask:
@@ -122,7 +121,6 @@ def _build_ask(session: Session, course_id: str, request: GenerateQuestionReques
             question_request=typed,
             difficulty_word=difficulty_bucket(difficulty),
             required_skill_id=None,
-            target_difficulty=difficulty,
         )
 
     topic = pick_topic(session, course_id, request.student_id)
@@ -133,7 +131,6 @@ def _build_ask(session: Session, course_id: str, request: GenerateQuestionReques
             question_request="Write a question grounded in this material.",
             difficulty_word=difficulty_bucket(PRIOR_ACCURACY),
             required_skill_id=None,
-            target_difficulty=PRIOR_ACCURACY,
         )
 
     parts = [f"Write a question on {topic.skill_name}: {topic.skill_description}"]
@@ -147,7 +144,6 @@ def _build_ask(session: Session, course_id: str, request: GenerateQuestionReques
         question_request=" ".join(parts),
         difficulty_word=difficulty_bucket(topic.target_difficulty),
         required_skill_id=topic.skill_id,
-        target_difficulty=topic.target_difficulty,
     )
 
 
@@ -156,7 +152,6 @@ async def generate_question(
     course_id: str,
     request: GenerateQuestionRequest,
     service: QuestionService = Depends(get_question_service),
-    repository: CourseRepository = Depends(get_course_repository),
     session: Session = Depends(get_session),
     _course=Depends(require_course),
 ) -> GeneratedProblemResponse:
@@ -190,11 +185,6 @@ async def generate_question(
     except QuestionWorkflowError as exc:
         raise HTTPException(502, "Question generation is temporarily unavailable") from exc
 
-    # Recorded so /work can read back what this problem was asked to be
-    # written at, rather than trusting the client to restate it at grading.
-    repository.set_problem_difficulty(
-        problem_id=problem.id, target_difficulty=ask.target_difficulty
-    )
     if ask.required_skill_id is not None:
         # The topic has now been put in front of the student. Stamped here
         # rather than inside pick_topic so nothing is recorded for a

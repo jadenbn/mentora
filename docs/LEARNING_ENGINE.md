@@ -55,7 +55,7 @@ QuestionService.generate()    a grounded problem; the model also names the
         +-- names an existing topic -> attributed to it
         +-- names something new     -> minted through build_taxonomy (§5)
         v
-set_problem_skills() + set_problem_difficulty() + mark_served()
+set_problem_skills() + mark_served()
         |
         v
 student works; POST /work sends the canvas
@@ -790,10 +790,11 @@ stays visible, and retuning the weights for spaced practice is open work.
   can still fragment with no remedy. If a skill does go missing,
   `engine/api/learning.py` catches the resulting `UnknownSkillError` and the
   accuracy update is lost; orphaned `SkillState` rows are never cleaned up.
-- **`Attempt.difficulty` is recorded, not scored against.** A correct answer
-  at 0.85 and one at 0.15 count identically. It is kept as provenance — what
-  generation asked for — and as the guard that a problem came through the
-  engine at all.
+- **Outcomes are not scored against difficulty.** A correct answer to a
+  challenging question and one to an introductory question count identically.
+  The difficulty a question was written at is not stored anywhere; a
+  `problem_difficulty` table that recorded it was cut because nothing read
+  it. Bring it back with a scorer that uses it.
 - **Identity is per-caller, not per-student.** See §10. Lands with the
   `owner_id` work in §2.
 - **Concurrent marks on one student can drop an outcome.**

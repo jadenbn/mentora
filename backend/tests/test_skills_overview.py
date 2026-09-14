@@ -46,7 +46,7 @@ def test_overview_reflects_recorded_attempts(session):
         student_model_service.record_attempt(
             session, "calc1",
             AttemptCreate(student_id="stu1", session_id="s", problem_id=f"p{i}",
-                          expected_skills=["calc1.a"], difficulty=0.3, correct=True),
+                          expected_skills=["calc1.a"], correct=True),
         )
     ov = student_model_service.get_skills_overview(session, "calc1", "stu1")
     by_id = {s.skill_id: s for s in ov.skills}
@@ -64,7 +64,7 @@ def test_overview_reports_what_generation_would_be_asked_for(session):
         student_model_service.record_attempt(
             session, "calc1",
             AttemptCreate(student_id="stu1", session_id="s", problem_id=f"p{i}",
-                          expected_skills=["calc1.a"], difficulty=0.5, correct=True),
+                          expected_skills=["calc1.a"], correct=True),
         )
     ov = student_model_service.get_skills_overview(session, "calc1", "stu1")
     by_id = {s.skill_id: s for s in ov.skills}

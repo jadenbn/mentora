@@ -27,7 +27,6 @@ class AttemptCreate(StrictModel):
     session_id: str
     problem_id: str
     expected_skills: list[str]
-    difficulty: float = Field(ge=0.0, le=1.0)
     correct: bool
     partial: bool = False
     #: Server-counted on the product path (see services/hints.py). The dev

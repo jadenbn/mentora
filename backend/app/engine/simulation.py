@@ -241,7 +241,6 @@ def simulate(
                         session_id="sim",
                         problem_id=f"{student_id}-{question}",
                         expected_skills=[pick.skill_id],
-                        difficulty=pick.target_difficulty,
                         correct=correct,
                         partial=partial,
                     ),

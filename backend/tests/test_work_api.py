@@ -69,7 +69,6 @@ def seeded():
         ))
         s.commit()
         attribution.set_problem_skills(s, problem.id, ["calc1.derivatives.chain-rule"])
-    repo.set_problem_difficulty(problem_id=problem.id, target_difficulty=0.65)
     return problem
 
 
@@ -130,8 +129,7 @@ def test_a_hint_is_not_a_graded_attempt(seeded):
         assert s.get(SkillState, ("stu1", "calc1.derivatives.chain-rule")) is None
 
 
-def test_difficulty_comes_from_generation_not_the_request(seeded):
-    """The client cannot restate how hard the problem was."""
+def test_an_incorrect_reading_is_recorded_as_incorrect(seeded):
     _with_tutor(WorkStatus.incorrect)
     with TestClient(app) as client:
         _post(client)
@@ -140,7 +138,6 @@ def test_difficulty_comes_from_generation_not_the_request(seeded):
     from sqlmodel import select
     with Session(engine) as s:
         attempt = s.exec(select(Attempt)).one()
-        assert attempt.difficulty == pytest.approx(0.65)
         assert attempt.correct is False
 
 
@@ -166,7 +163,7 @@ def test_the_product_api_no_longer_accepts_a_client_stated_grade():
         response = client.post(
             "/api/courses/calc1/attempts",
             json={"student_id": "stu1", "session_id": "s", "problem_id": "p",
-                  "expected_skills": ["calc1.derivatives.chain-rule"], "difficulty": 0.5,
+                  "expected_skills": ["calc1.derivatives.chain-rule"],
                   "correct": True},
         )
     assert response.status_code == 405 or response.status_code == 404
