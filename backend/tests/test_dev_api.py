@@ -22,6 +22,22 @@ def _create_course(course_id: str = "calc1") -> None:
         )
 
 
+def test_dev_routes_are_off_unless_enabled(monkeypatch):
+    from fastapi import FastAPI
+
+    from app.bootstrap import register_learning_engine
+
+    monkeypatch.delenv("MENTORA_DEV_ROUTES", raising=False)
+    bare = FastAPI()
+    register_learning_engine(bare)
+    assert TestClient(bare).get("/dev/dashboard").status_code == 404
+
+    monkeypatch.setenv("MENTORA_DEV_ROUTES", "1")
+    enabled = FastAPI()
+    register_learning_engine(enabled)
+    assert TestClient(enabled).get("/dev/dashboard").status_code == 200
+
+
 def test_dashboard_serves_html():
     with TestClient(app) as client:
         response = client.get("/dev/dashboard")

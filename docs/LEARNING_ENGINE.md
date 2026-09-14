@@ -517,7 +517,9 @@ Under `/api/courses/{course_id}`:
 is not `uncertain`. A hint is not a graded attempt — it is counted and
 nothing else — and `uncertain` means the tutor never read the canvas.
 
-Dev-only, not in the OpenAPI schema:
+Dev-only, not in the OpenAPI schema, and mounted only when
+`MENTORA_DEV_ROUTES=1` is set (it is in `.env.example`; never set it on a
+deployment):
 
 | Route | Does |
 | --- | --- |

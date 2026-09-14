@@ -61,6 +61,17 @@ def api_key() -> str | None:
     return os.getenv("MENTORA_API_KEY") or None
 
 
+def dev_routes_enabled() -> bool:
+    """Whether the /dev router (dashboard, skill import/delete, synthetic
+    attempts, simulation) is mounted at all.
+
+    Off unless MENTORA_DEV_ROUTES=1. Those routes take `correct` from the
+    caller and delete topics, so they must not exist on a deployment; hiding
+    them from the OpenAPI schema is not the same as not serving them.
+    """
+    return os.getenv("MENTORA_DEV_ROUTES") == "1"
+
+
 def database_path() -> Path:
     configured = os.getenv("MENTORA_DB_PATH")
     if configured:

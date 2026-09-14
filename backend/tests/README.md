@@ -156,7 +156,8 @@ implicit-topic case.
 
 ## Testing by hand
 
-Start the server and open **`http://localhost:8000/dev/dashboard`**.
+With `MENTORA_DEV_ROUTES=1` in `.env`, start the server and open
+**`http://localhost:8000/dev/dashboard`**.
 
 Every topic in the course, with an accuracy bar, origin, and buttons to fire
 synthetic correct/partial/incorrect attempts against a selected topic. It

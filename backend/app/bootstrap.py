@@ -14,6 +14,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 
 from app.api.dependencies import get_course_repository
+from app.config import dev_routes_enabled
 from app.engine.api.dev import router as dev_router
 from app.engine.api.learning import router as learning_router
 from app.db import init_db
@@ -26,7 +27,8 @@ logger = logging.getLogger("uvicorn.error")
 
 def register_learning_engine(app: FastAPI) -> None:
     app.include_router(learning_router)
-    app.include_router(dev_router)  # /dev/dashboard — dev-only, not in the API schema
+    if dev_routes_enabled():
+        app.include_router(dev_router)  # /dev/dashboard — only with MENTORA_DEV_ROUTES=1
 
 
 @asynccontextmanager
@@ -37,5 +39,6 @@ async def learning_engine_lifespan(app: FastAPI) -> AsyncIterator[None]:
     # rather than inside it. Topics are never seeded here -- every course
     # starts with none and grows only through add_skills.
     get_course_repository()
-    logger.info("Dev dashboard: http://localhost:8000/dev/dashboard")
+    if dev_routes_enabled():
+        logger.info("Dev dashboard: http://localhost:8000/dev/dashboard")
     yield

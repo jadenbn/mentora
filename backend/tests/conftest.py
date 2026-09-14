@@ -17,6 +17,9 @@ from pathlib import Path
 
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="mentora-tests-"))
 os.environ["MENTORA_DB_PATH"] = str(_TEST_DB_DIR / "test.db")
+# The /dev router is only mounted when this is set, and app.main builds the
+# app at import time, so it too has to be decided here.
+os.environ["MENTORA_DEV_ROUTES"] = "1"
 
 import sqlite3  # noqa: E402
 
