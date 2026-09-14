@@ -2,23 +2,27 @@
  * A stable anonymous student id, local to this browser.
  *
  * The app has no auth (matches the backend's posture — see
- * app/config.py's cors_allow_origins docstring), so "student" here means
- * "this browser profile."
+ * app/config.py's api_key docstring), so "student" here means "this browser
+ * profile." The id is minted once and persisted; every browser is a distinct
+ * student, so two people on the same deployment never share a model.
  *
- * Defaults to the literal "dev-student" — the same default the dev
- * dashboard's student field already uses (backend/app/api/dev.py). The app
- * runs on a different origin than the backend-served dashboard, so
- * localStorage can't be shared between them directly; matching the two
- * defaults means completing a problem in the app and then opening
- * /dev/dashboard shows the same student's mastery with no manual steps,
- * instead of the dashboard silently looking at a different (empty) student's
- * data because the app picked a random id. Still persisted and still
- * override-able — clear or edit localStorage["mentora:student-id"] for a
- * distinct identity when deliberately testing multiple students.
+ * To inspect this browser's student on the dev dashboard, paste
+ * localStorage["mentora:student-id"] into its student field. Clear the key
+ * to start over as a fresh student.
  */
 
 const STORAGE_KEY = "mentora:student-id";
-const DEFAULT_STUDENT_ID = "dev-student";
+
+/** Held for the page's lifetime when storage is unavailable, so one visit
+ * is still one student rather than a new one per request. */
+let inMemoryId: string | null = null;
+
+function mintStudentId(): string {
+  const random = globalThis.crypto?.randomUUID
+    ? globalThis.crypto.randomUUID().replace(/-/g, "")
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  return `student_${random}`;
+}
 
 function storage(): Storage | null {
   try {
@@ -28,20 +32,22 @@ function storage(): Storage | null {
   }
 }
 
-/** Stable per-browser id. Falls back to the shared default if storage is unavailable. */
+/** Stable per-browser id, minted on first use. */
 export function getStudentId(): string {
   const store = storage();
-  if (!store) {
-    return DEFAULT_STUDENT_ID;
-  }
-  try {
-    const existing = store.getItem(STORAGE_KEY);
-    if (existing) {
-      return existing;
+  if (store) {
+    try {
+      const existing = store.getItem(STORAGE_KEY);
+      if (existing) {
+        return existing;
+      }
+      const minted = mintStudentId();
+      store.setItem(STORAGE_KEY, minted);
+      return minted;
+    } catch {
+      // Storage present but unusable (private mode, quota): fall through.
     }
-    store.setItem(STORAGE_KEY, DEFAULT_STUDENT_ID);
-    return DEFAULT_STUDENT_ID;
-  } catch {
-    return DEFAULT_STUDENT_ID;
   }
+  inMemoryId ??= mintStudentId();
+  return inMemoryId;
 }
