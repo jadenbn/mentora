@@ -8,6 +8,8 @@ for the whiteboard renderer to draw. A learning engine sits behind question
 generation: it picks what topic a student practices next and how hard,
 without any interface of its own — see `docs/LEARNING_ENGINE.md`.
 
+test
+
 ## Repository
 
 - `frontend/`: Next.js, React, and tldraw whiteboard UI.
