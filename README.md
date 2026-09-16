@@ -162,3 +162,4 @@ cd backend && RUN_LIVE_GEMINI=1 .venv/bin/python -m pytest -q -m live -s
 - Andre: AI/Vision and backend tutor APIs.
 - Korey: course context ingestion and retrieval.
 - Ren: question generation and learning engine.
+- Audrey: voice intergration and product management.
